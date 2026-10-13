@@ -25,6 +25,7 @@ price = q("price_series", ticker, start, end)
 if price.empty:
     st.info("ไม่มีข้อมูลราคาของ %s ในช่วงนี้ (ตลาดอาจปิด)" % ticker)
 else:
+    # log_return (DB column) = Current Return (proposal name) - same formula
     shown = common.resample(price, {"close": "last", "volume": "sum", "rsi": "last", "atr": "last",
                                     "normalized_atr": "mean", "log_return": "sum", "volume_zscore_24": "max"}, how)
     st.altair_chart(common.line(shown, "time", "close", "ราคาปิด (USD)"), width="stretch")
@@ -35,11 +36,11 @@ else:
                     .encode(y="y:Q"), width="stretch")
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("ราคาปิดล่าสุด", common.money(price.close.iloc[-1]))
-    k2.metric("Log Return รวม (%)", common.money(price.log_return.sum()))
+    k2.metric("Current Return รวม (%)", common.money(price.log_return.sum()))
     k3.metric("Normalized ATR เฉลี่ย (%)", common.money(price.normalized_atr.mean()))
     k4.metric("Volume Z-score ล่าสุด", common.money(price.volume_zscore_24.dropna().iloc[-1]
                                                     if price.volume_zscore_24.notna().any() else float("nan")))
-    st.caption("Log Return = ln(close_t / close_t−1) × 100  \nNormalized ATR = ATR 24 ชั่วโมง ÷ close × 100  \n"
+    st.caption("Current Return = ln(close_t / close_t−1) × 100  \nNormalized ATR = ATR 24 ชั่วโมง ÷ close × 100  \n"
                "ผลตอบแทนล่วงหน้านับจากชั่วโมงที่เกิดข้อมูล เว้นว่างเมื่อไม่มีบาร์ราคาครบตามกรอบเวลา (เช่น ตลาดปิด)")
 
 st.subheader("ผลตอบแทนล่วงหน้าแยกตามกลุ่มสินทรัพย์")
@@ -68,6 +69,6 @@ risk["กลุ่ม"] = risk.big_group.map(GROUP_LABELS)
 a, b = st.columns([2, 3])
 a.dataframe(risk[["กลุ่ม", "bars", "mean_normalized_atr_pct", "mean_abs_log_return_pct"]].rename(columns={
     "bars": "จำนวนบาร์", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)",
-    "mean_abs_log_return_pct": "|Log Return| เฉลี่ย (%)"}).round(4), hide_index=True, width="stretch")
+    "mean_abs_log_return_pct": "|Current Return| เฉลี่ย (%)"}).round(4), hide_index=True, width="stretch")
 tr = q("ticker_risk", start, end)
 b.dataframe(tr[tr.big_group.isin(groups)].round(4), hide_index=True, width="stretch", height=260)

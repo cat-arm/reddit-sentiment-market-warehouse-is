@@ -6,7 +6,8 @@ For every panel, at three levels (each of the 34 tickers / each Big_Group / all 
                EXTENSIONS (management question "is the past better than the present?"):
                sentiment_lag_1h, sentiment_momentum_1h, reddit_volume_zscore_24
                panel_baseline uses `random_direction` instead - it must not look at sentiment.
-    target     log_return                CONTEMPORANEOUS: the return of the same clock hour as the Reddit hour,
+    target     log_return (= current_return in the proposal; same thing, the DB name is the old one)
+                                         CONTEMPORANEOUS: the return of the same clock hour as the Reddit hour,
                                          so it describes co-movement, NOT prediction
                future_return_1h/2h/3h/6h/12h   the forward returns (the real question)
 Rules: pairs with a NULL on either side are dropped (never filled with 0); fewer than MIN_N=30 pairs ->
@@ -102,7 +103,7 @@ def heatmaps(rows, out_dir=FIGURES):
         fig, ax = plt.subplots(figsize=(8, 0.28 * len(order) + 2))
         sns.heatmap(value, annot=labels, fmt="", cmap="RdBu_r", center=0, vmin=-0.3, vmax=0.3, linewidths=0.3,
                     cbar_kws={"label": method}, ax=ax, annot_kws={"fontsize": 6})
-        ax.set_title("%s - %s correlation of %s with returns   (* = BH p < 0.05; log_return is same-hour)"
+        ax.set_title("%s - %s correlation of %s with returns   (* = BH p < 0.05; Current Return (db column log_return) is same-hour)"
                      % (panel, method, part.predictor.iloc[0]), fontsize=8)
         ax.set_xlabel("")
         ax.set_ylabel("")

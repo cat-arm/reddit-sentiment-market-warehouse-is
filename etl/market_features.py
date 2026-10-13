@@ -11,6 +11,8 @@ Input is `market_bars` (hourly bars from yfinance). Rules, all from the proposal
     missing data) the value is NULL. NULL therefore means "not valid", which is the proposal's
     "use only periods with enough data". Stocks trade ~7 bars/day, so 6h/12h are mostly NULL for them.
   * log_return = ln(close_t / close_{t-1}) * 100, only when bar t-1 starts exactly 1 hour earlier.
+    NOTE: log_return = current_return (the proposal's "Current Return (%)", table 8). Only the name changed;
+    the column keeps the name log_return so no migration is needed.
   * volume_zscore_24 = (volume_t - mean) / std of the PRIOR 24 clock hours, current hour excluded
     (needs >= MIN_WINDOW bars, std > 0, else NULL).
   * ATR = mean true range over the last 24 clock hours including this bar (needs >= MIN_WINDOW bars);
@@ -50,7 +52,7 @@ _SCHEMA = """CREATE TABLE market_hourly_features (
     bar_ts TEXT NOT NULL,                   -- start of the bar, same text as market_bars.timestamp_utc
     hour_bucket TEXT NOT NULL,              -- bar_ts rounded down to the hour = DimTime.ts_utc
     close REAL NOT NULL, volume REAL,
-    log_return REAL,                        -- percent
+    log_return REAL,                        -- percent; = proposal's current_return (Current Return)
     future_return_1h REAL, future_return_2h REAL, future_return_3h REAL,
     future_return_6h REAL, future_return_12h REAL,    -- percent; NULL = no bar exactly n hours later
     rsi REAL, atr REAL, normalized_atr REAL, volume_zscore_24 REAL,

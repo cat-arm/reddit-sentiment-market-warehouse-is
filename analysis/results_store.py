@@ -27,6 +27,7 @@ INDEX = ("CREATE INDEX IF NOT EXISTS analysis_results_key ON analysis_results"
          "(analysis, panel_name, level, ticker, predictor, horizon, metric_name)")
 COLUMNS = ("run_id", "analysis", "panel_name", "level", "ticker", "big_group", "predictor", "target", "horizon",
            "metric_name", "metric_value", "p_value", "p_value_bh", "n_samples", "status", "config_hash", "created_at")
+# "log_return" = the proposal's current_return (Current Return); stored under the old name in analysis_results
 HORIZONS = {"log_return": "log_return", "future_return_1h": "1h", "future_return_2h": "2h",
             "future_return_3h": "3h", "future_return_6h": "6h", "future_return_12h": "12h"}
 

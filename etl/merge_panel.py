@@ -27,6 +27,7 @@ REDDIT_COLUMNS = ("sentiment_mean", "sentiment_abs_mean", "pos_ratio", "neg_rati
                   "voter_agreement_ratio", "reddit_volume_zscore_24", "reddit_volume_lag_1h",
                   "sentiment_lag_1h", "sentiment_lag_2h", "sentiment_lag_3h", "sentiment_lag_6h",
                   "sentiment_lag_12h", "sentiment_momentum_1h")
+# log_return = current_return (proposal name since 2026-10-12; same formula, DB column keeps the old name)
 MARKET_COLUMNS = ("close", "volume", "log_return", "future_return_1h", "future_return_2h", "future_return_3h",
                   "future_return_6h", "future_return_12h", "rsi", "atr", "normalized_atr")
 

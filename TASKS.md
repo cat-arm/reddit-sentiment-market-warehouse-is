@@ -205,6 +205,7 @@ proposal: SQLite เป็น "ฐานข้อมูลกลางแหล�
 | O4 / G1 กฎ conflict resolution เสริม | **ใช้ตามที่เสนอ**: both neutral → เฉลี่ย (`both_neutral`); keyword `mixed` ใน Hard Conflict → 0.0 (`hard_conflict_mixed_zero`); มีโมเดลเดียว → ใช้ค่านั้น (`one_model`) | S4 ตามที่เขียนไว้แล้ว; เป็นส่วนขยายนอก proposal ต้องบันทึกในรายงาน (ดู `PROPOSAL_REVISIONS.md` §6) |
 | O7 / G3 การแมปตัวแปร Logistic | **ใช้ตามที่เสนอ** ตามตารางใน A3 | A3 ตามที่เขียนไว้แล้ว; เก็บการแมปใน config เพื่อทำ ablation; รายละเอียดทางเทคนิคเคาะแล้วทั้งหมด (ตัวแปรตามตัดแถวผลตอบแทน = 0, ฟิตแยก panel × กลุ่มสินทรัพย์ × horizon, `TimeSeriesSplit(n_splits=5, gap=12)`, fit scaler เฉพาะชุดฝึก) ไม่ต้องถามอาจารย์ |
 | G12 grain ของ fact (ดู `PROPOSAL_REVISIONS.md` §6) | **A ทั้ง 3 ข้อ**: `FactMarketSentiment` = 1 แถวต่อ ชั่วโมง × Ticker (sentiment รวม 6 ชุมชน); เกณฑ์ตรวจจับใช้ตอน query ไม่ซ้ำแถว; `winrate_*` เก็บใน `analysis_results` แล้วคัดลอกลง fact | W2: PK = (`TimeID`,`TickerID`); W4: `DimSentimentSource` ต้องมีแถว "ALL" (รวม 6 ชุมชน) เพิ่ม → 7 แถว ไม่ใช่ 6; โหลด fact หลัง `analysis_results` |
+| ชื่อ `log_return` (proposal 2026-10-12 เปลี่ยนเป็น Current Return / `current_return`) | **ทาง 2**: เปลี่ยนเฉพาะป้ายที่คนเห็น (แดชบอร์ด, coverage check, ชื่อกราฟ, เอกสาร); คอลัมน์ในฐานข้อมูลยังชื่อ `log_return` | เพราะไม่ต้อง rebuild/รันขั้น 11–22 ใหม่; ตอนเขียนเล่มต้องจำว่าชื่อในเล่มต่างจากชื่อคอลัมน์ — รายละเอียดและวิธีเปลี่ยนชื่อจริงภายหลังอยู่ใน `docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md` §6 |
 
 **FinBERT บนเครื่องนี้ — ผลวัดจริง (S0) เมื่อ 2026-10-09 สรุปไว้ที่ `docs/benchmark_finbert.md`**: 5,300–6,150 ข้อความ/วินาที (ตัดที่ 256 token, batch 128 ≈ 6,000/วินาที, VRAM 0.8 GB), ทั้งชุด ≈ 1.0–1.2 ชั่วโมง (เฉพาะส่วนคำนวณ). ข้อความข้างล่างเป็นประมาณการก่อนวัด เก็บไว้เป็นบันทึกเหตุผลเท่านั้น ถ้าขัดกับผลวัด ให้ยึดผลวัด:
 - ความยาวข้อความจากตัวอย่าง 1:200 ของ 6 ชุมชน: คอมเมนต์เฉลี่ย 106 ตัวอักษร (median 58, p90 232, p99 813) ≈ 26 token โดยเฉลี่ย; โพสต์เฉลี่ย 557 ตัวอักษร (p90 1,335)
@@ -642,7 +643,7 @@ FactMarketSentiment(TimeID, TickerID, SentimentSourceID, DetectionConfigID, Majo
 
 ### D2 — Dashboard 7.2-1 ราคาและผลตอบแทนรายชั่วโมง (Price and Return Dashboard)
 - ราคาปิด, ปริมาณซื้อขาย, future return 5 กรอบเวลา แยกตาม Ticker และกลุ่มสินทรัพย์; ตอบคำถาม "กลุ่มสินทรัพย์ใดผันผวนสูงสุด" (ใช้ Normalized ATR)
-- **Measures**: `close`, `volume`, `future_return_1h..12h`, RSI, ATR | **KPIs**: Current Return/Log Return, Volume Z-score, Normalized ATR | **Dims**: DimTime, DimTicker
+- **Measures**: `close`, `volume`, `future_return_1h..12h`, RSI, ATR | **KPIs**: Current Return (ในโค้ด/DB ชื่อ log_return), Volume Z-score, Normalized ATR | **Dims**: DimTime, DimTicker
 
 ### D3 — Dashboard 7.5-1 ภาพรวมตลาดและความรู้สึก (Market and Sentiment Overview)
 - ราคาปิด + ปริมาณซื้อขาย + `sentiment_mean` + สัดส่วน pos/neg/neu + ประเภทความรู้สึกส่วนใหญ่ + `Reddit_volume` + Z-score พร้อมกราฟแนวโน้มย้อนหลัง เลือกสินทรัพย์/ช่วงเวลาได้

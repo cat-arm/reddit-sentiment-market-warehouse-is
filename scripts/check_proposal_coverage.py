@@ -40,7 +40,7 @@ ALIASES = {"timestamp": ["timestamp", "hour_utc"], "datetime": ["created_utc"], 
 KPIS = [
     (4, "Reddit Volume Z-score", ["Reddit Volume Z-score"], "reddit_hourly_features.reddit_volume_zscore_24"),
     (4, "Ticker Mention Rate (%)", ["Ticker Mention Rate"], "คำนวณตอนแสดง = mention_count ÷ Reddit_volume × 100"),
-    (8, "Current Return / Log Return (%)", ["Log Return"], "market_hourly_features.log_return"),
+    (8, "Current Return (%)", ["Current Return"], "market_hourly_features.log_return (คอลัมน์ในฐานข้อมูลยังชื่อ log_return)"),
     (8, "Volume Z-score (ตลาด)", ["volume_zscore_24"], "market_hourly_features.volume_zscore_24"),
     (8, "Normalized ATR (%)", ["Normalized ATR", "normalized_atr"], "market_hourly_features.normalized_atr"),
     (15, "Sentiment Score", ["Sentiment Score"], "reddit_hourly.sentiment_mean"),

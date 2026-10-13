@@ -160,6 +160,7 @@ def mention_ranking(db_path, start, end):
 
 
 # ------------------------------------------------------------------------------------------------ D2: price and return
+# log_return = current_return (proposal's "Current Return"; shown on the page under that name)
 PRICE_COLUMNS = ("close, volume, log_return, future_return_1h, future_return_2h, future_return_3h, "
                  "future_return_6h, future_return_12h, rsi, atr, normalized_atr, volume_zscore_24")
 

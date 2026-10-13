@@ -16,6 +16,7 @@ Every panel is a filter over `merged_hourly_panel` and keeps ONLY rows that have
                             column random_direction.  It never looks at sentiment, so it is the "no signal" yardstick
                             for win rate / AUC (proposal table 12, option "random direction").
 `random_direction` is NULL for every other panel.  Rebuilt on every run.
+Columns are copied as they are, so `log_return` (= the proposal's current_return / Current Return) keeps its DB name here.
 
 Usage:  python -m etl.build_panels [--db output/reddit.sqlite3] [--seed 42]
 """
