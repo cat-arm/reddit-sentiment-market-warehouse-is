@@ -1,0 +1,32 @@
+# S3: financial keywords behind `rule_signal` (proposal 7.3, step 2).
+# Matching is case-insensitive on whole words/phrases. A match with a negator in the 2 words before it
+# ("not bullish", "don't buy calls") is IGNORED (not flipped) - documented limitation, see etl/resolve_sentiment.py.
+positive:
+  - bullish
+  - buy calls
+  - buy call
+  - buying calls
+  - loading calls
+  - go long
+  - going long
+negative:
+  - bearish
+  - buy puts
+  - buy put
+  - buying puts
+  - loading puts
+  - go short
+  - going short
+negators:
+  - not
+  - no
+  - never
+  - isnt
+  - isn't
+  - dont
+  - don't
+  - wont
+  - won't
+  - cant
+  - can't
+  - without

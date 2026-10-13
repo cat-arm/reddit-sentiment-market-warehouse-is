@@ -1,0 +1,192 @@
+# The 34 target assets (proposal 4.2) with the aliases used to find them in Reddit text (T3/T4).
+#
+# asset_class : stock_etf | crypto | futures  (Big_Group in the proposal; BITO/IBIT/MARA/MSTR/COIN are
+#               filed as stock_etf because they trade on stock exchanges - open question O5 in TASKS.md)
+# cashtags    : written as $XYZ; always counted (case-insensitive)
+# aliases     : words/phrases counted as a mention. Each entry is either a string (case-insensitive, whole
+#               word; spaces and hyphens inside a phrase match "any run of spaces/hyphens/nothing")
+#               or a mapping with:
+#                 text | regex     what to match (regex must not contain capturing groups)
+#                 case_sensitive   true = match exactly as written (used for short/ambiguous symbols)
+#                 subreddits       only count when the post/comment is in one of these communities
+#                 weak             true = generic word; can be excluded for a sensitivity run
+#
+# Deliberately NOT matched as bare words (they collide with ordinary words): KO, COIN, SOL, ES, NQ, GC,
+# CL, NG, RTY. They are found through their cashtag ($KO), company/coin name, or futures phrase.
+# "DOGE" is only counted in r/CryptoCurrency (in 2025 it also means the US government department).
+
+tickers:
+  AAPL:
+    name: Apple Inc.
+    asset_class: stock_etf
+    cashtags: [AAPL]
+    aliases: [AAPL, {text: Apple, case_sensitive: true}]
+  AMC:
+    name: AMC Entertainment
+    asset_class: stock_etf
+    cashtags: [AMC]
+    aliases: [AMC, "AMC Entertainment"]
+  AMD:
+    name: Advanced Micro Devices
+    asset_class: stock_etf
+    cashtags: [AMD]
+    aliases: [AMD, "Advanced Micro Devices"]
+  BITO:
+    name: ProShares Bitcoin Strategy ETF
+    asset_class: stock_etf
+    cashtags: [BITO]
+    aliases: [{text: BITO, case_sensitive: true}]
+  BRK-B:
+    name: Berkshire Hathaway Class B
+    asset_class: stock_etf
+    cashtags: [BRK.B, BRKB, BRK]
+    aliases: ["BRK.B", "BRK-B", BRK, Berkshire, "Berkshire Hathaway"]
+  BTC-USD:
+    name: Bitcoin
+    asset_class: crypto
+    cashtags: [BTC]
+    aliases: [BTC, Bitcoin]
+  CL=F:
+    name: Crude Oil Futures
+    asset_class: futures
+    cashtags: [CL]
+    aliases: ["crude oil", crude, WTI, "oil futures", {text: "/CL", case_sensitive: true}, "CL=F", "CL_F"]
+  COIN:
+    name: Coinbase Global
+    asset_class: stock_etf
+    cashtags: [COIN]
+    aliases: [Coinbase]
+  DOGE-USD:
+    name: Dogecoin
+    asset_class: crypto
+    cashtags: [DOGE]
+    aliases: [Dogecoin, {text: doge, subreddits: [CryptoCurrency]}]
+  ES=F:
+    name: E-mini S&P 500 Futures
+    asset_class: futures
+    cashtags: [ES]
+    aliases: ["ES futures", {text: "/ES", case_sensitive: true}, "S&P futures", "S&P 500 futures", "SPX futures",
+              "SP500 futures", "ES=F", "ES_F"]
+  ETH-USD:
+    name: Ethereum
+    asset_class: crypto
+    cashtags: [ETH]
+    aliases: [ETH, Ethereum, {text: Ether, case_sensitive: true}]
+  GC=F:
+    name: Gold Futures
+    asset_class: futures
+    cashtags: [GC]
+    aliases: ["gold futures", XAUUSD, XAU, {text: gold, weak: true}, {text: "/GC", case_sensitive: true},
+              "GC=F", "GC_F"]
+  GME:
+    name: GameStop
+    asset_class: stock_etf
+    cashtags: [GME]
+    aliases: [GME, GameStop]
+  HOOD:
+    name: Robinhood Markets
+    asset_class: stock_etf
+    cashtags: [HOOD]
+    aliases: [{text: HOOD, case_sensitive: true}, Robinhood]
+  IBIT:
+    name: iShares Bitcoin Trust
+    asset_class: stock_etf
+    cashtags: [IBIT]
+    aliases: [IBIT]
+  IWM:
+    name: iShares Russell 2000 ETF
+    asset_class: stock_etf
+    cashtags: [IWM]
+    aliases: [IWM]
+  JNJ:
+    name: Johnson & Johnson
+    asset_class: stock_etf
+    cashtags: [JNJ]
+    aliases: [JNJ, "Johnson & Johnson", "Johnson and Johnson", "J&J"]
+  JPM:
+    name: JPMorgan Chase
+    asset_class: stock_etf
+    cashtags: [JPM]
+    aliases: [JPM, JPMorgan, "JP Morgan"]
+  KO:
+    name: Coca-Cola
+    asset_class: stock_etf
+    cashtags: [KO]
+    aliases: ["Coca-Cola"]
+  MARA:
+    name: Marathon Digital Holdings
+    asset_class: stock_etf
+    cashtags: [MARA]
+    aliases: [{text: MARA, case_sensitive: true}, "Marathon Digital"]
+  MSFT:
+    name: Microsoft
+    asset_class: stock_etf
+    cashtags: [MSFT]
+    aliases: [MSFT, Microsoft]
+  MSTR:
+    name: MicroStrategy
+    asset_class: stock_etf
+    cashtags: [MSTR]
+    aliases: [MSTR, MicroStrategy]
+  NG=F:
+    name: Natural Gas Futures
+    asset_class: futures
+    cashtags: [NG]
+    aliases: ["natural gas", "nat gas", natgas, "NG futures", {text: "/NG", case_sensitive: true}, "NG=F", "NG_F"]
+  NQ=F:
+    name: E-mini Nasdaq-100 Futures
+    asset_class: futures
+    cashtags: [NQ]
+    aliases: ["NQ futures", "Nasdaq futures", "Nasdaq 100 futures", {text: "/NQ", case_sensitive: true},
+              "NQ=F", "NQ_F"]
+  NVDA:
+    name: NVIDIA
+    asset_class: stock_etf
+    cashtags: [NVDA]
+    aliases: [NVDA, Nvidia]
+  PLTR:
+    name: Palantir
+    asset_class: stock_etf
+    cashtags: [PLTR]
+    aliases: [PLTR, Palantir]
+  QQQ:
+    name: Invesco QQQ Trust
+    asset_class: stock_etf
+    cashtags: [QQQ]
+    aliases: [QQQ]
+  RTY=F:
+    name: E-mini Russell 2000 Futures
+    asset_class: futures
+    cashtags: [RTY]
+    aliases: ["RTY futures", "Russell futures", "Russell 2000 futures", {text: "Russell 2000", weak: true},
+              {text: "/RTY", case_sensitive: true}, "RTY=F", "RTY_F"]
+  SHIB-USD:
+    name: Shiba Inu
+    asset_class: crypto
+    cashtags: [SHIB]
+    aliases: [SHIB, "Shiba Inu", Shiba]
+  SOL-USD:
+    name: Solana
+    asset_class: crypto
+    cashtags: [SOL]
+    aliases: [Solana]
+  SPY:
+    name: SPDR S&P 500 ETF
+    asset_class: stock_etf
+    cashtags: [SPY]
+    aliases: [SPY, "SPDR S&P 500"]
+  TSLA:
+    name: Tesla
+    asset_class: stock_etf
+    cashtags: [TSLA]
+    aliases: [TSLA, Tesla]
+  XOM:
+    name: Exxon Mobil
+    asset_class: stock_etf
+    cashtags: [XOM]
+    aliases: [XOM, Exxon, "Exxon Mobil"]
+  XRP-USD:
+    name: XRP (Ripple)
+    asset_class: crypto
+    cashtags: [XRP]
+    aliases: [XRP, {regex: "Ripple(?!\\s+effect)", case_sensitive: true}]

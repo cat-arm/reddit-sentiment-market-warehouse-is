@@ -1,0 +1,10 @@
+# The 6 communities in scope (proposal 4.1). This is the single place that lists them.
+# The raw database also holds Bitcoin, Daytrading and dogecoin: every ETL/analysis query must
+# filter to this list (do not delete the extra rows).
+subreddits:
+  - wallstreetbets
+  - stocks
+  - investing
+  - StockMarket
+  - options
+  - CryptoCurrency
