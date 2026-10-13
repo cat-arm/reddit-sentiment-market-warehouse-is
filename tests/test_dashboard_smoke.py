@@ -1,0 +1,79 @@
+"""Smoke + consistency tests of the Streamlit dashboard (TASKS Q4).
+
+They need the real database output/reddit.sqlite3 (read-only) and are skipped when it is absent:
+  * every page runs without an exception (streamlit.testing AppTest, no browser needed)
+  * numbers shown by the data layer equal a direct SQL query on the database
+  * the on-demand signal engine reproduces the pre-computed `signal_events` rows exactly
+"""
+
+import sqlite3
+import time
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DB = ROOT / "output" / "reddit.sqlite3"
+PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
+         "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Signals.py"]
+
+
+@unittest.skipUnless(DB.exists(), "real database not available")
+class DashboardTests(unittest.TestCase):
+    def test_every_page_runs_without_exception(self):
+        from streamlit.testing.v1 import AppTest
+        for page in PAGES:
+            started = time.time()
+            at = AppTest.from_file(str(ROOT / "dashboard" / page), default_timeout=90).run()
+            self.assertEqual(len(at.exception), 0, "%s raised %s" % (page, [e.value for e in at.exception]))
+            self.assertLess(time.time() - started, 60, page)
+
+    def test_half_finished_date_selection_does_not_break_pages(self):
+        """While the user clicks the range, the widget holds ONE date: pages must show that single day, not crash."""
+        import datetime as dt
+        from streamlit.testing.v1 import AppTest
+        for page in PAGES:
+            at = AppTest.from_file(str(ROOT / "dashboard" / page), default_timeout=90).run()
+            at.session_state["f_range"] = (dt.date(2026, 8, 12),)
+            at = at.run()
+            self.assertEqual(len(at.exception), 0, "%s (one date) raised %s" % (page, [e.value for e in at.exception]))
+            at.session_state["f_range"] = (dt.date(2026, 8, 1), dt.date(2026, 8, 12))
+            at = at.run()
+            self.assertEqual(len(at.exception), 0, "%s (range) raised %s" % (page, [e.value for e in at.exception]))
+
+    def test_data_layer_matches_direct_sql(self):
+        from dashboard import data
+        db = sqlite3.connect("file:%s?mode=ro" % DB.as_posix(), uri=True)
+        try:
+            # last 10 days of REDDIT data (the price data runs a month longer than Reddit)
+            hi = db.execute("SELECT MAX(hour_utc) FROM reddit_hourly WHERE variant='all' AND ticker='ALL'").fetchone()[0]
+            start, end = hi - 86400 * 10, hi
+            expected = db.execute("SELECT COUNT(*), SUM(reddit_volume) FROM reddit_hourly_features WHERE variant='all' "
+                                  "AND ticker='BTC-USD' AND hour_utc BETWEEN ? AND ?", (start, end)).fetchone()
+            got = data.volume_series(DB, "BTC-USD", start, end)
+            self.assertGreater(expected[0], 0)                      # the check must not pass on an empty window
+            self.assertEqual((len(got), int(got.reddit_volume.sum())), expected)
+            close = db.execute("SELECT COUNT(*), ROUND(AVG(close), 6) FROM merged_hourly_panel WHERE scope='ticker' "
+                               "AND variant='all' AND ticker='BTC-USD' AND hour_utc BETWEEN ? AND ?", (start, end)).fetchone()
+            ov = data.overview_series(DB, "BTC-USD", start, end)
+            self.assertEqual((len(ov), round(float(ov.close.mean()), 6)), close)
+        finally:
+            db.close()
+
+    def test_on_demand_signals_equal_stored_signals(self):
+        from analysis import signals
+        from dashboard import data
+        db = sqlite3.connect("file:%s?mode=ro" % DB.as_posix(), uri=True)
+        try:
+            stored = db.execute("SELECT signal_type, signal_level, COUNT(*) FROM signal_events WHERE z_threshold=2.0 "
+                                "AND s_threshold=0.3 GROUP BY 1, 2 ORDER BY 1, 2").fetchall()
+        finally:
+            db.close()
+        started = time.time()
+        found = signals.detect(data.signal_panel(DB), 2.0, 0.3)
+        computed = [(t, l, int(n)) for (t, l), n in found.groupby(["signal_type", "signal_level"]).size().items()]
+        self.assertEqual(sorted(computed), sorted(stored))
+        self.assertLess(time.time() - started, 10)
+
+
+if __name__ == "__main__":
+    unittest.main()

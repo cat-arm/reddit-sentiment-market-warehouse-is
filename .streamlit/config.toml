@@ -1,0 +1,10 @@
+# Streamlit settings for the dashboard (read automatically when run from the project root).
+
+[server]
+# Re-run the page automatically whenever a source file is saved (no "Rerun" click needed).
+runOnSave = true
+
+[theme]
+# Streamlit paints selected chips / sliders / radio buttons in this colour. The default red looked like a warning and
+# blended with the asset-group colours, so use the same blue as the charts.
+primaryColor = "#1f77b4"
