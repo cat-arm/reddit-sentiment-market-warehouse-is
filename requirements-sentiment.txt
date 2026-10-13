@@ -1,0 +1,11 @@
+# Sentiment engine (TASKS S0-S2). Install on top of requirements.txt.
+#
+# torch is a ~2.8 GB wheel that must come from the CUDA 12.8 index (RTX 5070 / Blackwell needs CUDA >= 12.8).
+# On Windows install it from a downloaded file to avoid pip temp-file lock errors:
+#   pip download torch==2.11.0 --no-deps --index-url https://download.pytorch.org/whl/cu128 -d wheels
+#   pip install wheels/torch-2.11.0+cu128-cp314-cp314-win_amd64.whl
+# Windows Smart App Control must be off, otherwise torch\lib\c10.dll is blocked (WinError 4551).
+torch==2.11.0
+transformers==5.19.0
+nltk==3.10.3
+# After installing nltk, fetch the VADER lexicon once: python -c "import nltk; nltk.download('vader_lexicon')"

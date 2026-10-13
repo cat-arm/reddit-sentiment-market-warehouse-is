@@ -1,0 +1,23 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Research inputs and derived data must stay local (including the proposal PDF).
+data/
+*.torrent
+*.zst
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+output/
+*.jsonl
+
+# Old Colab MVP notebook: cell outputs embed real scraped Reddit post text.
+old_code/
+
+# Local editor / assistant settings (machine-specific paths and permissions).
+.claude/
+.vscode/
