@@ -54,31 +54,43 @@
 
 | ของ | ใช้ทำอะไร | จำเป็นเมื่อไหร่ |
 |---|---|---|
-| Windows 11 + PowerShell | คำสั่งในเอกสารนี้เขียนสำหรับ PowerShell | ทุกขั้น |
+| Windows (PowerShell) หรือ macOS (zsh/bash) | เอกสารนี้ให้คำสั่งทั้งสองแบบทุกจุดที่ต่างกัน | ทุกขั้น |
 | Python (ที่ใช้จริง 3.14; README เก่าบอก 3.9+) | รันทุกสคริปต์ | ทุกขั้น |
 | `aria2c` | ดาวน์โหลดไฟล์ Reddit จาก torrent | ขั้น 01 แบบ `fetch` เท่านั้น |
 | ไฟล์ `.torrent` ของแต่ละเดือน (วางใน `data/`) | บอก aria2c ว่าจะโหลดอะไร | ขั้น 01 แบบ `fetch` เท่านั้น |
-| การ์ดจอ NVIDIA + CUDA 12.8 (ตัวที่ใช้: RTX 5070 12 GB) | รัน FinBERT เร็วพอ (~6,000 ข้อความ/วินาที) | ขั้น 08 |
+| **Windows**: การ์ดจอ NVIDIA + CUDA 12.8 (ตัวที่ใช้: RTX 5070 12 GB) | รัน FinBERT (~6,000 ข้อความ/วินาที) | ขั้น 08 **เท่านั้น** |
 | เน็ต | โหลดราคาจาก Yahoo, โหลดโมเดล FinBERT / VADER lexicon ครั้งแรก | ขั้น 02, 07, 08 |
 | ดิสก์ว่างอย่างน้อยหลายสิบ GB | ฐานข้อมูลดิบ ~12.8 GB + ตารางที่สร้างเพิ่ม (sentiment ~22M แถว) | ทุกขั้น |
 
+> ⚠️ **ขั้น 08 (FinBERT) รันได้เฉพาะเครื่องที่มี CUDA GPU เท่านั้น** โค้ดเช็กและหยุดทันทีถ้าไม่เจอ (`CUDA GPU not available`) — **Mac ไม่มี NVIDIA GPU จึงรันขั้น 08 ไม่ได้** (ไม่ใช่แค่ช้า แต่รันไม่ได้เลยตามที่โค้ดตั้งใจล็อกไว้ เพราะข้อมูล 22 ล้านแถวไม่มี GPU จะช้าเกินจะใช้งานจริง) ดูทางแก้ที่ §3.3
+>
 > ถ้าคุณ **มี `output/reddit.sqlite3` อยู่แล้ว** (เช่นเครื่องนี้) ข้ามขั้น 01–02 ได้ แล้วเริ่มที่ขั้น 03
 
 ---
 
 ## 3) ติดตั้ง (ทำครั้งเดียว)
 
-### 3.1 สร้างและเปิด virtual environment (PowerShell)
+### 3.1 สร้างและเปิด virtual environment
 
+**Windows (PowerShell)**
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
+**macOS (zsh/bash)**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
 เปิดสำเร็จเมื่อหน้าบรรทัดมี `(.venv)`
 
-> ⚠️ **อย่าใช้ `source .venv/bin/activate`** — นั่นคือคำสั่งของ macOS/Linux ใน PowerShell จะขึ้น `source : The term 'source' is not recognized`
-> ถ้าเจอ error เรื่อง "running scripts is disabled" ให้สั่งครั้งเดียว: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` แล้วลอง `Activate.ps1` ใหม่
+> ⚠️ **คำสั่ง activate ของสอง OS ใช้แทนกันไม่ได้**
+> - รัน `.\.venv\Scripts\Activate.ps1` บน macOS (zsh) → ไม่รู้จักคำสั่ง (zsh กินเครื่องหมาย `\` ทิ้งจนกลายเป็น path เพี้ยน เช่น `..venvScriptsActivate.ps1`)
+> - รัน `source .venv/bin/activate` บน Windows PowerShell → ขึ้น `source : The term 'source' is not recognized`
+> เช็กว่าอยู่ OS ไหนแล้วใช้บล็อกที่ตรงกัน
+> บน PowerShell ถ้าเจอ "running scripts is disabled" ให้สั่งครั้งเดียว: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` แล้วลอง `Activate.ps1` ใหม่
 > (โฟลเดอร์จะชื่อ `venv` หรือ `.venv` ก็ได้ ขอให้ activate ตรงชื่อที่สร้าง)
 
 ### 3.2 ติดตั้งแพ็กเกจ — แบ่ง 3 ชุดตามขั้นที่ใช้
@@ -94,7 +106,9 @@ python -m pip install -r requirements-analysis.txt   # ชุดที่ 2: pan
 | `requirements-analysis.txt` | pandas, numpy, scipy, scikit-learn, matplotlib, seaborn, streamlit | ขั้นวิเคราะห์และแดชบอร์ด (11–24) |
 | `requirements-sentiment.txt` | torch, transformers, nltk | หนักมาก (torch ~2.8 GB) ติดตั้งเมื่อจะรันขั้น 07–08 |
 
-### 3.3 ติดตั้งชุด sentiment (torch) — ระวังเป็นพิเศษบน Windows
+### 3.3 ติดตั้งชุด sentiment (torch)
+
+**Windows (NVIDIA GPU, CUDA 12.8) — ระวังเป็นพิเศษ**
 
 torch ต้องใช้ build CUDA 12.8 (การ์ด RTX 50xx ต้อง CUDA ≥ 12.8) และไฟล์ใหญ่มาก pip ติดตั้งตรง ๆ อาจล้มด้วย `WinError 32` (Defender ล็อกไฟล์ชั่วคราว) ให้ **โหลดไฟล์ก่อนแล้วค่อยติดตั้ง**:
 
@@ -112,6 +126,19 @@ python -c "import torch; print(torch.__version__, torch.cuda.is_available(), tor
 ```
 
 > ถ้า `import torch` ขึ้น `WinError 4551` แปลว่า Windows (Smart App Control) บล็อก `c10.dll` — **อย่าหลบนโยบายความปลอดภัยเอง** ให้ตัดสินใจเรื่องเปิด/ปิดด้วยตัวคุณเอง (เครื่องพัฒนาเครื่องนี้ผู้ใช้ปิดเองแล้ว)
+
+**macOS — ขั้น 08 รันไม่ได้ (ตั้งใจล็อกไว้), ขั้น 07 รันได้ปกติ**
+
+โค้ด `etl/sentiment_finbert.py` เช็ก `torch.cuda.is_available()` แล้ว `raise SystemExit("CUDA GPU not available...")` ทันทีถ้าไม่เจอ — Mac ไม่มี NVIDIA GPU จึงชน error นี้เสมอ **ไม่ต้องติดตั้ง torch/transformers บน Mac** เพราะใช้ไม่ได้อยู่ดี ติดตั้งแค่ nltk พอ (ใช้กับขั้น 07 VADER):
+
+```bash
+python -m pip install nltk==3.10.3
+python -c "import nltk; nltk.download('vader_lexicon')"
+```
+
+**วิธีทำงานข้าม OS ที่แนะนำ:** รันขั้น 08 บนเครื่อง Windows+GPU เท่านั้น ขั้นที่เหลือ (01–07, 09–24) รันบน Mac ได้ปกติ — เสร็จขั้น 08 บน Windows แล้วก๊อปปี้ `output/reddit.sqlite3` (มีตาราง `sentiment_finbert` ติดไปด้วย) มาที่ Mac แล้วรันขั้น 09 ต่อ
+>
+> ถ้าอยากให้ Mac รันขั้น 08 เองได้ (ช้ากว่ามาก ผ่าน MPS หรือ CPU) ต้องแก้โค้ด `etl/sentiment_finbert.py` ให้เลือกอุปกรณ์อัตโนมัติแทนการบังคับ `.cuda()` — เป็นการเปลี่ยนโค้ดที่กระทบตัวเลขความเร็วที่อ้างอิงใน `docs/benchmark_finbert.md` (วัดบน RTX 5070) **ควรคุยกับทีมก่อนแก้** ไม่ใช่แค่เปลี่ยนเพื่อความสะดวก
 
 ### 3.4 ตรวจว่าติดตั้งถูก
 
@@ -172,14 +199,27 @@ python steps/01_extract_reddit.py fetch 2024-10 --db output/reddit.sqlite3
 ตัวเลือก: `--data <โฟลเดอร์>` ถ้า torrent/archive ไม่ได้อยู่ใน `data/` · รันเดือนเดิมซ้ำปลอดภัย (ตรวจเจอว่านำเข้าแล้วจะข้าม; ID ของโพสต์/คอมเมนต์เป็น key ไม่ซ้ำ)
 
 **วิธีที่ 2 — มีไฟล์ `.zst` อยู่แล้ว (ไม่ผ่าน torrent)**
+
+Windows (PowerShell):
 ```powershell
 python steps/01_extract_reddit.py import --db output/reddit.sqlite3 --submissions data\reddit-2024-10\reddit\submissions\RS_2024-10.zst --comments data\reddit-2024-10\reddit\comments\RC_2024-10.zst
 ```
-(PowerShell: ใส่ทั้งคำสั่งในบรรทัดเดียว อย่าใช้ `\` ต่อบรรทัด; path ที่มีเว้นวรรคให้ใส่เครื่องหมายคำพูด)
+(ใส่ทั้งคำสั่งในบรรทัดเดียว อย่าใช้ `\` ต่อบรรทัด; path ที่มีเว้นวรรคให้ใส่เครื่องหมายคำพูด)
+
+macOS (zsh/bash) — path ใช้ `/` แทน `\`:
+```bash
+python steps/01_extract_reddit.py import --db output/reddit.sqlite3 --submissions data/reddit-2024-10/reddit/submissions/RS_2024-10.zst --comments data/reddit-2024-10/reddit/comments/RC_2024-10.zst
+```
 
 **วิธีที่ 3 — ส่งออกเป็น JSON (ไม่บังคับ)**
+
+Windows:
 ```powershell
 python steps/01_extract_reddit.py export --db output/reddit.sqlite3 --output output\reddit_2024-10.json
+```
+macOS:
+```bash
+python steps/01_extract_reddit.py export --db output/reddit.sqlite3 --output output/reddit_2024-10.json
 ```
 
 **ผลลัพธ์:** ตาราง `reddit_content` เก็บโพสต์และคอมเมนต์ในตารางเดียว (`content_type` = `submission` หรือ `comment`) พร้อมคอลัมน์ `text_status` = `available` / `removed` / `deleted` / `empty` / `missing`
@@ -434,10 +474,20 @@ python steps/24_check_proposal_coverage.py
 ## 5) สรุปลำดับรัน (ก๊อปไปใช้)
 
 ```powershell
-# --- ครั้งแรก: ติดตั้ง (ดู §3) ---
+# --- Windows: ครั้งแรก ติดตั้ง (ดู §3) ---
 python -m venv .venv ; .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt -r requirements-analysis.txt   # + torch/transformers/nltk (ดู §3.3)
+python -m pip install -r requirements.txt -r requirements-analysis.txt   # + torch/transformers/nltk (ดู §3.3, ขั้น 08 ต้องรันบน Windows+GPU)
+```
 
+```bash
+# --- macOS: ครั้งแรก ติดตั้ง (ดู §3) ---
+python3 -m venv .venv && source .venv/bin/activate
+python -m pip install -r requirements.txt -r requirements-analysis.txt nltk==3.10.3   # ไม่ต้องลง torch/transformers (ดู §3.3)
+```
+
+จากตรงนี้ คำสั่ง `python steps/...` เหมือนกันทุก OS (หลัง activate venv แล้ว `python` ชี้เข้า venv เสมอ) — **ยกเว้นขั้น 08 ที่รันได้บน Windows+GPU เท่านั้น**
+
+```powershell
 # --- ข้อมูลดิบ (ข้ามได้ถ้ามี reddit.sqlite3 อยู่แล้ว) ---
 python steps/01_extract_reddit.py fetch 2024-10 --db output/reddit.sqlite3   # ทำซ้ำทีละเดือน
 python steps/02_fetch_market.py oct24 aug26
@@ -448,7 +498,7 @@ python steps/04_clean_text.py
 python steps/05_quality_filter.py
 python steps/06_extract_tickers.py
 python steps/07_sentiment_vader.py
-python steps/08_sentiment_finbert.py
+python steps/08_sentiment_finbert.py          # Windows + NVIDIA GPU เท่านั้น — Mac ข้ามบรรทัดนี้ (ดู §3.3)
 python steps/09_resolve_sentiment.py
 python steps/10_sentiment_qa.py
 python steps/11_market_features.py
@@ -537,19 +587,35 @@ data/ output/ old_code/    ข้อมูล/ผลลัพธ์/โค้ด
 python -m unittest discover -s tests -v
 ```
 - ห้ามใส่ `-t .` (เกิด ImportError)
-- บน Windows จะมีเทสต์ **error 9 จาก 18 ตัว** ในชุดเดิม เป็น `PermissionError [WinError 32]` ตอนลบโฟลเดอร์ชั่วคราว (ไฟล์ SQLite ในเทสต์ยังไม่ปิด) — เป็นปัญหาของตัวเทสต์บน Windows ไม่ใช่ตรรกะของระบบ
+- บน Windows จะมีเทสต์ **error 9 จาก 18 ตัว** ในชุดเดิม เป็น `PermissionError [WinError 32]` ตอนลบโฟลเดอร์ชั่วคราว (ไฟล์ SQLite ในเทสต์ยังไม่ปิด) — เป็นปัญหาของตัวเทสต์บน Windows ไม่ใช่ตรรกะของระบบ; บน macOS ไม่มีปัญหาล็อกไฟล์แบบนี้ เทสต์ชุดเดียวกันน่าจะผ่านครบ (ยังไม่ได้วัดจริงบนเครื่อง Mac)
 
 ## 10) แก้ปัญหาที่เจอบ่อย
+
+**Windows**
 
 | อาการ | สาเหตุ / ทางแก้ |
 |---|---|
 | `source : The term 'source' is not recognized` | ใช้คำสั่ง macOS/Linux ใน PowerShell → ใช้ `.\.venv\Scripts\Activate.ps1` |
 | `running scripts is disabled on this system` | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
-| `No .torrent for 2025-xx under data` | ไม่มีไฟล์ torrent ของเดือนนั้นใน `data/` → วางไฟล์ `.torrent` แล้วรันใหม่ หรือใช้ `import` กับไฟล์ที่มีอยู่ |
 | `aria2c` not found | ติดตั้ง aria2 และให้อยู่ใน PATH (หรือคัดลอก `aria2c.exe` ไว้ใน `.venv\Scripts`) |
 | `pip install torch` ล้มด้วย `WinError 32` | Defender ล็อกไฟล์ → `pip download` ก่อนแล้ว `pip install <ไฟล์.whl>` (§3.3) |
 | `import torch` ขึ้น `WinError 4551` | Windows บล็อก DLL → แจ้ง/ตัดสินใจเรื่องนโยบายความปลอดภัยเอง อย่าหลบเอง |
 | `torch.cuda.is_available()` เป็น `False` | ติดตั้ง torch รุ่น CPU มา → ลงรุ่น `cu128` ใหม่ |
+
+**macOS**
+
+| อาการ | สาเหตุ / ทางแก้ |
+|---|---|
+| `zsh: command not found: ..venvScriptsActivate.ps1` (หรือคล้ายกัน) | ก๊อปคำสั่ง PowerShell มารันใน zsh → zsh ตัด `\` ทิ้งจน path เพี้ยน ใช้ `source .venv/bin/activate` แทน (§3.1) |
+| `aria2c` not found | `brew install aria2` |
+| `SystemExit: CUDA GPU not available; FinBERT on 22 M texts needs the GPU` (ขั้น 08) | ตั้งใจล็อกไว้ ไม่ใช่บั๊ก — Mac ไม่มี NVIDIA GPU รันขั้นนี้ไม่ได้ ดูวิธีทำงานข้าม OS ที่ §3.3 |
+| `python: command not found` (ก่อน activate venv) | Mac บางเครื่องมีแค่ `python3` ก่อน activate ให้ใช้ `python3 -m venv .venv` แล้ว activate — หลัง activate แล้ว `python` จะใช้ได้ปกติ |
+
+**ทุก OS**
+
+| อาการ | สาเหตุ / ทางแก้ |
+|---|---|
+| `No .torrent for 2025-xx under data` | ไม่มีไฟล์ torrent ของเดือนนั้นใน `data/` → วางไฟล์ `.torrent` แล้วรันใหม่ หรือใช้ `import` กับไฟล์ที่มีอยู่ |
 | Yahoo ขึ้น `last 730 days` | ข้อมูลรายชั่วโมงย้อนได้ไม่เกิน ~730 วัน เป็นข้อจำกัดต้นทาง ไม่ใช่บั๊ก |
 | ดิสก์เต็มระหว่างรัน | ฐานข้อมูลโตขึ้นมากหลังขั้น 07–09 → เคลียร์พื้นที่ แล้วรันขั้นเดิมซ้ำ (ต่อจากที่ค้าง) |
 | รันขั้นยาวค้างกลางทาง | รันคำสั่งเดิมซ้ำได้ ไม่ต้อง `--rebuild` ยกเว้นต้องการทำใหม่ทั้งหมด |
