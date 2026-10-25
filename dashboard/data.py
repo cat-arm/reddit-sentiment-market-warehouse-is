@@ -284,3 +284,17 @@ def signal_panel(db_path):
 def signal_counts(db_path):
     """Pre-computed counts per configuration (proposal 4.6: number of signals / assets that met the rule)."""
     return _read(db_path, "SELECT * FROM signal_summary ORDER BY z_threshold, s_threshold, signal_type, big_group")
+
+
+# ------------------------------------------------------------------------------------------------ D6: hot events (EXTENSION)
+def hot_events(db_path, start, end, z_min, s_min, min_texts):
+    """EXTENSION (not in the proposal): ticker-hours in which Reddit was unusually busy (Volume Z-score > z_min) AND the
+    sentiment was clearly directional (|sentiment_mean| >= s_min, at least min_texts texts), with the forward returns
+    that followed.  Descriptive history only; hours without a computable return keep NULL."""
+    return _read(db_path, """
+        SELECT ticker, big_group, hour_utc, sentiment_mean, reddit_volume, reddit_volume_zscore_24 AS zscore,
+               future_return_1h, future_return_2h, future_return_3h, future_return_6h, future_return_12h
+        FROM merged_hourly_panel
+        WHERE scope = 'ticker' AND variant = 'all' AND has_reddit_data = 1 AND reddit_volume >= ?
+          AND reddit_volume_zscore_24 > ? AND ABS(sentiment_mean) >= ? AND hour_utc BETWEEN ? AND ?
+        ORDER BY hour_utc DESC""", (min_texts, z_min, s_min, start, end))

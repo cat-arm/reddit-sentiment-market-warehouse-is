@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from analysis import results_store
+from analysis import figure_style, results_store
 from etl.common import DEFAULT_DB, ROOT, connect
 from pipeline_logs import run_id as new_run_id
 
@@ -88,6 +88,7 @@ def heatmaps(rows, out_dir=FIGURES):
     import matplotlib.pyplot as plt
     import seaborn as sns
 
+    figure_style.use_thai_font()
     out_dir.mkdir(parents=True, exist_ok=True)
     frame = pd.DataFrame(rows)
     frame = frame[(frame.level == "ticker") & (frame.predictor.isin([CORE_PREDICTOR, BASELINE_PREDICTOR]))]
@@ -97,14 +98,15 @@ def heatmaps(rows, out_dir=FIGURES):
         cols = list(results_store.HORIZONS.values())
         value = part.pivot(index="ticker", columns="horizon", values="metric_value").reindex(index=order, columns=cols)
         sig = part.pivot(index="ticker", columns="horizon", values="p_value_bh").reindex(index=order, columns=cols)
-        labels = np.array([[("n/a" if np.isnan(v) else "%.3f" % v) + ("*" if s < 0.05 else "")
-                            for v, s in zip(vrow, srow)]
-                           for vrow, srow in zip(value.to_numpy(float), sig.to_numpy(float))], dtype=object)
-        fig, ax = plt.subplots(figsize=(8, 0.28 * len(order) + 2))
-        sns.heatmap(value, annot=labels, fmt="", cmap="RdBu_r", center=0, vmin=-0.3, vmax=0.3, linewidths=0.3,
-                    cbar_kws={"label": method}, ax=ax, annot_kws={"fontsize": 6})
-        ax.set_title("%s - %s correlation of %s with returns   (* = BH p < 0.05; Current Return (db column log_return) is same-hour)"
-                     % (panel, method, part.predictor.iloc[0]), fontsize=8)
+        size = part.pivot(index="ticker", columns="horizon", values="n_samples").reindex(index=order, columns=cols)
+        labels = figure_style.cell_labels(value.to_numpy(float), size.to_numpy(float), sig.to_numpy(float), lambda v: "%.3f" % v)
+        fig, ax = plt.subplots(figsize=(9.5, 0.42 * len(order) + 2.6))
+        sns.heatmap(value.rename(columns={"log_return": "Current Return"}), annot=labels, fmt="", cmap=figure_style.colormap(),
+                    center=0, vmin=-0.3, vmax=0.3, linewidths=0.3, cbar_kws={"label": "%s (แดง = ติดลบ, เขียว = บวก)" % method},
+                    ax=ax, annot_kws={"fontsize": 6})
+        ax.set_title("%s - %s correlation ของ %s กับผลตอบแทน\n%s\n"
+                     "(* = BH p < 0.05; Current Return = ผลตอบแทนของชั่วโมงเดียวกัน; n = จำนวนแถว ชั่วโมง x สินทรัพย์ ที่ใช้คำนวณ)"
+                     % (panel, method, part.predictor.iloc[0], figure_style.panel_note(panel)), fontsize=8)
         ax.set_xlabel("")
         ax.set_ylabel("")
         path = out_dir / ("a1_%s_%s.png" % (panel, method))

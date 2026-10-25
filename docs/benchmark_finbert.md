@@ -60,4 +60,4 @@
 
 ## เกี่ยวข้อง
 
-`TASKS.md` D2, S0, S2 · `PROPOSAL_REVISIONS.md` R5 (สภาพแวดล้อม), G2 (วิธีแปลงคะแนน FinBERT)
+`TASKS.md` D2, S0, S2 · `docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md` ข้อ 2 (วิธีแปลงคะแนน FinBERT)

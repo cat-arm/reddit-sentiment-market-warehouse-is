@@ -15,21 +15,21 @@
 
 ```
 reddit-sentiment-market-warehouse/
-  README.md  CLAUDE.md  TASKS.md  SYSTEM_BLUEPRINT_TH.md  PROPOSAL_REVISIONS.md  CODE_STRUCTURE.md
-  requirements.txt            ✅  (+ requirements-sentiment.txt ⬜ สำหรับ torch/transformers/nltk)
+  README.md  CLAUDE.md  TASKS.md  SYSTEM_BLUEPRINT_TH.md  CODE_STRUCTURE.md
+  requirements.txt            ✅  (+ requirements-sentiment.txt ✅ torch CUDA/transformers/nltk, requirements-analysis.txt ✅ รวม pypdf)
   reddit_extract.py           ✅  7.1 นำเข้า Reddit (.zst → SQLite)
   market_fetch.py             ✅  7.2 ดึงราคา yfinance
   pipeline_status.py          ✅  รายงานสถานะ (Q0 ยังต้องแก้ให้เร็ว)
   pipeline_logs.py            ✅  log การรัน
-  configs/                    🔶  subreddits.yaml ✅, tickers.yaml ✅ · sentiment.yaml ⬜, detection.yaml ⬜
-  db/                         🔶  schema.sql (รูปที่ 2–4), indexes.sql
-  etl/                        🔶  common.py ✅, clean_text.py ✅, ticker_dict.py ✅ · ที่เหลือ ⬜ (ดูตารางข้อ 3)
-  analysis/                   ⬜  correlation, winrate, logistic, subgroup, evaluate, signals
-  dashboard/                  ✅  Streamlit 4 หน้า (หน้าแรก + 4 หน้า; data.py = ชั้น query อ่านอย่างเดียว)
-  steps/                      ✅  ตัวเรียกที่มีเลขลำดับ 00–24 (เริ่มที่ 01) ดู steps/README.md
-  scripts/                    ⬜  data_profile.py, benchmark_finbert.py (S0) ฯลฯ
-  reports/                    ⬜  สร้างตาราง/กราฟสำหรับรูปเล่มจากข้อมูลจริง
-  docs/                       ⬜  benchmark_finbert.md, คู่มือผู้ใช้ (§8.5)
+  configs/                    ✅  subreddits.yaml, tickers.yaml, sentiment.yaml, detection.yaml
+  db/                         ✅  schema.sql (รูปที่ 2–4), indexes.sql
+  etl/                        ✅  T1–T5, S1–S5, M1, P1–P4, Fact loaders (ดูตารางข้อ 3)
+  analysis/                   ✅  correlation, winrate, logistic, evaluate, signals, results_store, figure_style (สี/คำอธิบายของ heatmap)
+  dashboard/                  ✅  Streamlit หน้าแรก + 6 หน้า (หน้า 6 Hot Events = ส่วนขยาย; data.py = ชั้น query อ่านอย่างเดียว)
+  steps/                      ✅  ตัวเรียกที่มีเลขลำดับ 00–32 (เริ่มที่ 01) ดู steps/README.md
+  scripts/                    ✅  ตรวจ/ทดสอบ/สรุปผล: system_tests, dashboard_kpi_check, rule_validation(+extras), neutral_band, super_signal, make_book_tables, build_final_reports ฯลฯ
+  reports/                    —   (ใช้ scripts/make_book_tables.py แทน → output/tables, output/figures/book_*)
+  docs/                       ✅  benchmark_finbert.md, METHOD_DECISIONS_NOT_IN_PROPOSAL.md, USER_MANUAL_TH.md (§8.5)
   tests/                      ✅  มี 4 ไฟล์ (เสีย 9/18 บน Windows) + 1 ไฟล์ว่าง
   old_code/                   —   MVP เก่า อ้างอิงเท่านั้น (gitignored)
   data/  output/              —   ข้อมูล/ผลลัพธ์ (gitignored)
@@ -53,7 +53,18 @@ reddit-sentiment-market-warehouse/
 | schema / dimension | W2, W4 | `db/schema.sql`, `etl/seed_dims.py` | Dim\* ทั้ง 6, Fact ทั้ง 3 | ✅ สร้างแล้ว 2026-10-10 (Fact ของ price/sentiment ยังว่าง) |
 | 7.3 วัดความเร็ว FinBERT | S0 | `scripts/benchmark_finbert.py` | `docs/benchmark_finbert.md`, `output/benchmark_finbert.json` | ✅ |
 | 7.3 VADER / FinBERT | S1, S2 | `etl/sentiment_vader.py`, `etl/sentiment_finbert.py` | `sentiment_vader`, `sentiment_finbert` (S4 จะรวมเป็น `sentiment_item`) | ✅ รันแล้ว 2026-10-10 |
-| 7.3 keyword + แก้ conflict | S3, S4 | `etl/resolve_sentiment.py`, `configs/sentiment.yaml` | `sentiment_item` (final_sentiment/status/method) | ✅ รันแล้ว 2026-10-10 |
+| 7.3 ย้อนดูผลของ title โพสต์แม่ (final_text 2.0) | — | `scripts/archive_sentiment_v1.py`, `scripts/compare_context_effect.py` | `*_v1`, `output/reports/context_effect.md` | ✅ 2026-10-24 |
+| 7.1 พิสูจน์รูปแบบ final_text (2 แบบ) | — | `scripts/verify_final_text_forms.py` | `output/reports/final_text_forms.md` | ✅ 2026-10-25 |
+| 8.4 ทดสอบระบบกับข้อมูลจริง (ตรรกะ + เชื่อมโยง) | Q | `scripts/system_tests.py` | `output/reports/system_tests.md` | ✅ 2026-10-25 |
+| 8.4 ทดสอบ dashboard (ตัวเลขเทียบ SQL ตรง) | Q4 | `scripts/dashboard_kpi_check.py` (step 30), `tests/test_dashboard_smoke.py` | `output/reports/dashboard_kpi_check.md` | ✅ 2026-10-25 |
+| ส่วนขยาย: หน้า Hot Events (ชั่วโมงคึกคัก + ช่วงความเชื่อมั่น) | D6 | `dashboard/pages/6_Hot_Events.py`, `dashboard.data.hot_events` | — | ✅ 2026-10-25 |
+| 7.4 ส่วนขยาย: เกณฑ์ที่เข้มขึ้น super quality / super spike | — | `scripts/super_signal_sensitivity.py` (step 27) | `output/reports/super_signal_sensitivity.md/.csv` | ✅ 2026-10-25 |
+| 7.6 ส่วนขยาย: ความแม่นของเกณฑ์ Z-score × ความรู้สึก (กริด) | — | `scripts/z_sentiment_grid.py` (step 32) | `output/reports/z_sentiment_grid.md/.csv` | ✅ 2026-10-25 |
+| สรุปเล่ม: ส่วนที่ทำเกิน proposal / การทดสอบและสมมติฐาน / สรุปผลสุดท้าย | — | `scripts/build_final_reports.py` (step 28) | `output/reports/final/1_*.md, 2_*.md, 3_*.md` | ✅ 2026-10-25 |
+| รูป A1/A2: สีแดง-เขียว + n ทุกช่อง + คำอธิบาย panel | A1, A2 | `analysis/figure_style.py` (ใช้โดย `analysis/correlation.py`, `analysis/winrate.py`) | `output/figures/a1_*.png`, `a2_*.png` | ✅ 2026-10-25 |
+| 7.3 keyword + แก้ conflict | S3, S4 | `etl/resolve_sentiment.py`, `configs/sentiment.yaml` | `sentiment_item` (final_sentiment/status/method + `is_ambiguous`) | ✅ รันแล้ว 2026-10-10; ปรับตาม proposal ฉบับอนุมัติ 2026-10-24 (`same_direction_far`, `is_ambiguous`, `--migrate`) |
+| 7.3 ตรวจเกณฑ์ neutral 0.05 เทียบ 0.10 | S5 | `scripts/neutral_band_sensitivity.py` (step 25), `scripts/rule_validation_extras.py` (step 29: ความแม่นเทียบป้าย + confusion matrix) | `output/reports/neutral_band_sensitivity.md/.csv`, `output/reports/rule_validation/band_and_confusion.md`, `output/figures/s5_confusion_matrices.png` | ✅ 2026-10-25 |
+| 7.3 ตรวจกฎรวมผลด้วยตัวอย่างติดป้ายเอง | S5 | `scripts/rule_validation.py sample/evaluate` (step 26) | `output/reports/rule_validation/` | ✅ ผู้ใช้ติดป้ายแล้ว 2026-10-25 |
 | 7.3 QA | S5 | `etl/sentiment_qa.py` | `sentiment_qa` | ✅ รันแล้ว 2026-10-10 |
 | 7.3 ซ่อมป้าย neutral band | — | `scripts/recompute_status_band.py` | แก้ `vader_status` 771 แถว | ✅ 2026-10-10 |
 | 7.4 สรุปรายชั่วโมง | P1, P2 | `etl/reddit_hourly.py`, `etl/reddit_features.py` | `reddit_hourly`, `reddit_hourly_features` | ✅ รันแล้ว 2026-10-10 |
@@ -65,10 +76,10 @@ reddit-sentiment-market-warehouse/
 | 7.5 โหลด Fact ของ 7.5 | F1 | `etl/load_fact_market_sentiment.py` | `FactMarketSentiment` (250,253 แถว) | ✅ รันแล้ว 2026-10-10 |
 | 7.6 ตรวจจับสัญญาณ | G1–G3 | `analysis/signals.py`, `configs/detection.yaml` | `signal_events`, `signal_summary`, view `v_signal_list` (= ตาราง 18) | ✅ รันแล้ว 2026-10-11 |
 | 7.5 dashboard | D0, D3, D4 | `dashboard/app.py`, `dashboard/data.py`, `dashboard/common.py`, `dashboard/pages/4_*.py`, `5_*.py` | — | ✅ รันแล้ว 2026-10-11 (เปิดด้วย `streamlit run dashboard/app.py`) |
-| ลำดับรัน + ตรวจ proposal | — | `steps/00_*.py` ถึง `24_*.py` (ตัวเรียกมีเลขลำดับ), `scripts/check_proposal_coverage.py` | `output/reports/proposal_coverage.md` | ✅ 2026-10-11 |
-| ตัวเลข/กราฟลงเล่ม | — | `scripts/data_profile.py`, `reports/make_tables.py`, `reports/make_figures.py` | `output/figures/`, `output/tables/` | ⬜ |
+| ลำดับรัน + ตรวจ proposal | — | `steps/00_*.py` ถึง `26_*.py` (ตัวเรียกมีเลขลำดับ), `scripts/check_proposal_coverage.py` | `output/reports/proposal_coverage.md` | ✅ 2026-10-11 |
+| ตัวเลข/กราฟลงเล่ม | — | `scripts/make_book_tables.py` (step 31) | `output/tables/t1..t9_*.csv`, `output/figures/book_*.png` | ✅ ร่างแรก 2026-10-25 (ผู้ใช้ปรับรูปแบบต่อ) |
 | ทดสอบ (§8.4) | Q1–Q4 | `tests/` | รายงานผลเทสต์ | บางส่วน |
-| คู่มือผู้ใช้ (§8.5) | Q5 | `docs/` | — | ⬜ |
+| คู่มือผู้ใช้ (§8.5) | Q5 | `docs/USER_MANUAL_TH.md` | — | ✅ 2026-10-25 |
 
 ## 4) ลำดับรันที่ต้องมีในเล่ม (RUNBOOK)
 
@@ -99,7 +110,7 @@ reddit-sentiment-market-warehouse/
 - [ ] ลองรันบน fixture เล็ก (1 เดือน) จากโฟลเดอร์ใหม่ได้จนจบ
 - [ ] เทสต์ผ่านบน Windows (ตอนนี้ 9/18 error จากไฟล์ SQLite ที่ไม่ปิดก่อนลบ) และมี `test_reddit_extract.py` จริง
 - [ ] ไม่มีข้อมูลดิบ/ชื่อผู้ใช้/โน้ตบุ๊กที่มีข้อความจริง ในส่วนที่แนบหรือใน git
-- [ ] ส่วนขยายนอก proposal ทุกข้อ (ดู PROPOSAL_REVISIONS.md) เขียนอธิบายไว้ในเล่ม
+- [ ] ส่วนขยายนอก proposal ทุกข้อ (ดู docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md) เขียนอธิบายไว้ในเล่ม
 
 ## 6) ไฟล์ที่มีอยู่แล้ว: เก็บ / แก้ / ลบ (ตรวจ 2026-10-09)
 

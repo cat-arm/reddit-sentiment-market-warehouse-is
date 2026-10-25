@@ -27,7 +27,7 @@ class ExtractTest(unittest.TestCase):
         self.db_path = self.tmp / "t.sqlite3"
         db = sqlite3.connect(self.db_path)
         db.execute("""CREATE TABLE reddit_content (id TEXT PRIMARY KEY, content_type TEXT, subreddit TEXT,
-            created_utc INTEGER, title TEXT, selftext TEXT, body TEXT, text_status TEXT)""")
+            created_utc INTEGER, title TEXT, selftext TEXT, body TEXT, text_status TEXT, link_id TEXT)""")
         rows = [
             ("a", "comment", "stocks", 3600, None, None, "TSLA TSLA and Tesla, also $NVDA", "available"),
             ("b", "comment", "stocks", 3700, None, None, "gold is rising", "available"),
@@ -36,7 +36,7 @@ class ExtractTest(unittest.TestCase):
              "I am a bot, and this action was performed automatically. TSLA", "available"),
             ("e", "comment", "CryptoCurrency", 4000, None, None, "doge to the moon", "available"),
         ]
-        db.executemany("INSERT INTO reddit_content VALUES (?,?,?,?,?,?,?,?)", rows)
+        db.executemany("INSERT INTO reddit_content (id, content_type, subreddit, created_utc, title, selftext, body, text_status) VALUES (?,?,?,?,?,?,?,?)", rows)
         db.commit()
         db.close()
         clean_text.process(self.db_path)

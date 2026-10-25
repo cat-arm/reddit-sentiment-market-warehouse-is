@@ -9,6 +9,17 @@ because the new text feeds VADER and FinBERT:
   * finance symbols are kept: $CASHTAGS, %, !, ?, +, -, ., prices
 No language filtering and no bot/quality filtering happen here (that is T2).
 
+Context for comments (cleaner_version 2.0, decided with the user 2026-10-24): the old MVP notebook built
+final_text = title + text for every row, and its comments carried the TITLE OF THE POST THEY ANSWER, so a bare
+"hold" under "this stock is amazing" was read as positive.  The torrent dump has no title on comments, but every
+comment has link_id = id of its post, so:
+    submission  final_text = title + selftext
+    comment     final_text = title of the post it answers + body of the comment   (body only if the post is unknown)
+`own_text` keeps what the author of the row wrote (comment body / submission title+selftext).  T2 (bot, too short,
+language) and the keyword rule of S3 judge `own_text`, so a title can neither hide a bot reply nor make a
+one-word comment pass; VADER, FinBERT and ticker extraction read `final_text` (the context the models are given).
+A comment whose own body is empty after cleaning is not written, whatever its post title says.
+
 How to check this step later (thesis audit trail):
   * every rule is one named regex below, applied in the order listed in clean_text()
   * raw text is never modified: results go to the NEW table processed_text, reddit_content is only read
@@ -33,7 +44,7 @@ from etl.common import DEFAULT_DB, connect, subreddits
 from pipeline_logs import append_event, run_id
 
 # Bump this whenever ANY rule below changes; process() refuses to mix versions in one table.
-CLEANER_VERSION = "1.0"
+CLEANER_VERSION = "2.0"
 
 # --- cleaning rules (each one is explained so the thesis can cite it) ---
 
@@ -91,12 +102,20 @@ def clean_text(text):
     return _SPACES.sub(" ", text).strip()
 
 
-def build_final_text(content_type, title, selftext, body):
-    """Comments use `body`; submissions use `title + selftext` (a link post has the title only)."""
+def build_texts(content_type, title, selftext, body, parent_title=""):
+    """(final_text, own_text) for one raw row; `parent_title` is the already-cleaned title of the post a comment
+    answers.  Submissions: title + selftext (a link post has the title only).  Comments: own = body,
+    final = parent title + body, and nothing at all when the body itself is empty."""
     if content_type == "comment":
-        return clean_text(body)
+        own = clean_text(body)
+        return (" ".join(part for part in (parent_title, own) if part) if own else ""), own
     selftext = "" if (selftext or "").strip().lower() in _PLACEHOLDERS else selftext
-    return clean_text(" ".join(part for part in (title, selftext) if part))
+    own = clean_text(" ".join(part for part in (title, selftext) if part))
+    return own, own
+
+
+def build_final_text(content_type, title, selftext, body, parent_title=""):
+    return build_texts(content_type, title, selftext, body, parent_title)[0]
 
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS processed_text (
@@ -105,11 +124,20 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS processed_text (
     content_type TEXT NOT NULL,
     subreddit TEXT NOT NULL,
     created_utc INTEGER,
-    final_text TEXT NOT NULL,
+    final_text TEXT NOT NULL,               -- what VADER / FinBERT read (comments: post title + comment body)
+    own_text TEXT NOT NULL,                 -- what the author of this row wrote (T2 and the S3 keywords use it)
     char_len INTEGER NOT NULL,
     token_len INTEGER NOT NULL,             -- whitespace-separated words, not model tokens
     cleaned_at TEXT NOT NULL,
     cleaner_version TEXT NOT NULL)"""
+
+
+def post_titles(db, names):
+    """{post id (as in comments' link_id): cleaned title} for the in-scope submissions."""
+    marks = ",".join("?" * len(names))
+    return {post_id: clean_text(title) for post_id, title in db.execute(
+        "SELECT id, title FROM reddit_content WHERE content_type = 'submission' AND title IS NOT NULL "
+        "AND subreddit IN (%s)" % marks, names)}
 
 
 def process(db_path=DEFAULT_DB, window=100_000, limit_rows=None, rebuild=False):
@@ -127,9 +155,10 @@ def process(db_path=DEFAULT_DB, window=100_000, limit_rows=None, rebuild=False):
 
 def _process(db, window, limit_rows, rebuild):
     names = subreddits()                      # the 6 communities, from config (not hard-coded)
+    if rebuild:                               # the table layout changed in 2.0, so drop it instead of emptying it
+        db.execute("DROP VIEW IF EXISTS filtered_text")
+        db.execute("DROP TABLE IF EXISTS processed_text")
     db.execute(SCHEMA)
-    if rebuild:
-        db.execute("DELETE FROM processed_text")
     # Safety: never mix rows made by different cleaner versions in the same table.
     other = db.execute("SELECT DISTINCT cleaner_version FROM processed_text WHERE cleaner_version != ?",
                        (CLEANER_VERSION,)).fetchall()
@@ -147,23 +176,26 @@ def _process(db, window, limit_rows, rebuild):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
     this_run = run_id()
     append_event(db, "clean_text_start", run_id=this_run, version=CLEANER_VERSION, resume_from=done, last_rowid=last)
-    totals = {"read": 0, "written": 0, "empty": 0}
+    totals = {"read": 0, "written": 0, "empty": 0, "comments_with_post_title": 0}
+    titles = post_titles(db, names)           # post id -> cleaned title, for the comments' context
     started = time.time()
     # Work in windows of rowids (not OFFSET paging) so each batch is a fast index range read.
     while done < last:
         upper = min(done + window, last)
         rows = db.execute(
-            "SELECT rowid, id, content_type, subreddit, created_utc, title, selftext, body FROM reddit_content "
+            "SELECT rowid, id, content_type, subreddit, created_utc, title, selftext, body, link_id FROM reddit_content "
             "WHERE rowid > ? AND rowid <= ? AND text_status = 'available' AND subreddit IN (%s)" % marks,
             (done, upper) + names).fetchall()
         out = []
-        for rowid, content_id, ctype, sub, created, title, selftext, body in rows:
-            text = build_final_text(ctype, title, selftext, body)
+        for rowid, content_id, ctype, sub, created, title, selftext, body, link_id in rows:
+            parent = titles.get(link_id, "") if ctype == "comment" else ""
+            text, own = build_texts(ctype, title, selftext, body, parent)
             if text:                           # skip rows that end up empty after cleaning
-                out.append((rowid, content_id, ctype, sub, created, text, len(text), len(text.split()),
+                totals["comments_with_post_title"] += bool(parent)
+                out.append((rowid, content_id, ctype, sub, created, text, own, len(text), len(text.split()),
                             now, CLEANER_VERSION))
         # INSERT OR IGNORE: if a crash left a half-written batch, re-running it cannot create duplicates.
-        db.executemany("INSERT OR IGNORE INTO processed_text VALUES (?,?,?,?,?,?,?,?,?,?)", out)
+        db.executemany("INSERT OR IGNORE INTO processed_text VALUES (?,?,?,?,?,?,?,?,?,?,?)", out)
         db.commit()
         done = upper
         totals["read"] += len(rows)

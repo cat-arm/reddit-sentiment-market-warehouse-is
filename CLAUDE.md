@@ -4,7 +4,7 @@
 
 ## เอกสารที่ต้องอ่าน (เรียงตามอำนาจ)
 
-1. `data/Wait_for_approve_Proposal_6782094726_Rithipong_Leanghirunkun_rev1.pdf` — **source of truth** ของ requirement (ฉบับแก้ล่าสุด; ถ้าขัดกับไฟล์อื่น ให้ยึด proposal). ไฟล์ proposal ฉบับเก่าและ `PROPOSAL_REVISIONS.md` ถูกลบแล้ว (ผู้ใช้ลบเองหลังแก้ proposal)
+1. `data/Proposal_6782094726_Rithipong_Leanghirunkun.pdf` — **source of truth** ของ requirement (**ฉบับที่ได้รับอนุมัติแล้ว**, 58 หน้า; ถ้าขัดกับไฟล์อื่น ให้ยึด proposal). ไฟล์ `Wait_for_approve_…rev1/rev2.pdf` ถูกลบแล้ว; เอกสารช่วยแก้ proposal (`PROPOSAL_REVISIONS.md`, `PROPOSAL_EDIT_GUIDE.md`, `COVER_SHEET_ADDITIONS.md`) ผู้ใช้สั่งลบแล้ว 2026-10-24 — เหตุผลของส่วนที่ proposal ไม่ได้ระบุอยู่ที่ `docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md`
 2. `docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md` — วิธีที่เลือกเองในจุดที่ proposal ไม่ได้ระบุ (7 ข้อ) + สถานะโค้ด
 3. `TASKS.md` — งานระดับลงมือทำ (รหัส T/S/M/P/A/G/D/Q/W), สถานะข้อมูลจริง, "ผลการเคาะล่าสุด", กับดัก (§13)
 4. `SYSTEM_BLUEPRINT_TH.md` — สถาปัตยกรรม, time alignment, leakage policy
@@ -35,11 +35,13 @@ python -m unittest discover -s tests                 # ห้ามใส่ -t 
 ```
 
 - venv ใช้ Python 3.14 (README บอก 3.9+) — แพ็กเกจที่ต้อง wheel (torch ฯลฯ) ตรวจความเข้ากันได้ก่อน
-- **เทสต์เดิม: 18 ตัว error 9 ตัว** ทั้งหมดเป็น `PermissionError [WinError 32]` ตอนลบโฟลเดอร์ชั่วคราว (ไฟล์ SQLite ในเทสต์ยังไม่ปิดก่อนลบ) — ปัญหาเฉพาะ Windows ของตัวเทสต์ ไม่ใช่ตรรกะ; `tests/test_reddit_extract.py` ว่างเปล่า
+- **เทสต์: 154 ตัวผ่านทั้งหมด (2026-10-25)** — เดิม error 9 ตัวเป็น `PermissionError [WinError 32]` เพราะเทสต์ไม่ปิดไฟล์ SQLite ก่อนลบโฟลเดอร์ชั่วคราว แก้แล้วด้วย `closing`/`committing` ในเทสต์; `tests/test_reddit_extract.py` ว่างเปล่า
 - เครื่อง: Windows 11 (PC ส่วนตัว ไม่ใช่เครื่ององค์กร), RTX 5070 (12 GB), RAM 32 GB, ดิสก์ C: ว่าง ~350 GB
 - **Smart App Control: ผู้ใช้ปิดเองแล้ว (2026-10-09)** เพราะมันบล็อก `torch\lib\c10.dll` (`WinError 4551`); หลังปิด `import torch` ใช้ได้และเห็น RTX 5070 (`torch 2.11.0+cu128`, capability 12.0) — ถ้าเจอ `WinError 4551` กับไลบรารีอื่นอีก **ห้ามหลบ/ปิดนโยบายความปลอดภัยเอง** ให้แจ้งผู้ใช้ตัดสินใจ
 - แพ็กเกจที่ติดตั้งเพิ่มใน venv แล้ว: `torch`, `transformers` (ยังไม่ได้เพิ่มลง `requirements*.txt`); ไฟล์ wheel ของ torch เก็บไว้ที่ scratchpad (`...\scratchpad\wheels\`)
 - pip บน Windows: ติดตั้งไฟล์ใหญ่ (torch ~2.8 GB) ตรง ๆ อาจล้มด้วย `WinError 32` (Defender ล็อกไฟล์ชั่วคราว) → ใช้ `pip download -d <โฟลเดอร์>` ก่อน แล้ว `pip install <ไฟล์.whl>`; **อย่าเชื่อ exit code ของคำสั่งที่ต่อท่อกับ `tail`** — ตรวจด้วย `import` จริง
+
+**`final_text` ของคอมเมนต์ = title ของโพสต์แม่ + body คอมเมนต์** (cleaner_version 2.0, เคาะ 2026-10-24; รุ่นแรกที่ใช้ body อย่างเดียวผิด ไม่ตรงงานเก่า) — `own_text` คือสิ่งที่คนเขียนเอง ใช้ใน T2 และคำสำคัญ S3; อย่าย้อนกลับไปใช้ body อย่างเดียว
 
 ## ลำดับรัน
 
@@ -48,6 +50,8 @@ python -m unittest discover -s tests                 # ห้ามใส่ -t 
 ## ทุกอย่างต้องเป็นโค้ด (เพราะต้องลงรูปเล่ม)
 
 ทุกขั้นตอนของ pipeline ต้องเป็นสคริปต์ `.py` ที่รันซ้ำได้จาก command line; **ตัวเลข ตาราง กราฟที่จะลงเล่ม ต้องมาจากสคริปต์** (ไม่ใช่ query ที่รันมือแล้วจำผล); notebook ใช้สำรวจเท่านั้น. ถ้าผมคำนวณอะไรด้วยโค้ดชั่วคราวระหว่างแชท แล้วตัวเลขนั้นจะถูกใช้ต่อ ให้ย้ายเป็นสคริปต์ใน `scripts/` (ดูกติกา 6 ข้อใน `CODE_STRUCTURE.md`) และเมื่อเพิ่ม/เปลี่ยนสคริปต์ ให้อัปเดตตารางแผนที่ใน `CODE_STRUCTURE.md` ด้วย
+
+ไฟล์ผลลัพธ์ที่สคริปต์สร้าง (รายงาน .md, ตาราง .csv) ต้องขึ้นต้นด้วยคำอธิบายว่าไฟล์นี้คืออะไร + วันเวลาที่สร้าง + สคริปต์ + คำสั่งสร้างใหม่ — ใช้ `etl.common.file_header(...)`; สิ่งที่ผู้ใช้เห็น (UI/กราฟ/รายงาน) เรียก `log_return` ว่า **Current Return** (ชื่อคอลัมน์ในฐานข้อมูลคงเดิม)
 
 ## สไตล์โค้ด
 

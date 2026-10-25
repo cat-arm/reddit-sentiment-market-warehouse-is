@@ -2,7 +2,7 @@
 
 คลังข้อมูล (data warehouse) + แดชบอร์ด ที่เอา **ความรู้สึกของข้อความใน Reddit** มาเทียบกับ **ราคาหลักทรัพย์ 34 ตัว (รายชั่วโมง)** เพื่อดูว่าความรู้สึกบน Reddit มีความสัมพันธ์กับราคาในอนาคตหรือไม่
 
-โปรเจกต์วิทยานิพนธ์/โครงการพิเศษ จุฬาฯ MSc BIT — requirement ทั้งหมดอิงตัว proposal (`data/…rev1.pdf`)
+โปรเจกต์วิทยานิพนธ์/โครงการพิเศษ จุฬาฯ MSc BIT — requirement ทั้งหมดอิงตัว proposal (`data/Proposal_6782094726_Rithipong_Leanghirunkun.pdf`)
 
 > ข้อควรรู้ก่อนเริ่ม
 > - ใช้ข้อมูล **ย้อนหลัง** ไม่ใช่ real-time
@@ -34,7 +34,7 @@
                          ⑦ วิเคราะห์: Correlation · Win Rate · Logistic Regression
                                                 │
                                                 ▼
-                         ⑧ ตรวจจับสัญญาณ  →  ⑨ Dashboard (Streamlit 5 หน้า)
+                         ⑧ ตรวจจับสัญญาณ  →  ⑨ Dashboard (Streamlit 6 หน้า)
 ```
 
 **ขอบเขตที่ล็อกไว้ (อยู่ใน `configs/` ที่เดียว)**
@@ -191,7 +191,7 @@ python steps/01_extract_reddit.py fetch 2024-10 --db output/reddit.sqlite3
 ```
 คำสั่งนี้ทำ 3 อย่างต่อกัน:
 1. หาไฟล์ `.torrent` ของเดือนนั้นใน `data/` (ค้นจากข้อความ "from 2024-10" ในไฟล์) แล้วสั่ง `aria2c` โหลดมา
-2. อ่านทั้ง `RS_` และ `RC_` → เลือกเฉพาะ 9 ชุมชน → ใส่ตาราง `reddit_content`
+2. อ่านทั้ง `RS_` และ `RC_` → เลือก 9 ชุมชนที่ importer ดึง (6 ชุมชนที่ใช้วิเคราะห์ + Bitcoin, Daytrading, dogecoin ที่เก็บไว้เฉยๆ ไม่ใช้) → ใส่ตาราง `reddit_content`
 3. **ลบไฟล์ `.zst` ทิ้ง** เพื่อประหยัดดิสก์ (ใส่ `--keep-archive` ถ้าไม่อยากลบ)
 
 > ⚠️ เพราะข้อ 3 ไฟล์ `.zst` ของเดือนที่นำเข้าแล้วจึงหายไปหมด — **`reddit.sqlite3` คือสำเนาเดียวของข้อมูลดิบ** อย่าลบไฟล์นี้ และอย่าสั่ง DELETE/UPDATE/DROP/VACUUM ตารางดิบ
@@ -573,7 +573,7 @@ configs/    ค่าตั้งทั้งหมด (ชุมชน, ticker,
 db/         schema.sql (star schema)
 etl/        ขั้น 03–15, 20, 21 (ล้างข้อความ → sentiment → รายชั่วโมง → fact)
 analysis/   ขั้น 16–19, 22 (correlation, win rate, logistic, evaluate, signals)
-dashboard/  Streamlit 5 หน้า (data.py = ชั้น query อ่านอย่างเดียว)
+dashboard/  Streamlit 6 หน้า (data.py = ชั้น query อ่านอย่างเดียว)
 steps/      ตัวเรียกมีเลขลำดับ 00–24 (+ steps/README.md)
 scripts/    benchmark FinBERT, ตรวจ proposal coverage, สคริปต์ซ่อม/ตรวจ
 tests/      unittest
@@ -624,7 +624,7 @@ python -m unittest discover -s tests -v
 
 ## 11) เอกสารอื่นในโปรเจกต์ (เรียงตามอำนาจ)
 
-1. `data/Wait_for_approve_Proposal_…_rev1.pdf` — **source of truth** ของ requirement ถ้าขัดกับไฟล์อื่นให้ยึด proposal
+1. `data/Proposal_6782094726_Rithipong_Leanghirunkun.pdf` — **source of truth** ของ requirement ถ้าขัดกับไฟล์อื่นให้ยึด proposal
 2. `docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md` — วิธีที่เลือกเองในจุดที่ proposal ไม่ได้ระบุ (7 ข้อ) พร้อมข้อความพร้อมวางในรายงาน — ส่วนที่ทำเกิน proposal ติดป้าย "ส่วนขยาย"
 3. `TASKS.md` — รายการงานละเอียด สถานะข้อมูลจริง และกับดัก
 4. `SYSTEM_BLUEPRINT_TH.md` — สถาปัตยกรรม, time alignment, leakage policy

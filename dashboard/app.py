@@ -1,11 +1,12 @@
 """Home page of the dashboard.  Start with:   streamlit run dashboard/app.py
 
-Five content pages live in dashboard/pages/ (the sidebar menu lists them):
+Six content pages live in dashboard/pages/ (the sidebar menu lists them):
   1 Reddit Volume          proposal 7.1-1   all posts + comments per hour and its Z-score (no asset filter)
   2 Ticker Mentions        proposal 7.1-2   how often each asset is mentioned, mention rate
   3 Price and Return       proposal 7.2-1   close, volume, future returns, volatility
   4 Market and Sentiment   proposal 7.5-1   price next to Reddit sentiment, ratios, majority status
   5 Ranking and Signals    proposal 7.5-2   win-rate ranking + adjustable signal thresholds (7.6)
+  6 Hot Events             EXTENSION        busy + clearly directional hours and what the price did next (not a signal)
 """
 
 import datetime as dt

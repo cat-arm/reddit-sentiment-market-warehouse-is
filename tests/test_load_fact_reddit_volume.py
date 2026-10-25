@@ -47,7 +47,7 @@ class FactTest(unittest.TestCase):
         self.db_path = self.tmp / "t.sqlite3"
         db = sqlite3.connect(self.db_path)
         db.execute("""CREATE TABLE reddit_content (id TEXT PRIMARY KEY, content_type TEXT, subreddit TEXT,
-            created_utc INTEGER, title TEXT, selftext TEXT, body TEXT, text_status TEXT)""")
+            created_utc INTEGER, title TEXT, selftext TEXT, body TEXT, text_status TEXT, link_id TEXT)""")
         rows = [
             # hour 0, stocks comments: two texts mention TSLA (3 + 1 mentions), one also NVDA
             ("a", "comment", "stocks", HOUR + 10, None, None, "TSLA TSLA and Tesla, $NVDA", "available"),
@@ -57,7 +57,7 @@ class FactTest(unittest.TestCase):
             # no mention at all
             ("d", "comment", "stocks", HOUR + 20, None, None, "nothing here", "available"),
         ]
-        db.executemany("INSERT INTO reddit_content VALUES (?,?,?,?,?,?,?,?)", rows)
+        db.executemany("INSERT INTO reddit_content (id, content_type, subreddit, created_utc, title, selftext, body, text_status) VALUES (?,?,?,?,?,?,?,?)", rows)
         db.commit()
         db.close()
         clean_text.process(self.db_path)

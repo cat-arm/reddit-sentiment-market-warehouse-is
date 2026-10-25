@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from analysis import results_store
+from analysis import figure_style, results_store
 from analysis.correlation import FIGURES, groups
 from etl.common import DEFAULT_DB, connect
 from pipeline_logs import run_id as new_run_id
@@ -99,6 +99,7 @@ def heatmaps(rows, out_dir=FIGURES):
     import matplotlib.pyplot as plt
     import seaborn as sns
 
+    figure_style.use_thai_font()
     out_dir.mkdir(parents=True, exist_ok=True)
     frame = pd.DataFrame(rows)
     frame = frame[(frame.level == "ticker") & (frame.metric_name == "winrate") & (frame.predictor != PRED_MAJORITY)]
@@ -108,13 +109,14 @@ def heatmaps(rows, out_dir=FIGURES):
         order = part.drop_duplicates("ticker").sort_values(["big_group", "ticker"])["ticker"].tolist()
         value = part.pivot(index="ticker", columns="horizon", values="metric_value").reindex(index=order, columns=cols)
         sig = part.pivot(index="ticker", columns="horizon", values="p_value_bh").reindex(index=order, columns=cols)
-        labels = np.array([[("n/a" if np.isnan(v) else "%.1f" % (100 * v)) + ("*" if s < 0.05 else "")
-                            for v, s in zip(vrow, srow)]
-                           for vrow, srow in zip(value.to_numpy(float), sig.to_numpy(float))], dtype=object)
-        fig, ax = plt.subplots(figsize=(6.5, 0.28 * len(order) + 2))
-        sns.heatmap(value, annot=labels, fmt="", cmap="RdBu_r", center=0.5, vmin=0.45, vmax=0.55, linewidths=0.3,
-                    cbar_kws={"label": "win rate"}, ax=ax, annot_kws={"fontsize": 6})
-        ax.set_title("%s - win rate %% (%s)   * = BH p < 0.05 vs baseline" % (panel, part.predictor.iloc[0]), fontsize=8)
+        size = part.pivot(index="ticker", columns="horizon", values="n_samples").reindex(index=order, columns=cols)
+        labels = figure_style.cell_labels(value.to_numpy(float), size.to_numpy(float), sig.to_numpy(float), lambda v: "%.1f" % (100 * v))
+        fig, ax = plt.subplots(figsize=(8, 0.42 * len(order) + 2.6))
+        sns.heatmap(value, annot=labels, fmt="", cmap=figure_style.colormap(), center=0.5, vmin=0.45, vmax=0.55, linewidths=0.3,
+                    cbar_kws={"label": "win rate (แดง < 50%, เขียว > 50%; สีเต็มที่ 45% / 55%)"}, ax=ax, annot_kws={"fontsize": 6})
+        ax.set_title("%s - win rate %% (%s)\n%s\n"
+                     "(* = BH p < 0.05 เทียบ baseline; n = จำนวนครั้งที่มีสัญญาณและราคาขยับ)"
+                     % (panel, part.predictor.iloc[0], figure_style.panel_note(panel)), fontsize=8)
         ax.set_xlabel("")
         ax.set_ylabel("")
         path = out_dir / ("a2_%s_winrate.png" % panel)

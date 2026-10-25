@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import json
 import sqlite3
 import tempfile
@@ -7,6 +8,16 @@ from pathlib import Path
 import zstandard as zstd
 from pipeline_logs import export_report
 from reddit_extract import database, import_file
+
+
+@contextmanager
+def committing(connection):
+    """Commit and then CLOSE the connection (sqlite3's own `with` only commits; an open file cannot be deleted on Windows)."""
+    try:
+        yield connection
+        connection.commit()
+    finally:
+        connection.close()
 
 
 class PipelineLogTest(unittest.TestCase):
@@ -19,7 +30,7 @@ class PipelineLogTest(unittest.TestCase):
             path.write_bytes(zstd.ZstdCompressor().compress(
                 ("\n".join(json.dumps(r) for r in records) + "\n").encode()))
             db_path = root / "test.sqlite3"
-            with database(db_path) as db:
+            with committing(database(db_path)) as db:
                 self.assertEqual(import_file(db, path, "submissions")["inserted"], 1)
                 self.assertEqual(import_file(db, path, "submissions")["inserted"], 0)
                 with self.assertRaises(FileNotFoundError):

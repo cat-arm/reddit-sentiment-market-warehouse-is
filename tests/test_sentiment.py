@@ -34,7 +34,7 @@ class ScoringTest(unittest.TestCase):
         self.db_path = self.tmp / "t.sqlite3"
         db = sqlite3.connect(self.db_path)
         db.execute("""CREATE TABLE reddit_content (id TEXT PRIMARY KEY, content_type TEXT, subreddit TEXT,
-            created_utc INTEGER, title TEXT, selftext TEXT, body TEXT, text_status TEXT)""")
+            created_utc INTEGER, title TEXT, selftext TEXT, body TEXT, text_status TEXT, link_id TEXT)""")
         rows = [
             ("a", "comment", "stocks", 3600, None, None, "This is GREAT, TSLA to the moon", "available"),
             ("b", "comment", "stocks", 3700, None, None, "Terrible, the market will crash and I am sad", "available"),
@@ -42,7 +42,7 @@ class ScoringTest(unittest.TestCase):
              "available"),
             ("d", "comment", "stocks", 3900, None, None, "SPY closed at 450", "available"),
         ]
-        db.executemany("INSERT INTO reddit_content VALUES (?,?,?,?,?,?,?,?)", rows)
+        db.executemany("INSERT INTO reddit_content (id, content_type, subreddit, created_utc, title, selftext, body, text_status) VALUES (?,?,?,?,?,?,?,?)", rows)
         db.commit()
         db.close()
         clean_text.process(self.db_path)

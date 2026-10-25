@@ -18,9 +18,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from etl.common import DEFAULT_DB, connect  # noqa: E402
+from etl.common import DEFAULT_DB, connect, file_header  # noqa: E402
 
-PROPOSAL = ROOT / "data" / "Wait_for_approve_Proposal_6782094726_Rithipong_Leanghirunkun_rev1.pdf"
+PROPOSAL = ROOT / "data" / "Proposal_6782094726_Rithipong_Leanghirunkun.pdf"
 DEFAULT_OUT = ROOT / "output" / "reports" / "proposal_coverage.md"
 
 # proposal table number -> (title, kind, database tables that should hold the columns)
@@ -34,7 +34,7 @@ TABLES = {
 }
 # proposal name -> names it has in the database (names the proposal writes in another case or style)
 ALIASES = {"timestamp": ["timestamp", "hour_utc"], "datetime": ["created_utc"], "Ticker": ["ticker"],
-           "Big_Group": ["big_group"], "Reddit_volume": ["reddit_volume"], "Reddit_volume_zscore": ["reddit_volume_zscore"]}
+           "Big_Group": ["big_group"], "current_return": ["current_return", "log_return"], "Reddit_volume": ["reddit_volume"], "Reddit_volume_zscore": ["reddit_volume_zscore"]}
 
 # KPI tables 4, 8, 15: (table, KPI, labels searched in the dashboard code, where the formula is computed)
 KPIS = [
@@ -70,7 +70,7 @@ def names_in(body, kind):
     if kind == "measure":                  # "3 future_return_1h Future Return 1h (%) ..."
         found = re.findall(r"^\d+\s+([A-Za-z][A-Za-z0-9_]*)\s", body, re.M)
     else:                                  # "sentiment_mean ทศนิยม (Float) ..."
-        found = re.findall(r"^([A-Za-z][A-Za-z0-9_]*)\s+(?:วันเวลา|ข้อความ|ทศนิยม|จำนวนเต็ม)", body, re.M)
+        found = re.findall(r"^([A-Za-z][A-Za-z0-9_]*)\s+(?:วันเวลา|ข้อความ|ทศนิยม|จ\s?ำ?\s?า?นวนเต็ม)", body, re.M)
     seen = []
     for name in found:
         if name not in seen:
@@ -144,7 +144,9 @@ def main(argv=None):
     text = proposal_text()
     db = connect(args.db, readonly=True)
     report = ["# Proposal coverage: ฐานข้อมูลและ dashboard ตอบ proposal ครบหรือไม่", "",
-              "สร้างจาก `scripts/check_proposal_coverage.py` (อ่าน proposal rev1 + ฐานข้อมูลแบบอ่านอย่างเดียว)", ""]
+              *file_header("รายงานตรวจว่าตารางและตัวแปรในฐานข้อมูล กับตัวชี้วัดบน dashboard ตรงกับตารางค่าวัด/KPI ใน proposal ครบหรือไม่",
+                           "scripts/check_proposal_coverage.py", "python steps/24_check_proposal_coverage.py",
+                           "proposal ฉบับอนุมัติ (data/Proposal_6782094726_Rithipong_Leanghirunkun.pdf) + output/reddit.sqlite3 อ่านอย่างเดียว"), ""]
     problems = []
     for number, spec in TABLES.items():
         block, names, missing = check_table(db, number, spec, text)

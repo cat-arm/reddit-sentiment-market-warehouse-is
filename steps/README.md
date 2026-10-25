@@ -31,9 +31,21 @@
 | 22 | `22_detect_signals.py` | ตรวจจับสัญญาณ -> signal_events, signal_summary, v_signal_list (G) | `analysis/signals.py` |
 | 23 | `23_run_dashboard.py` | เปิด Streamlit dashboard | `dashboard/app.py` |
 | 24 | `24_check_proposal_coverage.py` | ตรวจว่า DB + dashboard ตอบ proposal ครบ -> output/reports/proposal_coverage.md | `scripts/check_proposal_coverage.py` |
+| 25 | `25_neutral_band_sensitivity.py` | เทียบสัดส่วนความรู้สึกที่เกณฑ์ neutral 0.05 กับ 0.10 -> output/reports/neutral_band_sensitivity.md (S5) | `scripts/neutral_band_sensitivity.py` |
+| 26 | `26_rule_validation.py` | `sample` สุ่มข้อความให้ติดป้ายเอง / `evaluate` เทียบความแม่น VADER, FinBERT, รวมผล (S5) | `scripts/rule_validation.py` |
+| 27 | `27_super_signal_sensitivity.py` | (ส่วนขยาย) ทดสอบ panel ที่เข้มขึ้น super quality ≥ 0.50 / super spike z > 2.0 -> output/reports/super_signal_sensitivity.md | `scripts/super_signal_sensitivity.py` |
+| 28 | `28_build_final_reports.py` | สร้างเอกสารสรุป 3 ไฟล์ (ส่วนที่เกิน proposal / การทดสอบและสมมติฐาน / สรุปผลสุดท้าย) -> output/reports/final/ | `scripts/build_final_reports.py` |
+| 29 | `29_rule_validation_extras.py` | ความแม่นที่เกณฑ์ neutral ±0.10 เทียบป้ายที่ติดเอง + confusion matrix (S5) -> output/reports/rule_validation/band_and_confusion.md | `scripts/rule_validation_extras.py` |
+| 30 | `30_dashboard_kpi_check.py` | ทดสอบ dashboard: ตัวเลขบนหน้าจอเทียบ SQL ตรง (8.4) -> output/reports/dashboard_kpi_check.md | `scripts/dashboard_kpi_check.py` |
+| 31 | `31_make_book_tables.py` | ตารางและกราฟสำหรับลงเล่ม -> output/tables/*.csv, output/figures/book_*.png | `scripts/make_book_tables.py` |
+| 32 | `32_z_sentiment_grid.py` | (ส่วนขยาย) win rate เมื่อ Z-score 1.5/2.0/2.5 × |ความรู้สึก| 0.05/0.30/0.50/0.80 แยก explore/hold-out -> output/reports/z_sentiment_grid.md | `scripts/z_sentiment_grid.py` |
+| 27 | `27_super_signal_sensitivity.py` | (ส่วนขยาย) ทดสอบ panel ที่เข้มขึ้น super quality ≥ 0.50 / super spike z > 2.0 -> output/reports/super_signal_sensitivity.md | `scripts/super_signal_sensitivity.py` |
+| 28 | `28_build_final_reports.py` | สร้างเอกสารสรุป 3 ไฟล์ -> output/reports/final/ | `scripts/build_final_reports.py` |
 
 หมายเหตุ
 - 21 ต้องรันหลัง 17 (ดึง win rate จาก analysis_results) และ 20 รันหลัง 06 (ใช้ ticker_mentions)
 - 01 ใช้ `fetch <เดือน>` (ต้องมี aria2c) หรือ `import`; ดู `python steps/01_extract_reddit.py --help`
 - 08 ใช้ GPU และนานหลายชั่วโมงกับข้อมูลทั้งหมด
-- `24` อ่านฐานข้อมูลอย่างเดียว
+- `24`–`28` อ่านฐานข้อมูลอย่างเดียว; `26` ต้องกรอกป้ายในไฟล์ CSV เองระหว่าง `sample` กับ `evaluate`
+- 27 (ส่วนขยาย) และ 28 ต้องรันหลัง 15–19 และ 22 (ใช้ตาราง panels / analysis_results / signal_summary); 28 ยังอ่านรายงานของ 25, 26, 27 และ `output/reports/system_tests.md`
+- `28` ต้องรันหลัง 25–27, 29, 30 (อ่านรายงานของขั้นเหล่านั้น); `29` ต้องรันหลังกรอกป้ายและรัน `26 evaluate`

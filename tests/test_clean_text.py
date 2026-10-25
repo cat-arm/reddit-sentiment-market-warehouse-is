@@ -76,8 +76,20 @@ class CleanTextTest(unittest.TestCase):
         self.assertEqual(ct.build_final_text("submission", "Link post", "", None), "Link post")
         self.assertEqual(ct.build_final_text("submission", "Title stays", "[removed]", None), "Title stays")
 
-    def test_comment_uses_body_only(self):
+    def test_comment_without_known_post_uses_body_only(self):
         self.assertEqual(ct.build_final_text("comment", "ignored", "ignored", "Buy $AAPL!"), "Buy $AAPL!")
+
+    def test_comment_gets_the_title_of_its_post_as_context(self):
+        self.assertEqual(ct.build_texts("comment", None, None, "hold", "This stock is amazing"),
+                         ("This stock is amazing hold", "hold"))
+
+    def test_comment_with_empty_body_is_empty_even_if_the_post_has_a_title(self):
+        self.assertEqual(ct.build_texts("comment", None, None, "![img](emote|t5_1|2)", "This stock is amazing"),
+                         ("", ""))
+
+    def test_submission_own_text_equals_final_text(self):
+        self.assertEqual(ct.build_texts("submission", "NVDA beat", "great", None, "ignored"),
+                         ("NVDA beat great", "NVDA beat great"))
 
 
 class ProcessTest(unittest.TestCase):
@@ -85,13 +97,14 @@ class ProcessTest(unittest.TestCase):
         path = Path(root) / "test.sqlite3"
         db = sqlite3.connect(str(path))
         db.execute("""CREATE TABLE reddit_content (id TEXT PRIMARY KEY, content_type TEXT, subreddit TEXT,
-            created_utc INTEGER, title TEXT, selftext TEXT, body TEXT, text_status TEXT)""")
-        db.executemany("INSERT INTO reddit_content VALUES (?,?,?,?,?,?,?,?)", [
-            ("c1", "comment", "wallstreetbets", 100, None, None, "$GME to the moon", "available"),
-            ("c2", "comment", "Bitcoin", 101, None, None, "out of scope subreddit", "available"),
-            ("c3", "comment", "stocks", 102, None, None, "![img](emote|t5_1|2)", "available"),
-            ("c4", "comment", "stocks", 103, None, None, "[removed]", "removed"),
-            ("s1", "submission", "investing", 104, "NVDA beat", "great quarter", None, "available"),
+            created_utc INTEGER, title TEXT, selftext TEXT, body TEXT, text_status TEXT, link_id TEXT)""")
+        db.executemany("INSERT INTO reddit_content VALUES (?,?,?,?,?,?,?,?,?)", [
+            ("c1", "comment", "wallstreetbets", 100, None, None, "$GME to the moon", "available", "s1"),
+            ("c2", "comment", "Bitcoin", 101, None, None, "out of scope subreddit", "available", "s1"),
+            ("c3", "comment", "stocks", 102, None, None, "![img](emote|t5_1|2)", "available", "s1"),
+            ("c4", "comment", "stocks", 103, None, None, "[removed]", "removed", "s1"),
+            ("s1", "submission", "investing", 104, "NVDA beat", "great quarter", None, "available", None),
+            ("c5", "comment", "stocks", 105, None, None, "hold", "available", "missing_post"),
         ])
         db.commit()
         db.close()
@@ -101,17 +114,18 @@ class ProcessTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             path = self.make_db(root)
             totals = ct.process(path, window=2)
-            self.assertEqual(totals, {"read": 3, "written": 2, "empty": 1})
+            self.assertEqual(totals, {"read": 4, "written": 3, "empty": 1, "comments_with_post_title": 1})
             db = sqlite3.connect(str(path))
-            rows = db.execute("SELECT content_id, final_text, token_len, cleaner_version FROM processed_text "
+            rows = db.execute("SELECT content_id, final_text, own_text, token_len, cleaner_version FROM processed_text "
                               "ORDER BY src_rowid").fetchall()
-            self.assertEqual(rows, [("c1", "$GME to the moon", 4, ct.CLEANER_VERSION),
-                                    ("s1", "NVDA beat great quarter", 4, ct.CLEANER_VERSION)])
+            self.assertEqual(rows, [("c1", "NVDA beat $GME to the moon", "$GME to the moon", 6, ct.CLEANER_VERSION),
+                                    ("s1", "NVDA beat great quarter", "NVDA beat great quarter", 4, ct.CLEANER_VERSION),
+                                    ("c5", "hold", "hold", 1, ct.CLEANER_VERSION)])
             db.close()
             again = ct.process(path, window=2)           # nothing left to do: no duplicates
-            self.assertEqual(again, {"read": 0, "written": 0, "empty": 0})
+            self.assertEqual(again, {"read": 0, "written": 0, "empty": 0, "comments_with_post_title": 0})
             db = sqlite3.connect(str(path))
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM processed_text").fetchone()[0], 2)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM processed_text").fetchone()[0], 3)
             db.close()
 
 

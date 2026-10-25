@@ -1,6 +1,9 @@
 # S3: financial keywords behind `rule_signal` (proposal 7.3, step 2).
 # Matching is case-insensitive on whole words/phrases. A match with a negator in the 2 words before it
 # ("not bullish", "don't buy calls") is IGNORED (not flipped) - documented limitation, see etl/resolve_sentiment.py.
+# Proposal 7.3 step 3: same-direction scores that differ by more than this are not averaged; the score
+# closer to 0 is used instead (final_method = same_direction_far). A starting value, tuned in step 5.
+same_direction_max_gap: 0.50
 positive:
   - bullish
   - buy calls

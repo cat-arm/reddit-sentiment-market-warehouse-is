@@ -1,3 +1,4 @@
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -20,7 +21,7 @@ class MarketFetchTest(unittest.TestCase):
             return [(ticker, utc(start), 1., 2., 1., 1.5, 42., utc(start))]
 
         with tempfile.TemporaryDirectory() as directory:
-            with database(Path(directory) / "test.sqlite3") as db:
+            with closing(database(Path(directory) / "test.sqlite3")) as db:
                 result = run_window(db, "AAPL", start, end, retries=3, pause=0, provider=provider)
                 self.assertEqual(result[:3], ("complete", 1, 0))
                 self.assertEqual(len(calls), 2)
@@ -43,7 +44,7 @@ class MarketFetchTest(unittest.TestCase):
             return [bar(0), bar(2)]
 
         with tempfile.TemporaryDirectory() as directory:
-            with database(Path(directory) / "test.sqlite3") as db:
+            with closing(database(Path(directory) / "test.sqlite3")) as db:
                 result = run_window(db, "BTC-USD", start, end, retries=2, pause=0, provider=provider)
                 self.assertEqual(result[:3], ("complete", 3, 0))
                 self.assertIn(start + timedelta(hours=1), calls)
@@ -64,7 +65,7 @@ class MarketFetchTest(unittest.TestCase):
         start = date_arg("2024-10-01")
         end = start + timedelta(days=1)
         with tempfile.TemporaryDirectory() as directory:
-            with database(Path(directory) / "test.sqlite3") as db:
+            with closing(database(Path(directory) / "test.sqlite3")) as db:
                 db.execute("INSERT INTO market_bars VALUES (?,?,?,?,?,?,?,?)",
                            ("AAPL", utc(start), 1., 1., 1., 1., 1., utc(start)))
                 def failed(*args):
@@ -110,7 +111,7 @@ class MarketFetchTest(unittest.TestCase):
     def test_null_retry_does_not_overwrite_valid_prices(self):
         day = date_arg("2024-10-01")
         with tempfile.TemporaryDirectory() as directory:
-            with database(Path(directory) / "test.sqlite3") as db:
+            with closing(database(Path(directory) / "test.sqlite3")) as db:
                 save(db, [("ES=F", utc(day), 1., 2., 1., 1.5, 5., utc(day))])
                 save(db, [("ES=F", utc(day), None, None, None, None, 0., utc(day))])
                 self.assertEqual(db.execute("SELECT close FROM market_bars").fetchone()[0], 1.5)
@@ -120,7 +121,7 @@ class MarketFetchTest(unittest.TestCase):
         def expired(*args):
             raise ValueError("The requested range must be within the last 730 days.")
         with tempfile.TemporaryDirectory() as directory:
-            with database(Path(directory) / "test.sqlite3") as db:
+            with closing(database(Path(directory) / "test.sqlite3")) as db:
                 result = run_window(db, "BTC-USD", day, day + timedelta(days=1),
                                     retries=2, pause=0, provider=expired)
                 self.assertEqual(result[0], "unavailable")

@@ -5,6 +5,8 @@
 #   pip download torch==2.11.0 --no-deps --index-url https://download.pytorch.org/whl/cu128 -d wheels
 #   pip install wheels/torch-2.11.0+cu128-cp314-cp314-win_amd64.whl
 # Windows Smart App Control must be off, otherwise torch\lib\c10.dll is blocked (WinError 4551).
+# Check the build after installing: python -c "import torch; print(torch.__version__, torch.cuda.is_available())" must print 2.11.0+cu128 True
+# (a CPU-only torch makes steps/08 stop with 'CUDA GPU not available')
 torch==2.11.0
 transformers==5.19.0
 nltk==3.10.3

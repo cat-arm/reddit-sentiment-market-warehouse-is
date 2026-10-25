@@ -4,6 +4,7 @@
       model_status       share of positive/negative/neutral per model and for final_status
       model_agreement    VADER vs FinBERT: same_direction / both_neutral / small_conflict / hard_conflict
       final_method       how final_sentiment was produced
+      is_ambiguous       texts whose final 0.0 comes from an undecidable conflict (proposal Table 11)
       rule_signal        keyword signal distribution
       range_check        rows with a missing method or final_sentiment outside [-1, 1] (must be 0)
 Answers the management question "how consistent are VADER and FinBERT and how are conflicts resolved".
@@ -37,6 +38,7 @@ def build(db_path=DEFAULT_DB):
             "model_agreement": "SELECT %s, COUNT(*) FROM sentiment_item "
                                "WHERE vader_status IS NOT NULL AND finbert_status IS NOT NULL GROUP BY 1" % AGREEMENT,
             "final_method": "SELECT final_method, COUNT(*) FROM sentiment_item GROUP BY 1",
+            "is_ambiguous": "SELECT 'is_ambiguous=' || is_ambiguous, COUNT(*) FROM sentiment_item GROUP BY 1",
             "rule_signal": "SELECT rule_signal, COUNT(*) FROM sentiment_item GROUP BY 1",
             "range_check": "SELECT 'bad_rows', COUNT(*) FROM sentiment_item WHERE final_method = '' "
                            "OR final_sentiment < -1 OR final_sentiment > 1 OR final_sentiment IS NULL",

@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
 PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
-         "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Signals.py"]
+         "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Signals.py", "pages/6_Hot_Events.py"]
 
 
 @unittest.skipUnless(DB.exists(), "real database not available")
@@ -58,6 +58,18 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual((len(ov), round(float(ov.close.mean()), 6)), close)
         finally:
             db.close()
+
+    def test_hot_events_match_direct_sql(self):
+        from dashboard import data
+        db = sqlite3.connect("file:%s?mode=ro" % DB.as_posix(), uri=True)
+        try:
+            expected = db.execute("SELECT COUNT(*) FROM merged_hourly_panel WHERE scope='ticker' AND variant='all' AND has_reddit_data=1 "
+                                  "AND reddit_volume >= 3 AND reddit_volume_zscore_24 > 2.0 AND ABS(sentiment_mean) >= 0.5").fetchone()[0]
+        finally:
+            db.close()
+        got = data.hot_events(DB, 0, 2 ** 31, 2.0, 0.5, 3)
+        self.assertGreater(expected, 0)
+        self.assertEqual(len(got), expected)
 
     def test_on_demand_signals_equal_stored_signals(self):
         from analysis import signals

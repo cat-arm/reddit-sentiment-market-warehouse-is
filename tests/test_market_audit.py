@@ -1,3 +1,4 @@
+from contextlib import closing
 import unittest
 import sqlite3
 import tempfile
@@ -27,7 +28,7 @@ class MarketAuditTest(unittest.TestCase):
     def test_two_day_window_covers_one_day(self):
         day = date_arg("2024-10-01")
         with tempfile.TemporaryDirectory() as directory:
-            with database(Path(directory) / "test.sqlite3") as db:
+            with closing(database(Path(directory) / "test.sqlite3")) as db:
                 db.execute("INSERT INTO market_windows VALUES (?,?,?,?,?,?,?,?,?)",
                            ("BTC-USD", utc(day), utc(day.replace(day=3)),
                             "complete", 48, 0, 1, None, utc(day)))

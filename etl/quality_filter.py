@@ -29,7 +29,7 @@ from collections import Counter
 from etl.common import DEFAULT_DB, connect, subreddits
 from pipeline_logs import append_event, run_id
 
-FILTER_VERSION = "1.0"
+FILTER_VERSION = "1.1"      # 1.1: judges processed_text.own_text (what the author wrote), not the title-prefixed final_text
 
 # --- 1) bot / moderation text -------------------------------------------------------------------
 # Phrases copied from the most frequent duplicated texts found in processed_text (checked 2026-10-09:
@@ -151,7 +151,7 @@ def _process(db, window, limit_rows):
         upper = min(done + window, last)
         rejected = []
         for rowid, text in db.execute(
-                "SELECT src_rowid, final_text FROM processed_text WHERE src_rowid > ? AND src_rowid <= ?",
+                "SELECT src_rowid, own_text FROM processed_text WHERE src_rowid > ? AND src_rowid <= ?",
                 (done, upper)).fetchall():
             reason = classify(text)
             if reason:
