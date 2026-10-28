@@ -21,7 +21,7 @@ import time
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 from etl.common import DEFAULT_DB, connect, status_of
-from pipeline_logs import append_event, run_id
+from ingest.pipeline_logs import append_event, run_id
 
 SCORER_VERSION = "nltk-vader-1.0"
 

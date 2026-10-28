@@ -77,7 +77,7 @@
 ```
 reddit-sentiment-market-warehouse/
   README.md  TASKS.md  SYSTEM_BLUEPRINT_TH.md  requirements.txt
-  reddit_extract.py   market_fetch.py   pipeline_status.py   pipeline_logs.py
+  ingest/reddit_extract.py   ingest/market_fetch.py   ingest/pipeline_status.py   ingest/pipeline_logs.py
   data/       # .torrent, ไฟล์ดาวน์โหลด, proposal PDF  (gitignore)
   output/     # reddit.sqlite3 (12.76 GB), logs/, csv สรุป  (gitignore)
   tests/
@@ -236,9 +236,9 @@ Definition of done
 
 Phase B: Ingestion (ส่วนใหญ่เสร็จแล้ว)
 
-1. Reddit ingestion — มีแล้ว (`reddit_extract.py fetch`): import 23 เดือน (2024-10 → 2026-08); 2024-09 และ 2026-09 ไม่มีข้อมูลต้นทาง (ข้ามได้)
+1. Reddit ingestion — มีแล้ว (`ingest/reddit_extract.py fetch`): import 23 เดือน (2024-10 → 2026-08); 2024-09 และ 2026-09 ไม่มีข้อมูลต้นทาง (ข้ามได้)
 2. Market ingestion — มีแล้วแต่ **ยัง partial 24 จาก 25 เดือน** → ต้องปิด gap (งาน M2 ใน `TASKS.md`) และ mark `unavailable` พร้อมเหตุผลสำหรับที่ดึงไม่ได้
-3. ingestion audit — มี `pipeline_logs.py`; แก้ `pipeline_status.py` ให้เร็ว (Q0)
+3. ingestion audit — มี `ingest/pipeline_logs.py`; แก้ `ingest/pipeline_status.py` ให้เร็ว (Q0)
 4. ขอบเขต: กรอง 6 ชุมชนในทุก query ปลายน้ำ
 
 Definition of done

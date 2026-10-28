@@ -21,7 +21,7 @@ import sys
 import time
 
 from etl.common import DEFAULT_DB, connect, status_of
-from pipeline_logs import append_event, run_id
+from ingest.pipeline_logs import append_event, run_id
 
 MODEL_NAME = "ProsusAI/finbert"
 MAX_LEN = 256

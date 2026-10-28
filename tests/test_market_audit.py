@@ -4,7 +4,7 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from market_fetch import audit, database, date_arg, expected_hours, month_arg, next_month, utc
+from ingest.market_fetch import audit, database, date_arg, expected_hours, month_arg, next_month, utc
 
 
 class MarketAuditTest(unittest.TestCase):

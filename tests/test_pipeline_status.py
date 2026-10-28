@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipeline_status import (archive_status, downloaded_months, market_status,
+from ingest.pipeline_status import (archive_status, downloaded_months, market_status,
                               reddit_import_status, torrent_months)
 
 

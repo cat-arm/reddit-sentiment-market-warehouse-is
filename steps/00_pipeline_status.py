@@ -5,4 +5,4 @@ Run:  python steps/00_pipeline_status.py --db output/reddit.sqlite3
 
 from _run import script
 
-script("pipeline_status.py")
+script("ingest/pipeline_status.py")

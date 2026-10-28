@@ -9,7 +9,7 @@
 3. `TASKS.md` — งานระดับลงมือทำ (รหัส T/S/M/P/A/G/D/Q/W), สถานะข้อมูลจริง, "ผลการเคาะล่าสุด", กับดัก (§13)
 4. `SYSTEM_BLUEPRINT_TH.md` — สถาปัตยกรรม, time alignment, leakage policy
 5. `CODE_STRUCTURE.md` — โครงโฟลเดอร์ + แผนที่ proposal → สคริปต์ → ตารางผลลัพธ์ + เช็กลิสต์ก่อนปิดเล่ม
-6. `README.md` — วิธีใช้ `reddit_extract.py` (ยังเขียนว่า 9 ชุมชน — ล้าสมัย)
+6. `README.md` — วิธีใช้ `ingest/reddit_extract.py` (ยังเขียนว่า 9 ชุมชน — ล้าสมัย)
 
 ส่วนที่ทำเกิน proposal ต้องติดป้าย "ส่วนขยาย" และจดไว้ในรายงาน
 
@@ -29,8 +29,8 @@
 
 ```powershell
 .\venv\Scripts\Activate.ps1                          # ถ้าไม่ได้: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-python pipeline_status.py --db output/reddit.sqlite3 # สถานะรายเดือน (Reddit import / market)
-python reddit_extract.py fetch 2026-03 --db output/reddit.sqlite3   # ต้องมี aria2c (ก๊อปไว้ใน venv\Scripts แล้ว)
+python ingest/pipeline_status.py --db output/reddit.sqlite3 # สถานะรายเดือน (Reddit import / market)
+python ingest/reddit_extract.py fetch 2026-03 --db output/reddit.sqlite3   # ต้องมี aria2c (ก๊อปไว้ใน venv\Scripts แล้ว)
 python -m unittest discover -s tests                 # ห้ามใส่ -t .  (ImportError)
 ```
 
@@ -55,9 +55,9 @@ python -m unittest discover -s tests                 # ห้ามใส่ -t 
 
 ## สไตล์โค้ด
 
-- `reddit_extract.py` ใช้ **tab**; `market_fetch.py`, `pipeline_status.py`, `pipeline_logs.py` ใช้ **4 space** — ตามสไตล์ของไฟล์ที่แก้
+- `ingest/reddit_extract.py` ใช้ **tab**; `ingest/market_fetch.py`, `ingest/pipeline_status.py`, `ingest/pipeline_logs.py` ใช้ **4 space** — ตามสไตล์ของไฟล์ที่แก้
 - ใช้ `sqlite3` มาตรฐาน + `unittest` (ตามที่มีอยู่); คอมเมนต์/ชื่อในโค้ดเป็นอังกฤษ
-- โค้ดใหม่แยกเป็นโฟลเดอร์ `configs/`, `db/`, `etl/`, `analysis/`, `dashboard/` ตามเป้าหมายใน Blueprint §4 — คงสคริปต์ที่ root ไว้ก่อน ไม่ย้าย
+- โค้ดใหม่แยกเป็นโฟลเดอร์ `configs/`, `db/`, `etl/`, `analysis/`, `dashboard/` ตามเป้าหมายใน Blueprint §4; สคริปต์นำเข้าข้อมูล 4 ตัวอยู่ใน `ingest/` (ย้ายจาก root 2026-10-28 ตามที่ผู้ใช้สั่ง)
 - ค่าตั้ง (6 ชุมชน, 34 ticker/alias, threshold) อยู่ใน config ที่เดียว ไม่ hard-code ซ้ำ
 - ไฟล์ชั่วคราว/ผลสำรวจ → โฟลเดอร์ scratchpad ไม่ใช่ในรีโป
 
@@ -66,5 +66,5 @@ python -m unittest discover -s tests                 # ห้ามใส่ -t 
 - **ตอบเป็นภาษาไทย ใช้คำง่าย ๆ** — ผู้ใช้บอกชัดว่าถ้าอธิบายยากจะงง ให้ยกตัวอย่างสั้น ๆ แทนศัพท์; ผู้ใช้พิมพ์เร็วมักมีคำผิด ตีความตามบริบท ถ้าไม่ชัด (เช่นตอบสั้น ๆ ว่า "ง") ให้ถามยืนยันสั้น ๆ ก่อนลงมือ
 - เมื่อผู้ใช้ **เคาะเรื่องใด** ให้บันทึก 3 อย่าง: ตัดสินใจอะไร + เพราะอะไร + กระทบโค้ดข้อไหน ลงใน `docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md` (ถ้าเป็นเรื่องที่ proposal ไม่ได้ระบุ) และตาราง "ผลการเคาะล่าสุด" ใน `TASKS.md`
 - ก่อนอ้างตัวเลขข้อมูล ให้ตรวจจาก DB จริง (ตัวเลขใน TASKS §0 ตรวจเมื่อ 2026-10-09 อาจเก่า) และบอกให้ชัดว่าอันไหน "วัดจริง" อันไหน "ประมาณการ"
-- ตัวช่วยตรวจสถานะเร็ว ๆ: `pipeline_status.py` (Reddit รายเดือน + market), ตาราง `market_windows` (สถานะ complete/needs_review/unavailable)
+- ตัวช่วยตรวจสถานะเร็ว ๆ: `ingest/pipeline_status.py` (Reddit รายเดือน + market), ตาราง `market_windows` (สถานะ complete/needs_review/unavailable)
 - ลำดับงานที่ตกลงกันไว้: ติดตั้ง torch + วัดความเร็ว FinBERT (S0) → T1–T4 (ล้างข้อความ, ticker) → M1 (feature ราคา) → S1–S5 → P → A → G → D; รายละเอียดและ DoD ดู `TASKS.md`

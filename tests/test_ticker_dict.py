@@ -3,7 +3,7 @@ import unittest
 from collections import Counter
 
 from etl.ticker_dict import TickerMatcher, load_tickers, validate
-from market_fetch import TICKERS
+from ingest.market_fetch import TICKERS
 
 
 class TickerConfigTest(unittest.TestCase):

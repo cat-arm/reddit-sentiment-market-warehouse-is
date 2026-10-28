@@ -393,7 +393,7 @@ def build_summary(D):
           "6. ระบบผ่านการทดสอบกับข้อมูลจริง 32/32 ข้อ", ""]
 
     steps = [
-        ("00–03", "เตรียมฐานข้อมูล", "ดูสถานะข้อมูล, นำเข้า Reddit ดิบ, ดึงราคา yfinance, สร้างตาราง star schema และมิติ", "`pipeline_status.py`, `reddit_extract.py`, `market_fetch.py`, `etl/seed_dims.py`",
+        ("00–03", "เตรียมฐานข้อมูล", "ดูสถานะข้อมูล, นำเข้า Reddit ดิบ, ดึงราคา yfinance, สร้างตาราง star schema และมิติ", "`ingest/pipeline_status.py`, `ingest/reddit_extract.py`, `ingest/market_fetch.py`, `etl/seed_dims.py`",
          ["ข้อมูลดิบ `reddit_content` ทุกชุมชนที่เก็บไว้: %s แถว (เป็นสำเนาเดียว ห้ามลบ)" % n(D["raw_all"]),
           "ราคา `market_bars` %s แถว (เป็น placeholder ตลาดปิด %s แถว)" % (n(D["bars"]), n(D["null_close"])),
           "มิติ: " + ", ".join("%s %s แถว" % (k, n(v)) for k, v in D["facts"].items() if k.startswith("Dim"))]),

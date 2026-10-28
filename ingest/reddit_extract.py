@@ -1,4 +1,8 @@
 """Stream monthly Reddit archives into SQLite; fetch and export via CLI."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # so `python ingest/<file>.py` finds the ingest package
 
 import argparse
 import io
@@ -10,7 +14,7 @@ import sys
 from pathlib import Path
 
 import zstandard as zstd
-from pipeline_logs import append_event, run_id
+from ingest.pipeline_logs import append_event, run_id
 
 SUBREDDITS = frozenset(x.casefold() for x in (
 	"wallstreetbets", "stocks", "investing", "StockMarket", "CryptoCurrency",

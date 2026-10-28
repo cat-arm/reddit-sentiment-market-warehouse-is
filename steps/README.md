@@ -6,9 +6,9 @@
 
 | เลข | ไฟล์ | ทำอะไร | โค้ดจริง |
 |---|---|---|---|
-| 00 | `00_pipeline_status.py` | ดูสถานะข้อมูลรายเดือน (Reddit import / ราคา) | `pipeline_status.py` |
-| 01 | `01_extract_reddit.py` | ดึง/นำเข้าข้อมูล Reddit ดิบ -> reddit_content | `reddit_extract.py` |
-| 02 | `02_fetch_market.py` | ดึงราคารายชั่วโมง 34 สินทรัพย์ (yfinance) -> market_bars | `market_fetch.py` |
+| 00 | `00_pipeline_status.py` | ดูสถานะข้อมูลรายเดือน (Reddit import / ราคา) | `ingest/pipeline_status.py` |
+| 01 | `01_extract_reddit.py` | ดึง/นำเข้าข้อมูล Reddit ดิบ -> reddit_content | `ingest/reddit_extract.py` |
+| 02 | `02_fetch_market.py` | ดึงราคารายชั่วโมง 34 สินทรัพย์ (yfinance) -> market_bars | `ingest/market_fetch.py` |
 | 03 | `03_create_schema_and_dims.py` | สร้างตาราง star schema (db/schema.sql) และเติม Dim ทั้ง 6 | `etl/seed_dims.py` |
 | 04 | `04_clean_text.py` | ล้างข้อความ -> processed_text (T1) | `etl/clean_text.py` |
 | 05 | `05_quality_filter.py` | กรองคุณภาพ/ภาษา -> text_filter, filtered_text (T2) | `etl/quality_filter.py` |

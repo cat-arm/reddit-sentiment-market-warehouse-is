@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 import emoji
 
 from etl.common import DEFAULT_DB, connect, subreddits
-from pipeline_logs import append_event, run_id
+from ingest.pipeline_logs import append_event, run_id
 
 # Bump this whenever ANY rule below changes; process() refuses to mix versions in one table.
 CLEANER_VERSION = "2.0"

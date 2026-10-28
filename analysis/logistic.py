@@ -39,7 +39,7 @@ from sklearn.preprocessing import StandardScaler
 from analysis import results_store
 from analysis.correlation import FIGURES, groups
 from etl.common import DEFAULT_DB, connect
-from pipeline_logs import run_id as new_run_id
+from ingest.pipeline_logs import run_id as new_run_id
 
 N_SPLITS = 5
 GAP_HOURS = 12

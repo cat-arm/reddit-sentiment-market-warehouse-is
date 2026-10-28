@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 
 import zstandard as zstd
-from pipeline_logs import export_report
-from reddit_extract import database, import_file
+from ingest.pipeline_logs import export_report
+from ingest.reddit_extract import database, import_file
 
 
 @contextmanager

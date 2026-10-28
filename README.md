@@ -18,7 +18,7 @@
 
 ```
  ① Reddit ดิบ (ไฟล์ .zst รายเดือน)        ② ราคา (Yahoo Finance)
-        │  reddit_extract.py                    │  market_fetch.py
+        │  ingest/reddit_extract.py                    │  ingest/market_fetch.py
         ▼                                       ▼
    reddit_content  ─────────────────────►   market_bars
         │  (ข้อความดิบ ทุกโพสต์/คอมเมนต์)         │ (ราคารายชั่วโมง 34 ตัว)
@@ -143,7 +143,7 @@ python -c "import nltk; nltk.download('vader_lexicon')"
 ### 3.4 ตรวจว่าติดตั้งถูก
 
 ```powershell
-python pipeline_status.py --db output/reddit.sqlite3
+python ingest/pipeline_status.py --db output/reddit.sqlite3
 ```
 
 ถ้ายังไม่มี DB คำสั่งนี้ก็รันได้ (แค่รายงานว่ายังว่าง) — มันอ่านอย่างเดียว ปลอดภัย
@@ -568,7 +568,7 @@ python steps/23_run_dashboard.py
 ## 8) โครงโฟลเดอร์
 
 ```
-reddit_extract.py   market_fetch.py   pipeline_status.py   pipeline_logs.py   # ขั้นต้นน้ำ + ดูสถานะ + log (อยู่ที่ root)
+ingest/reddit_extract.py   ingest/market_fetch.py   ingest/pipeline_status.py   ingest/pipeline_logs.py   # ขั้นต้นน้ำ + ดูสถานะ + log (อยู่ใน ingest/)
 configs/    ค่าตั้งทั้งหมด (ชุมชน, ticker, sentiment, detection)
 db/         schema.sql (star schema)
 etl/        ขั้น 03–15, 20, 21 (ล้างข้อความ → sentiment → รายชั่วโมง → fact)

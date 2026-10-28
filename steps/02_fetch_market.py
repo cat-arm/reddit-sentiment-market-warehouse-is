@@ -5,4 +5,4 @@ Run:  python steps/02_fetch_market.py --help
 
 from _run import script
 
-script("market_fetch.py")
+script("ingest/market_fetch.py")

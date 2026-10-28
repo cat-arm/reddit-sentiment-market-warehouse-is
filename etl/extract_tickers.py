@@ -21,7 +21,7 @@ import time
 
 from etl.common import DEFAULT_DB, connect
 from etl.ticker_dict import TickerMatcher
-from pipeline_logs import append_event, run_id
+from ingest.pipeline_logs import append_event, run_id
 
 EXTRACTOR_VERSION = "1.0"
 

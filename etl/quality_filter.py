@@ -27,7 +27,7 @@ import time
 from collections import Counter
 
 from etl.common import DEFAULT_DB, connect, subreddits
-from pipeline_logs import append_event, run_id
+from ingest.pipeline_logs import append_event, run_id
 
 FILTER_VERSION = "1.1"      # 1.1: judges processed_text.own_text (what the author wrote), not the title-prefixed final_text
 

@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from market_fetch import database, date_arg, expected_closed, find_gaps, run_window, save, utc
+from ingest.market_fetch import database, date_arg, expected_closed, find_gaps, run_window, save, utc
 
 
 class MarketFetchTest(unittest.TestCase):

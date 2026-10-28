@@ -9,7 +9,7 @@
 3. **ค่าตั้งอยู่ใน `configs/`** (6 ชุมชน, 34 ticker + alias, threshold, keyword) ไม่ hard-code ซ้ำหลายไฟล์
 4. **ตัวเลข ตาราง กราฟที่ลงเล่ม ต้องมาจากสคริปต์** (`scripts/` และ `reports/`) ไม่ใช่ copy จาก query ที่รันมือ — รวมถึงตัวเลขที่เคยคำนวณมือระหว่างทำโปรเจกต์ (จำนวนแถวต่อชุมชน, สัดส่วน removed/deleted, gap ของราคา, `close IS NULL`, ความยาวข้อความ) ให้ย้ายเป็นสคริปต์ `scripts/data_profile.py`
 5. **notebook ใช้สำรวจเท่านั้น** — ถ้าผลถูกนำไปใช้จริง ต้องย้ายเป็น `.py` (โค้ดเก่า `old_code/reddit_6.ipynb` ใช้เป็นตัวอย่างอ้างอิง ไม่ใช่ส่วนของระบบ)
-6. **ทุกการรันบันทึก `run_id`, เวอร์ชันโค้ด, config, seed** (ใช้ `pipeline_logs.py` ที่มีอยู่) เพื่อให้ตรวจย้อนหลังได้
+6. **ทุกการรันบันทึก `run_id`, เวอร์ชันโค้ด, config, seed** (ใช้ `ingest/pipeline_logs.py` ที่มีอยู่) เพื่อให้ตรวจย้อนหลังได้
 
 ## 2) โครงโฟลเดอร์ (✅ มีแล้ว · ⬜ ยังไม่ทำ)
 
@@ -17,10 +17,11 @@
 reddit-sentiment-market-warehouse/
   README.md  CLAUDE.md  TASKS.md  SYSTEM_BLUEPRINT_TH.md  CODE_STRUCTURE.md
   requirements.txt            ✅  (+ requirements-sentiment.txt ✅ torch CUDA/transformers/nltk, requirements-analysis.txt ✅ รวม pypdf)
-  reddit_extract.py           ✅  7.1 นำเข้า Reddit (.zst → SQLite)
-  market_fetch.py             ✅  7.2 ดึงราคา yfinance
-  pipeline_status.py          ✅  รายงานสถานะ (Q0 ยังต้องแก้ให้เร็ว)
-  pipeline_logs.py            ✅  log การรัน
+  ingest/                     ✅  ขั้นนำเข้าข้อมูล (ย้ายจาก root 2026-10-28)
+    reddit_extract.py         ✅  7.1 นำเข้า Reddit (.zst → SQLite)
+    market_fetch.py           ✅  7.2 ดึงราคา yfinance
+    pipeline_status.py        ✅  รายงานสถานะ (Q0 ยังต้องแก้ให้เร็ว)
+    pipeline_logs.py          ✅  log การรัน
   configs/                    ✅  subreddits.yaml, tickers.yaml, sentiment.yaml, detection.yaml
   db/                         ✅  schema.sql (รูปที่ 2–4), indexes.sql
   etl/                        ✅  T1–T5, S1–S5, M1, P1–P4, Fact loaders (ดูตารางข้อ 3)
@@ -35,19 +36,19 @@ reddit-sentiment-market-warehouse/
   data/  output/              —   ข้อมูล/ผลลัพธ์ (gitignored)
 ```
 
-คงสคริปต์ที่ root ไว้ ไม่ย้ายเข้า package (ผ่านการใช้งานจริงกับข้อมูล 28M แถวแล้ว — ดู TASKS D3)
+สคริปต์ขั้นนำเข้าข้อมูล 4 ตัว (reddit_extract, market_fetch, pipeline_status, pipeline_logs) ย้ายเข้า `ingest/` เมื่อ 2026-10-28 ตามที่ผู้ใช้สั่ง (เดิมอยู่ root); import ใช้ `from ingest.pipeline_logs import ...`, รันได้ทั้ง `python steps/0X_*.py`, `python -m ingest.<module>` และ `python ingest/<file>.py`
 
 ## 3) แผนที่ proposal → โค้ด → ตารางผลลัพธ์
 
 | ส่วนของ proposal | งาน (TASKS) | สคริปต์ | ผลลัพธ์ | สถานะ |
 |---|---|---|---|---|
-| 7.1 นำเข้า Reddit | — | `reddit_extract.py` | `reddit_content` | ✅ |
+| 7.1 นำเข้า Reddit | — | `ingest/reddit_extract.py` | `reddit_content` | ✅ |
 | 7.1 ล้างข้อความ | T1 | `etl/clean_text.py` (+ `etl/common.py`, `configs/subreddits.yaml`) | `processed_text` | ✅ เขียน+ทดสอบแล้ว · ⬜ ยังไม่ได้รันกับฐานข้อมูลหลัก |
 | 7.1 กรองคุณภาพ/ภาษา | T2 | `etl/quality_filter.py` | `text_filter`, `data_quality_audit`, view `filtered_text` | ✅ รันแล้ว 2026-10-10 |
 | 7.1 พจนานุกรม Ticker | T3 | `configs/tickers.yaml`, `etl/ticker_dict.py` | — | ✅ |
 | 7.1 สกัด Ticker | T4 | `etl/extract_tickers.py` | `ticker_mentions` | ✅ รันแล้ว 2026-10-10 |
 | 7.1 Fact + dashboard 7.1-1 | T5, D1 | `etl/load_fact_reddit_volume.py`, `dashboard/pages/1_Reddit_Volume.py` (ปริมาณรวม ไม่มีตัวกรองสินทรัพย์), `dashboard/pages/2_Ticker_Mentions.py` (สินทรัพย์ที่ถูกพูดถึง) | `FactRedditVolume` | ✅ รันแล้ว 2026-10-11 |
-| 7.2 ดึงราคา | M2 | `market_fetch.py` | `market_bars` | ✅ (gap ~0.5% รอปิด) |
+| 7.2 ดึงราคา | M2 | `ingest/market_fetch.py` | `market_bars` | ✅ (gap ~0.5% รอปิด) |
 | 7.2 feature ราคา | M1 | `etl/market_features.py` | `market_hourly_features`, `FactMarketPrice` | ✅ รันแล้ว 2026-10-10 |
 | 7.2 dashboard 7.2-1 | D2 | `dashboard/pages/3_Price_and_Return.py` | — | ✅ รันแล้ว 2026-10-11 |
 | schema / dimension | W2, W4 | `db/schema.sql`, `etl/seed_dims.py` | Dim\* ทั้ง 6, Fact ทั้ง 3 | ✅ สร้างแล้ว 2026-10-10 (Fact ของ price/sentiment ยังว่าง) |
@@ -87,8 +88,8 @@ reddit-sentiment-market-warehouse/
 
 ```
  1. สร้าง venv + ติดตั้ง requirements
- 2. reddit_extract.py fetch <เดือน>      (หรือ import)    → reddit_content
- 3. market_fetch.py                                          → market_bars
+ 2. ingest/reddit_extract.py fetch <เดือน>      (หรือ import)    → reddit_content
+ 3. ingest/market_fetch.py                                          → market_bars
  4. db/schema.sql + etl/seed_dims.py                         → Dim/Fact ว่าง
  5. etl/clean_text.py → quality_filter.py → extract_tickers.py
  6. etl/sentiment_vader.py → sentiment_finbert.py → resolve_sentiment.py
@@ -116,11 +117,11 @@ reddit-sentiment-market-warehouse/
 
 | ไฟล์ | การตัดสินใจ | หมายเหตุ |
 |---|---|---|
-| `reddit_extract.py`, `market_fetch.py`, `pipeline_status.py`, `pipeline_logs.py` | **เก็บ** | ส่วนหนึ่งของระบบ 7.1/7.2 |
+| `ingest/reddit_extract.py`, `ingest/market_fetch.py`, `ingest/pipeline_status.py`, `ingest/pipeline_logs.py` | **เก็บ** | ส่วนหนึ่งของระบบ 7.1/7.2 |
 | `tests/` 4 ไฟล์ที่มีเนื้อหา | **เก็บ + แก้** | proposal §8.4 บังคับให้มีการทดสอบ; แก้ให้ปิดไฟล์ SQLite ก่อนลบโฟลเดอร์ชั่วคราว |
 | `tests/test_reddit_extract.py` (ว่าง 0 ไบต์) | **เติมเทสต์จริง** | ยังไม่ลบเพราะ importer เป็นของสำคัญ ควรมีเทสต์ |
 | `README.md` | **แก้** | ยังบอก 9 ชุมชน; เพิ่ม RUNBOOK |
-| `output/*.csv`, `*.txt`, `output/logs/` | **เก็บ** | รายงานตรวจคุณภาพราคาจากการรันก่อนหน้า (เล็ก) — สร้างใหม่ได้ด้วย `market_fetch.py` |
+| `output/*.csv`, `*.txt`, `output/logs/` | **เก็บ** | รายงานตรวจคุณภาพราคาจากการรันก่อนหน้า (เล็ก) — สร้างใหม่ได้ด้วย `ingest/market_fetch.py` |
 | `old_code/reddit_6.ipynb` | **เก็บไว้อ้างอิงก่อน** | ย้ายออกจากโปรเจกต์ได้เมื่อพอร์ต cell ที่ต้องใช้ครบ (T1–A4) |
 | `.vscode/settings.json` | **แก้แล้ว** | เดิมชี้ `.venv` ที่ไม่มีอยู่ → ชี้ `venv\Scripts\python.exe` |
 | `__pycache__/`, `output/.DS_Store` | **ลบแล้ว** | ไฟล์ขยะที่สร้างซ้ำได้ |

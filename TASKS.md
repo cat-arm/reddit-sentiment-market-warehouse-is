@@ -41,10 +41,10 @@ proposal ที่ปรับแล้วทำให้แผนฉบับ�
 
 | ไฟล์ | หน้าที่ | สถานะ |
 |---|---|---|
-| `reddit_extract.py` | stream `.zst` → SQLite `reddit_content` + subcommand `fetch` (torrent→import→ลบไฟล์) | ใช้งานจริงแล้ว 23 เดือน (2024-10 → 2026-08) |
-| `market_fetch.py` | yfinance รายชั่วโมง 34 ticker → `market_bars`, `market_windows`, `market_gaps` | ดึงแล้ว 2024-09-30 → 2026-09-30 แต่ **ยัง partial** เกือบทุกเดือน (ดูข้างล่าง) |
-| `pipeline_status.py` | รายงานสถานะรายเดือน (archive / import / market) | รันจบได้ (ตรวจแล้วรอบนี้) แต่ query ยังเป็น `LIKE` บน `source_archive` (บรรทัด 59) — Q0 ยังไม่ได้แก้ |
-| `pipeline_logs.py` | log สรุปรายเดือน → `output/logs/` | ใช้งานได้ |
+| `ingest/reddit_extract.py` | stream `.zst` → SQLite `reddit_content` + subcommand `fetch` (torrent→import→ลบไฟล์) | ใช้งานจริงแล้ว 23 เดือน (2024-10 → 2026-08) |
+| `ingest/market_fetch.py` | yfinance รายชั่วโมง 34 ticker → `market_bars`, `market_windows`, `market_gaps` | ดึงแล้ว 2024-09-30 → 2026-09-30 แต่ **ยัง partial** เกือบทุกเดือน (ดูข้างล่าง) |
+| `ingest/pipeline_status.py` | รายงานสถานะรายเดือน (archive / import / market) | รันจบได้ (ตรวจแล้วรอบนี้) แต่ query ยังเป็น `LIKE` บน `source_archive` (บรรทัด 59) — Q0 ยังไม่ได้แก้ |
+| `ingest/pipeline_logs.py` | log สรุปรายเดือน → `output/logs/` | ใช้งานได้ |
 | `tests/` | unittest | ยังไม่ได้รันซ้ำในรอบตรวจนี้ |
 
 ### ข้อมูลใน `output/reddit.sqlite3` (12.76 GB — **ไม่ใช่ 9.1 GB ตามฉบับก่อน**)
@@ -134,7 +134,7 @@ FinBERT บน GPU T4 ได้ราว 300–600 ข้อความ/วิ�
 ### D3 — โครงสร้าง repo
 
 `SYSTEM_BLUEPRINT_TH.md` §4 เสนอ restructure เป็น `src/` เต็มรูปแบบ
-**แนะนำ**: ทำแบบค่อยเป็นค่อยไป — คงสคริปต์ที่ใช้งานจริงไว้ที่ root (`reddit_extract.py`, `market_fetch.py`) แล้วเพิ่ม package ใหม่ตามขั้น (`etl/`, `analysis/`, `dashboard/`)
+**แนะนำ**: ทำแบบค่อยเป็นค่อยไป — คงสคริปต์ที่ใช้งานจริงไว้ที่ root (`ingest/reddit_extract.py`, `ingest/market_fetch.py`) แล้วเพิ่ม package ใหม่ตามขั้น (`etl/`, `analysis/`, `dashboard/`)
 เหตุผล: สคริปต์ 2 ตัวนั้นผ่านการใช้งานจริงกับข้อมูล 28M แถวแล้ว การย้ายไฟล์ตอนนี้ได้ความเสี่ยงมากกว่าประโยชน์ ค่อยย้ายทีหลังเมื่อ pipeline นิ่ง
 
 ### D4 — Neutral band และ threshold: ✅ proposal ยืนยันซ้ำแล้ว
@@ -159,13 +159,13 @@ proposal §4.1 / §7.1 บอก "โพสต์และความคิด�
 
 ### D6 — ขอบเขตชุมชน Reddit (ใหม่): 6 ไม่ใช่ 9
 
-`reddit_extract.py` บรรทัด 15–17 (`SUBREDDITS`) ยังดึง 9 ชุมชน จึงมีข้อมูลเกินขอบเขต 3,873,291 แถว (Bitcoin, Daytrading, dogecoin)
+`ingest/reddit_extract.py` บรรทัด 15–17 (`SUBREDDITS`) ยังดึง 9 ชุมชน จึงมีข้อมูลเกินขอบเขต 3,873,291 แถว (Bitcoin, Daytrading, dogecoin)
 
 **แนะนำ**: **อย่าลบแถวออกจาก SQLite** (ไม่มีไฟล์ต้นฉบับสำรอง, VACUUM บน 12.76 GB หนักมาก) แต่ **กรอง `subreddit IN (6 ชุมชน)` ในทุก ETL/analysis query** และใส่ใน `DimSource` เฉพาะ 6 ชุมชน
 - เก็บรายชื่อ 6 ชุมชนไว้ที่เดียว: `configs/subreddits.yaml` (อย่า hard-code ซ้ำหลายไฟล์)
 - เขียน test ว่าไม่มี subreddit นอก 6 หลุดเข้า `processed_text` / panel
 - README ยังกล่าวถึง 9 ชุมชน → แก้ให้ตรง (นอกขอบเขตของการแก้เอกสารรอบนี้)
-- ตัดสินใจแยกอีกข้อ: จะปรับ `SUBREDDITS` ใน `reddit_extract.py` ให้เหลือ 6 สำหรับเดือนที่ fetch ต่อไปหรือไม่ (ตอนนี้ไม่มีเดือนค้างที่ต้อง fetch แล้ว จึงไม่เร่ง)
+- ตัดสินใจแยกอีกข้อ: จะปรับ `SUBREDDITS` ใน `ingest/reddit_extract.py` ให้เหลือ 6 สำหรับเดือนที่ fetch ต่อไปหรือไม่ (ตอนนี้ไม่มีเดือนค้างที่ต้อง fetch แล้ว จึงไม่เร่ง)
 
 ### D7 — ขอบเขต dashboard (ใหม่): 4 หน้า
 
@@ -188,7 +188,7 @@ proposal: SQLite เป็น "ฐานข้อมูลกลางแหล�
 | O2 | `panel_baseline` = สุ่มทิศทาง หรือ "อัตราถูกต้องพื้นฐาน"? | ตารางที่ 12 | สุ่มทิศทาง seed คงที่บนชุดแถวเดียวกับ `panel_global` + รายงานอัตราพื้นฐาน (base rate) ควบคู่ |
 | O3 | panel strong/quality กรองระดับ **ข้อความ** (ตารางที่ 12 "กรองเฉพาะข้อความ") ไม่ใช่กรองแถวรายชั่วโมง | ตารางที่ 12 | ทำตามนั้น → ต้อง aggregate ใหม่ต่อ panel (ดู P4) |
 | O4 | conflict resolution ไม่ครอบคลุม: (ก) ทั้งสองโมเดล neutral, (ข) keyword เป็น `mixed` ใน Hard Conflict, (ค) โมเดลใดโมเดลหนึ่งไม่มีคะแนน | §7.3 ขั้นตอนที่ 3 | ดู S4 — กำหนดกฎเสริมและบันทึกใน `final_method` |
-| O5 | `AssetClass` ของ BITO, IBIT, MARA, MSTR, COIN (ผูกกับคริปโตแต่เป็นหุ้น/ETF) | §4.2 แบ่ง 3 กลุ่มโดยไม่ระบุรายตัว | จัดเป็น `stock_etf` (เป็นหลักทรัพย์ที่ซื้อขายในตลาดหุ้น) — ตรวจกับ `TICKERS` ใน `market_fetch.py` ให้ตรงกัน |
+| O5 | `AssetClass` ของ BITO, IBIT, MARA, MSTR, COIN (ผูกกับคริปโตแต่เป็นหุ้น/ETF) | §4.2 แบ่ง 3 กลุ่มโดยไม่ระบุรายตัว | จัดเป็น `stock_etf` (เป็นหลักทรัพย์ที่ซื้อขายในตลาดหุ้น) — ตรวจกับ `TICKERS` ใน `ingest/market_fetch.py` ให้ตรงกัน |
 | O6 | RSI ใช้ period เท่าไร (proposal ระบุ ATR 24h แต่ไม่ระบุ RSI) | ตารางที่ 7, 8 | RSI 14 แล้วบันทึกเป็น assumption |
 | O7 | ตัวแปร 6 กลุ่มของ Logistic (Level, Direction, Vote, Volume, Lag, Momentum) แมปกับคอลัมน์ไหน | §7.4 ขั้นตอนที่ 3 | ดู A3 — เสนอการแมปและให้ยืนยัน |
 | O8 | แหล่งราคา: proposal ให้ลองข้อมูลจุฬาฯ ก่อน แล้วค่อย yfinance (สำรอง) แต่รูปที่ 5 ใช้ yfinance | §4.2, §7.2 | ถ้ายังไม่เคยขอข้อมูลจุฬาฯ ให้บันทึกเหตุผลในรายงานว่าใช้ yfinance เพราะอะไร |
@@ -216,6 +216,7 @@ proposal ที่อนุมัติแล้ว (`data/Proposal_6782094726_R
 - **unit test 154 ตัวผ่านทั้งหมด** — แก้ 9 error เดิม (PermissionError บน Windows) โดยให้เทสต์ปิดไฟล์ SQLite ก่อนลบโฟลเดอร์ชั่วคราว (`tests/test_market_fetch.py`, `test_market_audit.py`, `test_pipeline_logs.py`, `test_pipeline_status.py`)
 - **ความแม่นของเกณฑ์ Z-score 1.5/2.0/2.5 × |ความรู้สึก| 0.05/0.30/0.50/0.80** — `scripts/z_sentiment_grid.py` (step 32, ส่วนขยาย): 8 จาก 45 ช่อง p < 0.05 (คาดโชค ~2); เด่นสุด |s| ≥ 0.50 ที่ 1h = 52.8–54.4% (n 237–362) สูงกว่า 50% ทั้ง explore และ hold-out แต่ที่ 3h ต่ำกว่า 50% และ |s| ≥ 0.80 ข้อมูลไม่พอ → ข้อสังเกตไม่ใช่หลักฐาน; `output/reports/z_sentiment_grid.md`
 - **ลบตาราง `*_v1` 5 ตารางแล้ว (ผู้ใช้สั่ง 2026-10-25; integrity_check ok, ไม่ได้ VACUUM ไฟล์จึงยัง 29.5 GB มีหน้าว่าง 3.4 GB)** — `scripts/compare_context_effect.py` และ `archive_sentiment_v1.py` รันซ้ำไม่ได้แล้ว ผลเดิมอยู่ใน `output/reports/context_effect.md`; git commit แล้ว
+- **ผู้ใช้เคาะ 2026-10-28: ย้ายสคริปต์นำเข้าข้อมูล 4 ตัวจาก root เข้า `ingest/`** (reddit_extract, market_fetch, pipeline_status, pipeline_logs) เพื่อความเป็นระเบียบ; กระทบ: import ทุกที่เป็น `from ingest.<module> import ...` (analysis/, etl/, tests/, scripts/), ตัวเรียก `steps/00–02`, เอกสาร; เทสต์ 154 ตัวผ่านหลังย้าย
 - **ยังไม่ได้ทำ:** ตรวจสาเหตุ submission เปลี่ยน 9–11 แถวระหว่างรอบ
 
 **ผู้ใช้เคาะ 2026-10-24:** (1) `current_return` — **คงชื่อคอลัมน์ `log_return` ในฐานข้อมูล** แต่ทุกอย่างที่ผู้ใช้เห็น (dashboard, กราฟ, รายงาน) ใช้คำว่า **Current Return** (แก้ป้ายแกนของ heatmap `a1_*.png` ใน `analysis/correlation.py` แล้ว; dashboard หน้า 3 ใช้ชื่อนี้อยู่แล้ว) ส่งผลให้ `check_proposal_coverage.py` ยังรายงาน `current_return` "ไม่พบ" ในตารางที่ 13 ซึ่งเป็นที่รู้กัน (2) **ลบ** `PROPOSAL_REVISIONS.md`, `PROPOSAL_EDIT_GUIDE.md`, `COVER_SHEET_ADDITIONS.md` แล้ว (3) ไฟล์ผลลัพธ์ที่สคริปต์สร้างต้องขึ้นต้นด้วย "ไฟล์นี้คืออะไร / สร้างเมื่อ / โดยสคริปต์ / ข้อมูลที่ใช้ / สร้างใหม่ด้วยคำสั่ง" (`etl.common.file_header`; CSV ใช้บรรทัดขึ้นต้น `#`; ไฟล์ที่โค้ดอ่านต่อหรือผู้ใช้ต้องกรอกอย่าง `labeling_sheet.csv` ใช้ README.md ในโฟลเดอร์แทน) (4) การติดป้าย S5 ผู้ใช้ต้องติดเอง — proposal ระบุ "ผู้พัฒนาติดป้าย"; ให้ AI ติดจะเท่ากับใช้โมเดลตัดสินโมเดล และขัดกับคำรับรองในแบบฟอร์มการใช้ AI
@@ -244,7 +245,7 @@ proposal ที่อนุมัติแล้ว (`data/Proposal_6782094726_R
 
 ## 2) งานเร่งด่วนก่อน (Q0 และ M2)
 
-### Q0 — แก้ `pipeline_status.py` ให้เร็ว
+### Q0 — แก้ `ingest/pipeline_status.py` ให้เร็ว
 
 **อาการเดิม**: query `WHERE source_archive LIKE '%_YYYY-MM.zst'` → full table scan ต่อเดือนต่อ 25 รอบ (ตอนนี้ตาราง 28.4M แถว) — รอบตรวจนี้รันจบ แต่ยังไม่ได้วัดเวลา และโค้ดบรรทัด 59 ยังเป็น `LIKE`
 **แก้**: เพิ่มคอลัมน์ `source_month TEXT` (หรือ index บน `source_archive`) + query เดียวแบบ `GROUP BY` แทนการ loop ต่อเดือน
@@ -260,7 +261,7 @@ proposal ที่อนุมัติแล้ว (`data/Proposal_6782094726_R
 - **แถว `close = NULL` 19,177 แถว** (futures ~3,100 ต่อตัว, คริปโต ~35, หุ้น 14–15) — เป็นแถว placeholder ที่ yfinance คืนมาตอนตลาดปิด/พักรอบ (OHLC เป็น NULL, volume 0; ฟิวเจอร์สกระจุกที่ 21:00–22:00 UTC และเสาร์–อาทิตย์) **ไม่ใช่ราคาจริง ห้ามนับเป็นบาร์ที่ใช้คำนวณ return** (ดู M1)
 
 **ขั้นตอน** (ลดขนาดงานลงจากเดิม):
-1. รัน `market_fetch.py` ซ้ำเฉพาะ window ที่เป็น `needs_review` (353 windows) หนึ่งรอบ ดูว่า yfinance คืนข้อมูลเพิ่มไหม
+1. รัน `ingest/market_fetch.py` ซ้ำเฉพาะ window ที่เป็น `needs_review` (353 windows) หนึ่งรอบ ดูว่า yfinance คืนข้อมูลเพิ่มไหม
 2. ที่ยังขาด ถือเป็นข้อจำกัดของต้นทางและบันทึกเหตุผล (ไม่ต้องไล่ปิดทุกตัว)
 3. (ไม่บังคับ) เพิ่มปฏิทินวันตลาดปิดครึ่งวันของ NYSE ใน `expected_hours()` เพื่อตัด false positive ของหุ้น/ETF ~320 แถว
 **เสร็จเมื่อ**: รัน needs_review ซ้ำแล้ว และมีสรุปเหตุผลของ gap ที่เหลือ (ใช้ตัวเลขข้างบนเป็นฐาน)
@@ -321,7 +322,7 @@ FactMarketSentiment(TimeID, TickerID, SentimentSourceID, DetectionConfigID, Majo
     - stock_etf (22): AAPL, AMC, AMD, BITO, BRK-B, COIN, GME, HOOD, IBIT, IWM, JNJ, JPM, KO, MARA, MSFT, MSTR, NVDA, PLTR, QQQ, SPY, TSLA, XOM
     - crypto (6): BTC-USD, DOGE-USD, ETH-USD, SHIB-USD, SOL-USD, XRP-USD
     - futures (6): CL=F, ES=F, GC=F, NG=F, NQ=F, RTY=F
-    - (การจัด BITO/IBIT/MARA/MSTR/COIN เป็น stock_etf คือข้อเสนอ — ดู O5; ตรวจกับ `TICKERS` ใน `market_fetch.py`)
+    - (การจัด BITO/IBIT/MARA/MSTR/COIN เป็น stock_etf คือข้อเสนอ — ดู O5; ตรวจกับ `TICKERS` ใน `ingest/market_fetch.py`)
   - `DimTime`: generate ทุกชั่วโมง UTC ครอบคลุม 2024-09-30 → 2026-09-30 (ช่วงที่ market_bars มีจริง; ขยายได้ภายหลัง)
   - `DimSource`: **6 ชุมชน** × {Post, Comment} = 12 แถว (ตัวอย่างค่าใน proposal: Reddit, r/wallstreetbets, Post)
   - `DimSentimentSource`: Platform=Reddit × 6 ชุมชน × ModelUsed=`VADER+FinBERT`
@@ -499,7 +500,7 @@ FactMarketSentiment(TimeID, TickerID, SentimentSourceID, DetectionConfigID, Majo
 - **ระวัง**: นี่คือจุดที่ look-ahead bias เข้าได้ง่ายที่สุด — `future_return` ห้ามถูกใช้เป็น input ของโมเดลเด็ดขาด ใช้เป็น target เท่านั้น
 
 > **M2 (ปิดช่องว่างข้อมูลราคา)** ย้ายขึ้นไปอยู่ §2 แล้ว — ต้องทำก่อน M1 จึงจะได้ future return ครบ
-> **ยกเลิก**: M2 เดิม (Data Continuity Rate / Ticker Availability Rate / `missing_ticker_count`) — ไม่อยู่ใน proposal ปัจจุบัน ถ้าต้องการใช้เป็นตัวเลขอธิบายข้อจำกัดในรายงาน ให้ทำเป็นตาราง QA ภายในเท่านั้น (ใช้ `expected_hours()` จาก `market_fetch.py`)
+> **ยกเลิก**: M2 เดิม (Data Continuity Rate / Ticker Availability Rate / `missing_ticker_count`) — ไม่อยู่ใน proposal ปัจจุบัน ถ้าต้องการใช้เป็นตัวเลขอธิบายข้อจำกัดในรายงาน ให้ทำเป็นตาราง QA ภายในเท่านั้น (ใช้ `expected_hours()` จาก `ingest/market_fetch.py`)
 
 ---
 

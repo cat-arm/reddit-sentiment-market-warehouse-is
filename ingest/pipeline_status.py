@@ -1,4 +1,8 @@
 """Report per-month progress: archive downloaded, imported to SQLite, market data fetched."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # so `python ingest/<file>.py` finds the ingest package
 
 import argparse
 import re
@@ -7,7 +11,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from market_fetch import TICKERS, date_arg, next_month, utc
+from ingest.market_fetch import TICKERS, date_arg, next_month, utc
 
 MONTH_RE = re.compile(r"\d{4}-\d{2}")
 TORRENT_COMMENT_RE = re.compile(rb"from (\d{4}-\d{2})")

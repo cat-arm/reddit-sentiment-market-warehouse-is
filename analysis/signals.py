@@ -33,7 +33,7 @@ import pandas as pd
 
 from analysis import results_store
 from etl.common import DEFAULT_DB, connect, load_yaml
-from pipeline_logs import run_id as new_run_id
+from ingest.pipeline_logs import run_id as new_run_id
 
 CONFIG = load_yaml("detection.yaml")
 GRID = CONFIG["grid"]

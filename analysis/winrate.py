@@ -31,7 +31,7 @@ from scipy import stats
 from analysis import figure_style, results_store
 from analysis.correlation import FIGURES, groups
 from etl.common import DEFAULT_DB, connect
-from pipeline_logs import run_id as new_run_id
+from ingest.pipeline_logs import run_id as new_run_id
 
 MIN_N = 30
 HORIZONS = {"future_return_%s" % h: h for h in ("1h", "2h", "3h", "6h", "12h")}

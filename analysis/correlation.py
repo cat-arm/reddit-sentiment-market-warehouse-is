@@ -29,7 +29,7 @@ from scipy import stats
 
 from analysis import figure_style, results_store
 from etl.common import DEFAULT_DB, ROOT, connect
-from pipeline_logs import run_id as new_run_id
+from ingest.pipeline_logs import run_id as new_run_id
 
 MIN_N = 30
 TARGETS = list(results_store.HORIZONS)

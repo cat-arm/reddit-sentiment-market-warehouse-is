@@ -1,4 +1,8 @@
 """Store hourly yfinance bars with bounded retries and an audit trail."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # so `python ingest/<file>.py` finds the ingest package
 
 import argparse
 import math
@@ -13,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
-from pipeline_logs import append_event
+from ingest.pipeline_logs import append_event
 
 TICKERS = ("AAPL", "AMC", "AMD", "BITO", "BRK-B", "BTC-USD", "CL=F", "COIN",
            "DOGE-USD", "ES=F", "ETH-USD", "GC=F", "GME", "HOOD", "IBIT", "IWM",

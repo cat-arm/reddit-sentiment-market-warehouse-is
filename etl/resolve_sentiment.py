@@ -37,7 +37,7 @@ import sys
 import time
 
 from etl.common import DEFAULT_DB, NEUTRAL_BAND, connect, load_yaml, status_of
-from pipeline_logs import append_event, run_id
+from ingest.pipeline_logs import append_event, run_id
 
 RESOLVER_VERSION = "1.1"
 
