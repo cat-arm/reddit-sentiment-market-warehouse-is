@@ -1,7 +1,7 @@
 """Dashboard testing (proposal 8.4 part 3): every number the dashboard data layer returns is compared with an
 independent SQL query on the database (a different table or a different way of counting where possible).
 
-Also the source filter (communities x Post / Comment) and the time hierarchy of the sidebar (year > month > week).
+Also the source filter (communities x Post / Comment) and several tickers taken together (pages 1-2).
 Checked for 2 time windows x 4 tickers (one per asset class + the most talked-about stock): Reddit volume,
 Z-score, mention count and Ticker Mention Rate, price / Current Return, Normalized ATR, future return by group,
 sentiment ranking, win rate / correlation ranking, signal counts, home-page headline numbers.
@@ -106,7 +106,7 @@ def run(db_path):
         for tk in TICKERS:
             e = c.q("SELECT AVG(r.sentiment_mean) FROM reddit_hourly r JOIN market_hourly_features m ON m.ticker = r.ticker AND CAST(strftime('%s', m.hour_bucket) AS INTEGER) = r.hour_utc WHERE r.variant='all' AND r.ticker=? AND r.hour_utc BETWEEN ? AND ?", (tk, start, end))[0][0]
             c.check("4 Market and Sentiment", "%s %s: อันดับความรู้สึก (เฉลี่ย)" % (wname, tk), sent.loc[tk, "mean_sentiment"] if tk in sent.index else None, e, 1e-7)
-    # --- pages 1-2: source filter (DimSource) and the time hierarchy of the sidebar (DimTime) ---
+    # --- pages 1-2: source filter (DimSource) and the multi-ticker filter (DimTicker) ---
     src = data.sources(db_path)
     cond = {int(r.source_id): (r.subreddit.replace("r/", ""), "submission" if r.content_type == "Post" else "comment")
             for r in src.itertuples()}
@@ -141,19 +141,18 @@ def run(db_path):
         both = stored.merge(own, on="hour_utc", suffixes=("_s", "_o")).dropna()
         c.check("1 Reddit Volume (ตัวกรองแหล่งข้อมูล)", "%s: Z-score คำนวณซ้ำจากยอดรายชั่วโมง = ค่าที่เก็บไว้ (ต่างสูงสุด)" % wname,
                 float((both.zscore_s - both.zscore_o).abs().max()), 0.0, 1e-9)
-        # time hierarchy (sidebar Year > Month > Week): the range it gives holds exactly what DimTime attributes to that week
-        from dashboard import common
-        lo_d, hi_d = dt.date(2024, 9, 30), dt.date(2026, 8, 31)
-        stamps = (dt.datetime.fromtimestamp(start, dt.timezone.utc).date(), dt.datetime.fromtimestamp(end, dt.timezone.utc).date())
-        for year, month in sorted({(d.year, d.month) for d in stamps}):
-            weeks = list(dict.fromkeys(d.isocalendar()[1] for d in common.days_of_month(year, month, lo_d, hi_d)))
-            for week in weeks[1:3]:
-                a, b = common.cascade_range(year, month, week, None, lo_d, hi_d)
-                shown = int(data.total_volume_series(db_path, common.epoch(a), common.epoch(b, True)).texts.sum())
-                exp = c.q("SELECT SUM(v.texts) FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID) "
-                          "WHERE t.Year = ? AND t.Month = ? AND t.Week = ?", (year, month, week))[0][0]
-                c.check("ตัวกรองเวลา (ปี › เดือน › สัปดาห์)", "%d-%02d สัปดาห์ที่ %d: ปริมาณ Reddit ของช่วงที่เลือก = DimTime" % (year, month, week),
-                        shown, int(exp))
+        # several tickers taken together (multi-select of pages 1-2): the sum of the mentions of each of them
+        pair = ("TSLA", "BTC-USD")
+        where = "(p.subreddit = 'wallstreetbets' AND p.content_type = 'comment')"
+        ment_pair = c.q("SELECT COALESCE(SUM(m.mention_count), 0) FROM ticker_mentions m JOIN filtered_text p ON p.src_rowid = m.src_rowid "
+                        "WHERE m.ticker IN ('TSLA', 'BTC-USD') AND p.created_utc >= ? AND p.created_utc < ? AND " + where, (start, end + 3600))[0][0]
+        c.check("2 Ticker Mentions (หลาย Ticker)", "%s TSLA+BTC-USD (wsb ความคิดเห็น): รวม Ticker_mention_count" % wname,
+                int(data.mention_series(db_path, pair, start, end, (2,)).mentions.sum()), ment_pair)
+        split = data.ticker_volume_series(db_path, pair, start, end, (2,))
+        c.check("1 Reddit Volume (หลาย Ticker)", "%s TSLA+BTC-USD: โพสต์ + ความคิดเห็น = รวม" % wname,
+                int(split.posts.sum() + split.comments.sum()), ment_pair)
+        c.check("2 Ticker Mentions (หลาย Ticker)", "%s TSLA+BTC-USD: รายตัวรวมกัน = รวม" % wname,
+                int(data.mention_series_by_ticker(db_path, pair, start, end, (2,)).mentions.sum()), ment_pair)
         ticks = data.mention_ranking(db_path, start, end)
         groups = ticks.groupby("big_group").mentions.sum()
         exp_g = {r[0]: r[1] for r in c.q(

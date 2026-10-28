@@ -106,22 +106,23 @@ class DashboardTests(unittest.TestCase):
         self.assertGreater(len(both), 700)
         self.assertLess(float((both.zscore_stored - both.zscore_own).abs().max()), 1e-9)
 
-    def test_a_chosen_week_gives_the_dimtime_total(self):
-        """Choosing Year > Month > Week in the sidebar shows exactly the volume DimTime attributes to that week."""
-        from streamlit.testing.v1 import AppTest
-        at = AppTest.from_file(str(ROOT / "dashboard" / "pages/1_Reddit_Volume.py"), default_timeout=120).run()
-        at.sidebar.selectbox(key="f_year").select(2025).run()
-        at.sidebar.selectbox(key="f_month").select(3).run()
-        at.sidebar.selectbox(key="f_week").select(10).run()
-        self.assertEqual(len(at.exception), 0)
-        shown = int(at.metric[0].value.replace(",", ""))
-        db = sqlite3.connect("file:%s?mode=ro" % DB.as_posix(), uri=True)
-        try:
-            expected = db.execute("SELECT SUM(v.texts) FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID) "
-                                  "WHERE t.Year = 2025 AND t.Month = 3 AND t.Week = 10").fetchone()[0]
-        finally:
-            db.close()
-        self.assertEqual(shown, expected)
+    def test_several_tickers_equal_the_sum_of_their_parts(self):
+        from dashboard import data
+        start, end = 1740787200, 1743379200
+        ids = (2, 4)
+        one = data.mention_series(DB, "TSLA", start, end, ids).mentions.sum()
+        two = data.mention_series(DB, "NVDA", start, end, ids).mentions.sum()
+        both = data.mention_series(DB, ("TSLA", "NVDA"), start, end, ids)
+        self.assertEqual(int(both.mentions.sum()), int(one + two))
+        split = data.ticker_volume_series(DB, ("TSLA", "NVDA"), start, end, ids)
+        self.assertEqual(int(split.posts.sum() + split.comments.sum()), int(one + two))
+        self.assertEqual(int(split.posts.sum()), 0)                  # posts were filtered out (comments only)
+        by_ticker = data.mention_series_by_ticker(DB, ("TSLA", "NVDA"), start, end, ids)
+        self.assertEqual(int(by_ticker.mentions.sum()), int(one + two))
+        self.assertEqual(sorted(by_ticker.ticker.unique()), ["NVDA", "TSLA"])
+        self.assertEqual(int(data.volume_by_source(DB, ("TSLA", "NVDA"), start, end, ids).mentions.sum()), int(one + two))
+        self.assertEqual(data.ticker_zscore(DB, ("TSLA", "NVDA"), start, end, ids).basis.iloc[0], "mentions")
+        self.assertEqual(data.ticker_zscore(DB, "TSLA", start, end).basis.iloc[0], "texts")   # one ticker, all sources
 
     def test_on_demand_signals_equal_stored_signals(self):
         from analysis import signals

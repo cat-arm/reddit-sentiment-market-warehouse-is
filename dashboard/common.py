@@ -5,13 +5,14 @@ Pages: dashboard/pages/*.py  (Streamlit builds the menu from the file names)
 
 Central filter (identical on every page: same widgets, same order, same fixed keys, so a choice made on one page
 holds on all of them):
-  The sidebar follows the three dimensions of the proposal, each one a hierarchy, time first:
-    time      DimTime    year > month > week > day (each level appears after the one above), date range, chart level
-    source    DimSource  platform (Reddit) > communities > Post / Comment      (pages 1-2 only)
-    asset     DimTicker  asset class (Big_Group) > ticker                      (every page except Reddit Volume)
-  Choosing a level of the time hierarchy sets the date range of the WHOLE page (a drill-down by filter) and a finer chart
-  level; editing the date range by hand clears the hierarchy.  The default range is the LAST YEAR of the data.  Times are
-  UTC.  Rule: a central widget that a page does not draw is kept in a shadow key, because Streamlit forgets it otherwise.
+  The sidebar follows the three dimensions of the proposal, time first:
+    time      DimTime    date range (default: the last year of the data) and the chart level (hour .. year)
+    source    DimSource  platform (Reddit) > communities > Post / Comment: one tick box each, all ticked at first
+                                                                           (pages 1-2 only)
+    asset     DimTicker  asset class (Big_Group) boxes > tickers; pages 1-2 take SEVERAL tickers (a multi-select whose
+                         empty state means "all"), the other pages one ticker
+  Times are UTC.  Rule: a central widget that a page does not draw is kept in a shadow key, because Streamlit
+  forgets it otherwise.
 """
 
 import datetime as dt
@@ -37,11 +38,8 @@ GROUP_LABELS = {"stock_etf": "หุ้น/ETF", "futures": "ฟิวเจอ�
 GROUP_COLORS = {"stock_etf": "#1f77b4", "futures": "#ff7f0e", "crypto": "#2ca02c"}   # blue, orange, green
 GROUP_DOTS = {"stock_etf": "🔵", "futures": "🟠", "crypto": "🟢"}   # same colours inside the sidebar list
 DEFAULT_TICKER = "SPY"
-SOURCE_KEYS = ["f_comm", "f_type_Post", "f_type_Comment"]
-TIME_KEYS = ["f_year", "f_month", "f_week", "f_day"]            # the time hierarchy, top to bottom
+TYPE_KEYS = ["f_type_Post", "f_type_Comment"]
 DEFAULT_RANGE_DAYS = 365
-MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."]
-WEEKDAYS = ["จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา."]
 
 
 def group_name(key):
@@ -91,139 +89,65 @@ def _keep(keys):
             st.session_state["_keep_" + key] = st.session_state[key]
 
 
+def _community_key(name):
+    return "f_src_" + name
+
+
+def source_keys():
+    """Session keys of the source filter: one tick box per community, then Post and Comment."""
+    return [_community_key(c) for c in dict.fromkeys(q("sources").subreddit)] + TYPE_KEYS
+
+
 def selected_sources():
     """DimSource ids kept by the sidebar source filter (communities x Post / Comment); nothing ticked = everything."""
     src = q("sources")
-    communities = st.session_state.get("f_comm") or list(dict.fromkeys(src.subreddit))
+    all_communities = list(dict.fromkeys(src.subreddit))
+    communities = [c for c in all_communities if st.session_state.get(_community_key(c), True)] or all_communities
     types = [kind for kind in ("Post", "Comment") if st.session_state.get("f_type_" + kind, True)] or ["Post", "Comment"]
     keep = src[src.subreddit.isin(communities) & src.content_type.isin(types)]
     return tuple(int(i) for i in keep.source_id)
 
 
-def source_summary():
-    """One line for the page: which sources are shown."""
-    src = q("sources")
-    ids = selected_sources()
-    if len(ids) == len(src):
-        return "แหล่งข้อมูล: ทุกชุมชน ทั้งโพสต์และความคิดเห็น"
-    keep = src[src.source_id.isin(ids)]
-    return "แหล่งข้อมูล: %s (%s)" % (", ".join(dict.fromkeys(keep.subreddit)),
-                                    " + ".join(CONTENT_NAMES[k] for k in dict.fromkeys(keep.content_type)))
+def selected_tickers():
+    """Tickers kept by the asset filter of pages 1-2: the ticked asset classes, narrowed to the multi-select when it is
+    not empty (empty = every ticker of the ticked classes)."""
+    universe = q("tickers")
+    groups = [g for g in GROUP_LABELS if st.session_state.get("f_group_" + g, True)] or list(GROUP_LABELS)
+    pool = list(universe[universe.big_group.isin(groups)].ticker)
+    chosen = [t for t in st.session_state.get("f_tickers", []) if t in pool]
+    return tuple(chosen or pool)
 
 
-CONTENT_NAMES = {"Post": "โพสต์", "Comment": "ความคิดเห็น"}
+def tickers_restricted():
+    """True when the asset filter keeps fewer than all 34 tickers (then the numbers count mentions of those tickers
+    instead of every text)."""
+    return len(selected_tickers()) < len(q("tickers"))
 
 
 def _source_filter():
-    """The DimSource part of the sidebar: platform (fixed: Reddit) > communities > content type."""
+    """The DimSource part of the sidebar: platform (fixed: Reddit) > communities > content type, every box ticked."""
     src = q("sources")
-    communities = list(dict.fromkeys(src.subreddit))
     st.sidebar.write("แหล่งข้อมูล (DimSource)")
     st.sidebar.caption("แพลตฟอร์ม: Reddit")
-    st.session_state.setdefault("f_comm", communities)
-    st.session_state.setdefault("f_type_Post", True)
-    st.session_state.setdefault("f_type_Comment", True)
-    st.sidebar.multiselect("ชุมชน", communities, key="f_comm", help="เลือกได้หลายชุมชน ไม่เลือกเลย = ทุกชุมชน")
+    for key in source_keys():
+        st.session_state.setdefault(key, True)
+    st.sidebar.caption("ชุมชน")
+    for community in dict.fromkeys(src.subreddit):
+        st.sidebar.checkbox(community, key=_community_key(community))
+    st.sidebar.caption("ประเภทเนื้อหา")
     st.sidebar.checkbox("โพสต์ (Post)", key="f_type_Post")
     st.sidebar.checkbox("ความคิดเห็น (Comment)", key="f_type_Comment")
-    if not st.session_state["f_comm"] or not (st.session_state["f_type_Post"] or st.session_state["f_type_Comment"]):
-        st.sidebar.caption("ไม่ได้เลือกชุมชนหรือประเภท จึงแสดงทั้งหมด")
-
-
-# ------------------------------------------------------------------------------------------------ time hierarchy
-def _data_dates():
-    info = q("data_range")
-    lo = dt.datetime.fromtimestamp(info["market_lo"], dt.timezone.utc).date()
-    hi = dt.datetime.fromtimestamp(info["reddit_hi"], dt.timezone.utc).date()
-    return info, lo, hi
-
-
-def days_of_month(year, month, lo, hi):
-    """Dates of the month that lie inside the data (lo..hi)."""
-    first = dt.date(year, month, 1)
-    last = (first.replace(day=28) + dt.timedelta(days=4)).replace(day=1) - dt.timedelta(days=1)
-    a, b = max(first, lo), min(last, hi)
-    return [a + dt.timedelta(days=i) for i in range((b - a).days + 1)] if a <= b else []
-
-
-def week_days(year, month, week, lo, hi):
-    """Days of ISO week `week` that belong to the month (a week spanning two months is split, like DimTime.Month)."""
-    return [d for d in days_of_month(year, month, lo, hi) if d.isocalendar()[1] == week]
-
-
-def cascade_range(year, month, week, day, lo, hi):
-    """(first, last) date chosen by the Year > Month > Week > Day filters, clipped to the data; None = nothing chosen."""
-    if year is None:
-        return None
-    if month is None:
-        first, last = dt.date(year, 1, 1), dt.date(year, 12, 31)
-    else:
-        days = days_of_month(year, month, lo, hi) if week is None else week_days(year, month, week, lo, hi)
-        if not days:
-            return None
-        first, last = days[0], days[-1]
-        if day is not None:
-            first = last = dt.date.fromisoformat(day)
-    return max(first, lo), min(last, hi)
-
-
-def _week_label(days):
-    first, last = days[0], days[-1]
-    return "สัปดาห์ที่ %d (%d %s–%d %s)" % (first.isocalendar()[1], first.day, MONTHS[first.month - 1], last.day, MONTHS[last.month - 1])
-
-
-LEVEL_GRANULARITY = {0: "รายเดือน", 1: "รายวัน", 2: "รายวัน", 3: "รายชั่วโมง"}      # the chart level that suits each depth
-
-
-def _time_changed(level):
-    """Callback of the Year / Month / Week / Day boxes: clear the levels below, set the date range of the page and a
-    chart level that suits the depth."""
-    state = st.session_state
-    depth = TIME_KEYS.index(level)
-    for key in TIME_KEYS[depth + 1:]:
-        state[key] = None
-    _, lo, hi = _data_dates()
-    chosen = cascade_range(*(state.get(k) for k in TIME_KEYS), lo, hi)
-    deepest = max((i for i, k in enumerate(TIME_KEYS) if state.get(k) is not None), default=None)
-    state["f_range"] = chosen if chosen else (max(lo, hi - dt.timedelta(days=DEFAULT_RANGE_DAYS)), hi)
-    state["f_gran"] = LEVEL_GRANULARITY[deepest] if deepest is not None else DEFAULT_LEVEL
-
-
-def _range_edited():
-    """Callback of the manual date range: the hierarchy no longer describes it, so clear it."""
-    for key in TIME_KEYS:
-        st.session_state[key] = None
+    if not any(st.session_state[_community_key(c)] for c in dict.fromkeys(src.subreddit)) or not (
+            st.session_state["f_type_Post"] or st.session_state["f_type_Comment"]):
+        st.sidebar.caption("ไม่ได้ติ๊กชุมชนหรือประเภทเลย จึงแสดงทั้งหมด")
 
 
 def _time_filter(info):
-    """DimTime part of the sidebar: Year > Month > Week > Day, then a free date range and the chart level.
-    Returns the chosen (start_day, end_day)."""
-    _, lo, hi = _data_dates()
+    """DimTime part of the sidebar: the date range and the chart level.  Returns (start_day, end_day)."""
+    lo = dt.datetime.fromtimestamp(info["market_lo"], dt.timezone.utc).date()
+    hi = dt.datetime.fromtimestamp(info["reddit_hi"], dt.timezone.utc).date()
     state = st.session_state
     st.sidebar.write("เวลา (DimTime)")
-    for key in TIME_KEYS:
-        state.setdefault(key, None)
-    all_label = lambda v, name=None: "ทั้งหมด" if v is None else (name(v) if name else str(v))      # noqa: E731
-    st.sidebar.selectbox("ปี", [None] + list(range(lo.year, hi.year + 1)), key="f_year", format_func=all_label,
-                         on_change=_time_changed, args=("f_year",),
-                         help="เลือกปี แล้วจะเลือกเดือน สัปดาห์ วัน ต่อลงไปได้ ทั้งหน้าจะแสดงเฉพาะช่วงที่เลือก")
-    year = state["f_year"]
-    if year is not None:
-        months = [None] + [m for m in range(1, 13) if days_of_month(year, m, lo, hi)]
-        st.sidebar.selectbox("เดือน", months, key="f_month", on_change=_time_changed, args=("f_month",),
-                             format_func=lambda v: all_label(v, lambda m: MONTHS[m - 1]))
-        month = state["f_month"]
-        if month is not None:
-            weeks = list(dict.fromkeys(d.isocalendar()[1] for d in days_of_month(year, month, lo, hi)))
-            st.sidebar.selectbox("สัปดาห์", [None] + weeks, key="f_week", on_change=_time_changed, args=("f_week",),
-                                 format_func=lambda v: all_label(v, lambda w: _week_label(week_days(year, month, w, lo, hi))))
-            week = state["f_week"]
-            if week is not None:
-                days = [d.isoformat() for d in week_days(year, month, week, lo, hi)]
-                st.sidebar.selectbox("วัน", [None] + days, key="f_day", on_change=_time_changed, args=("f_day",),
-                                     format_func=lambda v: all_label(v, lambda d: "%d %s (%s)" % (
-                                         dt.date.fromisoformat(d).day, MONTHS[dt.date.fromisoformat(d).month - 1],
-                                         WEEKDAYS[dt.date.fromisoformat(d).weekday()])))
     state.setdefault("f_range", (max(lo, hi - dt.timedelta(days=DEFAULT_RANGE_DAYS)), hi))     # no `value=`: the key carries it
     state.setdefault("f_gran", DEFAULT_LEVEL)
     stored = state["f_range"]                                       # a stale range outside the data would make the box fail
@@ -231,9 +155,8 @@ def _time_filter(info):
     clipped = tuple(min(max(d, lo), hi) for d in given)
     if tuple(given) != clipped:
         state["f_range"] = clipped
-    picked = st.sidebar.date_input("กำหนดช่วงเอง (UTC)", min_value=lo, max_value=hi, key="f_range",
-                                   format="YYYY/MM/DD", on_change=_range_edited,
-                                   help="พิมพ์วันที่ในช่องได้โดยตรง (ปี/เดือน/วัน) หรือคลิกจากปฏิทิน การแก้ช่วงเองจะล้างตัวเลือกปี/เดือน/สัปดาห์/วัน")
+    picked = st.sidebar.date_input("ช่วงเวลา (UTC)", min_value=lo, max_value=hi, key="f_range", format="YYYY/MM/DD",
+                                   help="ค่าเริ่มต้นย้อนหลัง 1 ปี พิมพ์วันที่ในช่องได้โดยตรง (ปี/เดือน/วัน) หรือคลิกจากปฏิทิน")
     # While the user is still choosing, Streamlit returns only ONE date (a tuple of length 1): treat it as that single
     # day until the second date is clicked, so the page never breaks halfway through a selection.
     days = list(picked) if isinstance(picked, (tuple, list)) else [picked]
@@ -242,26 +165,65 @@ def _time_filter(info):
         st.sidebar.caption("เลือกวันเดียวอยู่: ดูเฉพาะวันนี้ จนกว่าจะคลิกวันสุดท้ายของช่วง")
     st.sidebar.caption("ข้อมูล Reddit: %s → %s" % (dt.datetime.fromtimestamp(info["reddit_lo"], dt.timezone.utc).date(), hi))
     st.sidebar.selectbox("ความละเอียดของกราฟ", list(GRANULARITY), key="f_gran",
-                         help="ระดับเวลาของ DimTime: ชั่วโมง วัน สัปดาห์ เดือน ปี (รายชั่วโมงในช่วงยาวมากอาจโหลดช้า) "
-                              "เมื่อเลือกปี/เดือน/วัน ระบบเปลี่ยนให้เหมาะกับระดับนั้น แก้เองได้")
+                         help="ระดับเวลาของ DimTime: ชั่วโมง วัน สัปดาห์ เดือน ปี (รายชั่วโมงในช่วงยาวมากอาจโหลดช้า)")
     return start_day, end_day
 
 
-def sidebar(need_ticker=True, assets=True, sources=False):
+def _asset_filter(universe, multi, need_ticker):
+    """The DimTicker part of the sidebar: asset-class boxes, then the ticker(s).  Returns (ticker or None, groups).
+    multi=True (pages 1-2): a multi-select where nothing chosen means every ticker of the ticked classes."""
+    st.sidebar.write("หลักทรัพย์ (DimTicker)")
+    # One tick box per asset class (instead of a multiselect whose chips are all the same colour): the coloured dot is
+    # the colour this class has in every chart.
+    groups = [key for key in GROUP_LABELS
+              if st.sidebar.checkbox(GROUP_DOTS[key] + " " + GROUP_LABELS[key], value=True, key="f_group_" + key)]
+    if not groups:                                          # nothing ticked would empty every page: use all
+        st.sidebar.caption("ไม่ได้ติ๊กกลุ่มใดเลย จึงแสดงทุกกลุ่ม")
+        groups = list(GROUP_LABELS)
+    pool = universe[universe.big_group.isin(groups)]
+    options = list(pool.ticker)                             # already ordered stocks/ETF, futures, crypto
+    kind_of = dict(zip(universe.ticker, universe.big_group))
+    name = dict(zip(universe.ticker, universe.name))
+    label = lambda t: "%s %s · %s" % (GROUP_DOTS[kind_of[t]], t, name[t])                     # noqa: E731
+    if multi:
+        st.session_state["f_tickers"] = [t for t in st.session_state.get("f_tickers", []) if t in options]   # left the classes
+        st.sidebar.multiselect("สินทรัพย์ (Ticker) เลือกได้หลายตัว", options, key="f_tickers", format_func=label,
+                               placeholder="ทั้งหมดในกลุ่มที่ติ๊ก (เลือกเพื่อจำกัด)",
+                               help="ไม่เลือกเลย = ทุกตัวของกลุ่มที่ติ๊กไว้ เลือกตัวใดตัวหนึ่งเพื่อดูเฉพาะตัวนั้น")
+        return None, groups
+    # The single-ticker box is drawn on EVERY page that draws the asset filter, even where the page does not use it
+    # (home, ranking): a widget that is not drawn on a page loses its value in Streamlit.
+    default = DEFAULT_TICKER if DEFAULT_TICKER in options else options[0]
+    if st.session_state.get("f_ticker") not in options:       # the old choice may have left the chosen groups
+        st.session_state["f_ticker"] = default
+    ticker = st.sidebar.selectbox("สินทรัพย์ (Ticker)", options, key="f_ticker",
+                                  format_func=lambda t: "%s  (%s)" % (label(t), GROUP_LABELS[kind_of[t]]))
+    if not need_ticker:
+        st.sidebar.caption("หน้านี้แสดงทุกสินทรัพย์ จึงไม่ใช้ช่อง Ticker (ค่ายังถูกจำไว้สำหรับหน้าอื่น)")
+    return ticker, groups
+
+
+def sidebar(need_ticker=True, assets=True, sources=False, multi=False):
     """Draw the central filter (time first, then source, then asset); returns (ticker or None, start_epoch, end_epoch,
-    groups).  assets=False: the asset-class boxes and the ticker box are NOT drawn and all classes are used.
-    sources=True: the source filter is drawn too (read it with `selected_sources()`).
+    groups).  assets=False: the asset filter is NOT drawn and all classes are used.  sources=True: the source filter
+    is drawn too (read it with `selected_sources()`).  multi=True: several tickers can be chosen (read them with
+    `selected_tickers()`; the returned ticker is None).
     Streamlit would forget the values of widgets a page does not draw, so they are kept in shadow keys and restored on
     the next page that draws them."""
     info = q("data_range")
     universe = q("tickers")
     st.sidebar.header("ตัวกรองกลาง")
-    asset_keys = ["f_ticker"] + ["f_group_" + k for k in GROUP_LABELS]
-    _restore(asset_keys + SOURCE_KEYS)
+    s_keys = source_keys()
+    group_keys = ["f_group_" + k for k in GROUP_LABELS]
+    _restore(["f_ticker", "f_tickers"] + group_keys + s_keys)
     if not sources:
-        _keep(SOURCE_KEYS)
+        _keep(s_keys)
     if not assets:
-        _keep(asset_keys)
+        _keep(["f_ticker", "f_tickers"] + group_keys)
+    elif multi:
+        _keep(["f_ticker"])
+    else:
+        _keep(["f_tickers"])
     start_day, end_day = _time_filter(info)
     st.sidebar.divider()
     if sources:
@@ -269,30 +231,10 @@ def sidebar(need_ticker=True, assets=True, sources=False):
         st.sidebar.divider()
     ticker, groups = None, list(GROUP_LABELS)
     if assets:
-        # One tick box per asset class (instead of a multiselect whose chips are all the same colour): the coloured dot
-        # is the colour this class has in every chart.
-        st.sidebar.write("หลักทรัพย์ (DimTicker)")
-        groups = [key for key in GROUP_LABELS
-                  if st.sidebar.checkbox(GROUP_DOTS[key] + " " + GROUP_LABELS[key], value=True, key="f_group_" + key)]
-        if not groups:                                      # nothing ticked would empty every page: use all
-            st.sidebar.caption("ไม่ได้เลือกกลุ่มใดเลย จึงแสดงทุกกลุ่ม")
-            groups = list(GROUP_LABELS)
-        pool = universe[universe.big_group.isin(groups)]
-        # The ticker box is drawn on EVERY page that draws the asset filter, even where the page does not use it (home,
-        # ranking): a widget that is not drawn on a page loses its value in Streamlit.
-        options = list(pool.ticker)                         # already ordered stocks/ETF, futures, crypto
-        default = DEFAULT_TICKER if DEFAULT_TICKER in options else options[0]
-        if st.session_state.get("f_ticker") not in options:   # the old choice may have left the chosen groups
-            st.session_state["f_ticker"] = default
-        kind_of = dict(zip(universe.ticker, universe.big_group))
-        name = dict(zip(universe.ticker, universe.name))
-        ticker = st.sidebar.selectbox("สินทรัพย์ (Ticker)", options, key="f_ticker",
-                                      format_func=lambda t: "%s %s · %s  (%s)" % (GROUP_DOTS[kind_of[t]], t, name[t], GROUP_LABELS[kind_of[t]]))
-        if not need_ticker:
-            st.sidebar.caption("หน้านี้แสดงทุกสินทรัพย์ จึงไม่ใช้ช่อง Ticker (ค่ายังถูกจำไว้สำหรับหน้าอื่น)")
+        ticker, groups = _asset_filter(universe, multi, need_ticker)
         st.sidebar.divider()
     else:
-        st.sidebar.caption("หน้านี้นับข้อความทั้งหมด ไม่เกี่ยวกับสินทรัพย์ จึงไม่มีตัวกรองสินทรัพย์")
+        st.sidebar.caption("หน้านี้ไม่เกี่ยวกับสินทรัพย์ จึงไม่มีตัวกรองสินทรัพย์")
     if not sources:
         st.sidebar.caption("ตัวกรองชุมชนและประเภท (โพสต์/ความคิดเห็น) ใช้เฉพาะหน้า Reddit Volume และ Ticker Mentions")
     return ticker, epoch(start_day), epoch(end_day, end_of_day=True), groups
@@ -435,6 +377,24 @@ def line(df, x, y, title, color="#1f77b4", height=260, fmt=None, y_zero=False, d
         tip = [alt.Tooltip(x + ":T", title=PERIOD_LABEL[granularity()], format=DATE_TIP[granularity()]),
                alt.Tooltip(y + ":Q", title=label, format=",.2f")]
     return series_chart(df, x, y, title, color, height, tooltip=tip, fmt=fmt, y_zero=y_zero, dots=dots, bar=bar)
+
+
+def multi_series_chart(df, x, y, series, title, height=300, bar=False, fmt=None):
+    """Several series (one per value of column `series`) over time: lines, or stacked bars when `bar`."""
+    how = granularity()
+    ticks = {"tickCount": TICK_STEP[how]} if how in TICK_STEP else {}
+    axis = alt.Axis(format=fmt or DATE_FORMAT[how], labelOverlap=True, **ticks)
+    tip = [alt.Tooltip(x + ":T"), alt.Tooltip(series + ":N", title="หลักทรัพย์"), alt.Tooltip(y + ":Q", format=",.0f")]
+    color = alt.Color(series + ":N", title="หลักทรัพย์")
+    if bar:
+        chart = alt.Chart(df).mark_bar(opacity=0.9).encode(
+            x=alt.X(x + ":T", title=None, timeUnit=TIME_UNIT[how], axis=axis),
+            y=alt.Y(y + ":Q", title=title, stack=True, axis=alt.Axis(minExtent=55)), color=color, tooltip=tip)
+    else:
+        chart = alt.Chart(df).mark_line().encode(x=alt.X(x + ":T", title=None, axis=axis),
+                                                 y=alt.Y(y + ":Q", title=title, axis=alt.Axis(minExtent=55)),
+                                                 color=color, tooltip=tip)
+    return chart.properties(height=height).interactive()
 
 
 def dual_axis(df, x, left, right, left_title, right_title, height=300):

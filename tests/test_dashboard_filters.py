@@ -11,17 +11,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
 SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # only these tables are split by source
-NO_ASSET_PAGES = {"pages/1_Reddit_Volume.py"}                                # total volume has nothing to do with an asset
-TIME_KEYS = ["f_year", "f_range", "f_gran"]
-SOURCE_KEYS = ["f_comm", "f_type_Post", "f_type_Comment"]
-ASSET_KEYS = ["f_group_stock_etf", "f_group_futures", "f_group_crypto", "f_ticker"]
+MULTI_PAGES = SOURCE_PAGES                                                    # and these take several tickers
+TIME_KEYS = ["f_range", "f_gran"]
+COMMUNITIES = ["r/wallstreetbets", "r/stocks", "r/investing", "r/StockMarket", "r/options", "r/CryptoCurrency"]
+SOURCE_KEYS = ["f_src_" + c for c in COMMUNITIES] + ["f_type_Post", "f_type_Comment"]
+GROUP_KEYS = ["f_group_stock_etf", "f_group_futures", "f_group_crypto"]
 PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
          "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Signals.py", "pages/6_Hot_Events.py"]
 
 
 def expected_keys(page):
     """Sidebar order: time (DimTime) first, then source (DimSource), then asset (DimTicker)."""
-    return TIME_KEYS + (SOURCE_KEYS if page in SOURCE_PAGES else []) + ([] if page in NO_ASSET_PAGES else ASSET_KEYS)
+    asset = GROUP_KEYS + (["f_tickers"] if page in MULTI_PAGES else ["f_ticker"])
+    return TIME_KEYS + (SOURCE_KEYS if page in SOURCE_PAGES else []) + asset
 
 
 def sidebar_order(at):
@@ -58,52 +60,49 @@ class FilterTests(unittest.TestCase):
         for page in PAGES:
             at = self.run_page(page, **chosen)
             self.assertEqual(len(at.exception), 0, "%s raised %s" % (page, [e.value for e in at.exception]))
-            if page not in NO_ASSET_PAGES:
-                self.assertFalse(at.sidebar.checkbox(key="f_group_crypto").value, page)
-                self.assertTrue(at.sidebar.checkbox(key="f_group_stock_etf").value, page)
+            self.assertFalse(at.sidebar.checkbox(key="f_group_crypto").value, page)
+            self.assertTrue(at.sidebar.checkbox(key="f_group_stock_etf").value, page)
+            if page not in MULTI_PAGES:
                 self.assertEqual(at.sidebar.selectbox(key="f_ticker").value, "QQQ", page)
             self.assertEqual(at.sidebar.selectbox(key="f_gran").value, "รายเดือน", page)
             self.assertEqual(tuple(at.sidebar.date_input(key="f_range").value),
                              (dt.date(2026, 8, 3), dt.date(2026, 8, 9)), page)
 
-    def test_time_hierarchy_sets_the_range_and_clears_below(self):
-        """Year > Month > Week > Day: each choice narrows the date range of the page and picks a suitable chart level."""
-        at = self.run_page("pages/1_Reddit_Volume.py")
-        at.sidebar.selectbox(key="f_year").select(2026).run()
-        self.assertEqual(tuple(at.sidebar.date_input(key="f_range").value), (dt.date(2026, 1, 1), dt.date(2026, 8, 31)))
-        self.assertEqual(at.sidebar.selectbox(key="f_gran").value, "รายเดือน")
-        at.sidebar.selectbox(key="f_month").select(3).run()
-        self.assertEqual(tuple(at.sidebar.date_input(key="f_range").value), (dt.date(2026, 3, 1), dt.date(2026, 3, 31)))
-        at.sidebar.selectbox(key="f_week").select(10).run()                         # ISO week 10: 2-8 March
-        self.assertEqual(tuple(at.sidebar.date_input(key="f_range").value), (dt.date(2026, 3, 2), dt.date(2026, 3, 8)))
-        at.sidebar.selectbox(key="f_day").select_index(2).run()
-        self.assertEqual(tuple(at.sidebar.date_input(key="f_range").value), (dt.date(2026, 3, 3), dt.date(2026, 3, 3)))
-        self.assertEqual(at.sidebar.selectbox(key="f_gran").value, "รายชั่วโมง")
-        at.sidebar.selectbox(key="f_month").select(4).run()                         # changing a level clears the ones below
-        self.assertIsNone(at.session_state["f_week"])
-        self.assertEqual(len(at.exception), 0)
-        at.sidebar.date_input(key="f_range").set_value((dt.date(2026, 1, 5), dt.date(2026, 1, 9))).run()
-        self.assertIsNone(at.sidebar.selectbox(key="f_year").value)                 # a hand-made range clears the hierarchy
-        at.sidebar.selectbox(key="f_year").select(2025).run()
-        at.sidebar.selectbox(key="f_year").select_index(0).run()                    # "all" goes back to the default year
-        self.assertEqual(tuple(at.sidebar.date_input(key="f_range").value), (dt.date(2025, 8, 31), dt.date(2026, 8, 31)))
+    def test_every_source_box_starts_ticked_and_changes_the_numbers(self):
+        for page in SOURCE_PAGES:
+            at = self.run_page(page)
+            for key in SOURCE_KEYS:
+                self.assertTrue(at.sidebar.checkbox(key=key).value, "%s %s" % (page, key))
+            full = at.metric[0].value
+            at.sidebar.checkbox(key="f_src_r/wallstreetbets").set_value(False).run()
+            self.assertNotEqual(at.metric[0].value, full, page + " (community off)")
+            smaller = at.metric[0].value
+            at.sidebar.checkbox(key="f_type_Post").set_value(False).run()
+            self.assertNotEqual(at.metric[0].value, smaller, page + " (posts off)")
+            self.assertEqual(len(at.exception), 0, page)
 
-    def test_hierarchy_days_agree_with_dimtime(self):
-        """The weeks and days offered by the sidebar are the DimTime weeks and days (Year / Month / Week / Day)."""
-        import sqlite3
-        from dashboard import common
-        lo, hi = dt.date(2024, 9, 30), dt.date(2026, 8, 31)
-        db = sqlite3.connect("file:%s?mode=ro" % DB.as_posix(), uri=True)
-        try:
-            for year, month in ((2024, 12), (2025, 1), (2025, 3), (2026, 8)):
-                rows = db.execute("SELECT Week, Day FROM DimTime WHERE Year = ? AND Month = ? GROUP BY Week, Day ORDER BY Day",
-                                  (year, month)).fetchall()
-                rows = [(w, d) for w, d in rows if lo <= dt.date(year, month, d) <= hi]
-                for week in sorted({w for w, _ in rows}):
-                    expected = [dt.date(year, month, d) for w, d in rows if w == week]
-                    self.assertEqual(common.week_days(year, month, week, lo, hi), expected, (year, month, week))
-        finally:
-            db.close()
+    def test_several_tickers_and_classes_change_the_numbers(self):
+        """Pages 1-2: nothing chosen = every ticker; choosing tickers or unticking a class narrows the numbers."""
+        for page in SOURCE_PAGES:
+            at = self.run_page(page)
+            full = at.metric[0].value
+            at.multiselect(key="f_tickers").set_value(["TSLA", "NVDA"]).run()
+            two = at.metric[0].value
+            self.assertNotEqual(two, full, page)
+            at.multiselect(key="f_tickers").set_value(["TSLA", "NVDA", "BTC-USD"]).run()
+            self.assertNotEqual(at.metric[0].value, two, page)
+            at.sidebar.checkbox(key="f_group_crypto").set_value(False).run()          # BTC-USD leaves with its class
+            self.assertEqual(at.session_state["f_tickers"], ["TSLA", "NVDA"], page)
+            self.assertEqual(at.metric[0].value, two, page)
+            self.assertEqual(len(at.exception), 0, page)
+
+    def test_total_volume_page_shows_all_texts_unless_tickers_are_chosen(self):
+        at = self.run_page("pages/1_Reddit_Volume.py")
+        self.assertEqual(at.metric[0].label, "Reddit Volume รวม")
+        self.assertEqual(len(at.info), 0)
+        at.multiselect(key="f_tickers").set_value(["SPY"]).run()
+        self.assertEqual(at.metric[0].label, "Ticker Mention Count รวม")
+        self.assertEqual(len(at.info), 1)                            # the page says what it now counts
 
     def test_every_chart_can_switch_to_bars(self):
         """The line / bar switch sits on each chart (not in the sidebar) and every chart survives being a bar chart."""
@@ -117,27 +116,38 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(len(at.exception), 0, "%s raised %s" % (page, [e.value for e in at.exception]))
         self.assertEqual(len(list(self.run_page("pages/1_Reddit_Volume.py").sidebar.radio)), 0)
 
+    def test_several_tickers_chart_survives_lines_and_bars(self):
+        at = self.run_page("pages/2_Ticker_Mentions.py")
+        at.multiselect(key="f_tickers").set_value(["TSLA", "NVDA", "SPY"]).run()
+        self.assertEqual(len(at.exception), 0)
+        at.radio(key="ck_m_count").set_value("แท่ง").run()             # stacked bars, one colour per ticker
+        self.assertEqual(len(at.exception), 0)
+        at.multiselect(key="f_tickers").set_value(list(["TSLA", "NVDA", "SPY", "QQQ", "AAPL", "AMD", "AMC", "GME", "MSFT"])).run()
+        self.assertEqual(len(at.exception), 0)                       # more than 8 tickers: one summed line
+
     def test_default_range_is_the_last_year_of_the_data(self):
         at = self.run_page("app.py")
         lo, hi = at.sidebar.date_input(key="f_range").value
         self.assertEqual(hi, dt.date(2026, 8, 31))                 # last day of Reddit data
         self.assertEqual((hi - lo).days, 365)
 
-    def test_source_choice_holds_across_pages_that_do_not_draw_it(self):
-        """The source filter is drawn on pages 1-2 only; a choice made there must come back when the user returns."""
+    def test_source_and_ticker_choices_hold_across_pages_that_do_not_draw_them(self):
+        """The source filter and the multi-select are drawn on pages 1-2 only; a choice made there must come back."""
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(ROOT / "dashboard" / "pages/1_Reddit_Volume.py"), default_timeout=90).run()
-        at.multiselect(key="f_comm").set_value(["r/stocks", "r/options"])
-        at.checkbox(key="f_type_Post").set_value(False)
+        at.sidebar.checkbox(key="f_src_r/options").set_value(False)
+        at.sidebar.checkbox(key="f_type_Post").set_value(False)
+        at.multiselect(key="f_tickers").set_value(["TSLA"])
         at = at.run()
         self.assertEqual(len(at.exception), 0)
-        state = dict(f_comm=["r/stocks", "r/options"], f_type_Post=False, f_type_Comment=True)
+        state = {"f_src_r/options": False, "f_type_Post": False, "f_tickers": ["TSLA"]}
         other = AppTest.from_file(str(ROOT / "dashboard" / "pages/3_Price_and_Return.py"), default_timeout=90)
         for key, value in state.items():
             other.session_state[key] = value
         other = other.run()                                         # page without the widgets: the values go to shadow keys
-        self.assertEqual(other.session_state["_keep_f_comm"], ["r/stocks", "r/options"])
+        self.assertFalse(other.session_state["_keep_f_src_r/options"])
         self.assertFalse(other.session_state["_keep_f_type_Post"])
+        self.assertEqual(other.session_state["_keep_f_tickers"], ["TSLA"])
 
     def test_every_time_level_works_on_every_page(self):
         """Hour / day / week / month / year (DimTime levels) on a short, a medium and the full range."""

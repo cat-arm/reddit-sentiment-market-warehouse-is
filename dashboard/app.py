@@ -1,8 +1,8 @@
 """Home page of the dashboard.  Start with:   streamlit run dashboard/app.py
 
 Six content pages live in dashboard/pages/ (the sidebar menu lists them):
-  1 Reddit Volume          proposal 7.1-1   all posts + comments per hour and its Z-score (source filter, no asset filter)
-  2 Ticker Mentions        proposal 7.1-2   how often each asset is mentioned, mention rate (source filter)
+  1 Reddit Volume          proposal 7.1-1   all posts + comments per hour and its Z-score (source + multi-ticker filters)
+  2 Ticker Mentions        proposal 7.1-2   how often each asset is mentioned, mention rate (source + multi-ticker filters)
   3 Price and Return       proposal 7.2-1   close, volume, future returns, volatility
   4 Market and Sentiment   proposal 7.5-1   price next to Reddit sentiment, ratios, majority status
   5 Ranking and Signals    proposal 7.5-2   win-rate ranking + adjustable signal thresholds (7.6)
@@ -53,9 +53,9 @@ st.caption("ช่วงข้อมูลทั้งหมด (ไม่ขึ
 
 st.subheader("วิธีใช้")
 st.markdown("""
-- ตัวกรองที่แถบด้านซ้ายเรียงตามมิติของคลังข้อมูล: **เวลา** (ปี › เดือน › สัปดาห์ › วัน เลือกแล้วทั้งหน้าจะแสดงเฉพาะช่วงนั้น, ช่วงวันที่, ความละเอียดกราฟ; ค่าเริ่มต้นย้อนหลัง 1 ปี) › **แหล่งข้อมูล** (ชุมชน และโพสต์/ความคิดเห็น เฉพาะหน้า Reddit Volume และ Ticker Mentions) › **หลักทรัพย์** (กลุ่มสินทรัพย์ › Ticker)
+- ตัวกรองที่แถบด้านซ้ายเรียงตามมิติของคลังข้อมูล: **เวลา** (ช่วงวันที่ ค่าเริ่มต้นย้อนหลัง 1 ปี และความละเอียดกราฟ ชั่วโมง วัน สัปดาห์ เดือน ปี) › **แหล่งข้อมูล** (ติ๊กชุมชนและโพสต์/ความคิดเห็น ติ๊กไว้ทั้งหมดตอนแรก เฉพาะหน้า Reddit Volume และ Ticker Mentions) › **หลักทรัพย์** (ติ๊กกลุ่มสินทรัพย์ แล้วเลือก Ticker; สองหน้านั้นเลือกได้หลายตัว ไม่เลือกเลย = ทุกตัวของกลุ่มที่ติ๊ก)
 - กราฟแต่ละอันมีปุ่มสลับ **เส้น / แท่ง** ของตัวเองอยู่เหนือกราฟ
-- **Reddit Volume**: ปริมาณโพสต์และความคิดเห็นทั้งหมด (ไม่เกี่ยวกับสินทรัพย์ จึงไม่มีตัวกรองสินทรัพย์) และ Z-score เทียบกับ 24 ชั่วโมงก่อนหน้า (ไม่รวมชั่วโมงปัจจุบัน)
+- **Reddit Volume**: ปริมาณโพสต์และความคิดเห็นทั้งหมด (ถ้าเลือกหลักทรัพย์บางตัว จะแสดงจำนวนครั้งที่ตัวเหล่านั้นถูกพูดถึงแทน) และ Z-score เทียบกับ 24 ชั่วโมงก่อนหน้า (ไม่รวมชั่วโมงปัจจุบัน)
 - **Ticker Mentions**: อันดับสินทรัพย์ที่ถูกพูดถึง แนวโน้มของสินทรัพย์ที่เลือก และสัดส่วนการพูดถึง
 - **Price and Return**: ราคาปิด ปริมาณซื้อขาย ผลตอบแทนล่วงหน้า 1/2/3/6/12 ชั่วโมง และความผันผวน
 - **Market and Sentiment**: ราคาเทียบกับค่าความรู้สึกเฉลี่ย สัดส่วนบวก/ลบ/กลาง และประเภทความรู้สึกส่วนใหญ่
