@@ -22,10 +22,9 @@ from dashboard.common import GROUP_LABELS, q  # noqa: E402
 common.setup("Market and Sentiment: ภาพรวมตลาดและความรู้สึก", "🧭")
 ticker, start, end, groups = common.sidebar()
 how = common.granularity(start, end, "g_sent")
-# Page-specific controls live in the MAIN area (like the thresholds of the ranking page); the sidebar holds only the
-# central filters, identical on every page.
-statuses = st.multiselect("เลือกเฉพาะชั่วโมงที่ประเภทความรู้สึกส่วนใหญ่เป็น", ["positive", "negative", "neutral"],
-                          default=["positive", "negative", "neutral"], key="f_majority")
+# Page-specific controls live in the MAIN area (under the KPI cards); the sidebar holds only the central filters.  The
+# cards come first, so the choice below is read from its key (Streamlit has already stored it when the page reruns).
+statuses = st.session_state.get("f_majority", ["positive", "negative", "neutral"])
 
 series = q("overview_series", ticker, start, end)
 if series.empty:
@@ -56,6 +55,18 @@ def weighted_resample(df, how):
 
 
 shown = weighted_resample(series, how)
+
+# KPI cards first
+text_hours = series.sentiment_mean.notna().sum()
+w = series.reddit_volume.where(series.sentiment_mean.notna())
+common.kpi_cards([
+    ("ชั่วโมงที่มีข้อความ", "{:,} / {:,}".format(int(text_hours), len(series)), None),
+    ("Sentiment Score เฉลี่ย", "n/a" if not w.sum() else "{:+.3f}".format((series.sentiment_mean * w).sum() / w.sum()), None),
+    ("Sentiment Momentum เฉลี่ย", common.money(series.momentum.mean()), None),
+    ("Reddit Volume Z-score สูงสุด", common.money(series.zscore.max()), None)])
+st.multiselect("เลือกเฉพาะชั่วโมงที่ประเภทความรู้สึกส่วนใหญ่เป็น", ["positive", "negative", "neutral"],
+               default=["positive", "negative", "neutral"], key="f_majority")
+
 st.subheader("%s: ราคาปิดเทียบค่าความรู้สึกเฉลี่ย" % ticker)
 if shown.sentiment_mean.notna().sum() == 0:
     st.info("ไม่มีข้อความที่พูดถึง %s ในช่วงนี้ จึงแสดงเฉพาะราคา" % ticker)
@@ -65,14 +76,6 @@ else:
                     width="stretch")
     st.caption("เส้นน้ำเงิน = ราคาปิด  \nเส้นแดง = Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น) "
                "ช่วงที่เส้นแดงขาด = ไม่มีข้อความ ไม่ใช่ค่ากลาง")
-
-k1, k2, k3, k4 = st.columns(4)
-text_hours = series.sentiment_mean.notna().sum()
-k1.metric("ชั่วโมงที่มีข้อความ", "{:,} / {:,}".format(int(text_hours), len(series)))
-w = series.reddit_volume.where(series.sentiment_mean.notna())
-k2.metric("Sentiment Score เฉลี่ย", "n/a" if not w.sum() else "{:+.3f}".format((series.sentiment_mean * w).sum() / w.sum()))
-k3.metric("Sentiment Momentum เฉลี่ย", common.money(series.momentum.mean()))
-k4.metric("Reddit Volume Z-score สูงสุด", common.money(series.zscore.max()))
 
 st.subheader("สัดส่วนความคิดเห็นเชิงบวก / ลบ / เป็นกลาง")
 ratios = shown.melt(id_vars="time", value_vars=["pos_ratio", "neg_ratio", "neu_ratio"], var_name="ประเภท",

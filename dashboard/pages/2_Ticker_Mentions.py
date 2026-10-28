@@ -46,16 +46,16 @@ merged["mentions"] = merged["mentions"].fillna(0)          # nobody mentioned it
 shown = common.resample(merged, {"mentions": "sum", "texts": "sum", "zscore": "max"}, how)
 shown["rate"] = 100.0 * shown["mentions"] / shown["texts"].where(shown["texts"] > 0)
 
-# ================================================================================================ KPIs on top
+# ================================================================================================ KPI cards on top
 # KPIs of proposal 7.1: Ticker Mention Count (measure), Ticker Mention Rate (%) and Reddit Volume Z-score
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Ticker Mention Count รวม (ครั้ง)", "{:,}".format(int(mentions.mentions.sum())))
 all_texts = float(merged.texts.sum())
-m2.metric("Ticker Mention Rate (%)", "n/a" if not all_texts else "{:.3f}".format(100.0 * mentions.mentions.sum() / all_texts),
-          help="Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดในช่วงเดียวกัน × 100")
-m3.metric("Reddit Volume Z-score สูงสุด", common.money(volume.zscore.max()),
-          help="Z-score ของจำนวนที่พูดถึงสินทรัพย์ที่เลือก เทียบกับ 24 ชั่วโมงก่อนหน้าของตัวเอง")
-m4.metric("ชั่วโมงที่ Z-score > 1.5", "{:,}".format(int((volume.zscore > 1.5).sum())), help="spike ตามเกณฑ์ 1.5 ของ proposal")
+common.kpi_cards([
+    ("Ticker Mention Count รวม (ครั้ง)", "{:,}".format(int(mentions.mentions.sum())), None),
+    ("Ticker Mention Rate (%)", "n/a" if not all_texts else "{:.3f}".format(100.0 * mentions.mentions.sum() / all_texts),
+     "Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดในช่วงเดียวกัน × 100"),
+    ("Reddit Volume Z-score สูงสุด", common.money(volume.zscore.max()),
+     "Z-score ของจำนวนที่พูดถึงสินทรัพย์ที่เลือก เทียบกับ 24 ชั่วโมงก่อนหน้าของตัวเอง"),
+    ("ชั่วโมงที่ Z-score > 1.5", "{:,}".format(int((volume.zscore > 1.5).sum())), "spike ตามเกณฑ์ 1.5 ของ proposal")])
 if volume.empty or volume.basis.iloc[0] == "texts":
     st.caption("Volume Z-score ของสินทรัพย์ = เทียบจำนวนข้อความที่พูดถึงตัวนี้กับ 24 ชั่วโมงก่อนหน้าของตัวเอง "
                "(ใช้ในชุดข้อมูล panel_Ticker_spike)")

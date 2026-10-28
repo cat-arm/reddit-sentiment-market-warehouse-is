@@ -313,6 +313,22 @@ def ticker_risk(db_path, start, end):
         ORDER BY mean_normalized_atr_pct DESC""", (start, end))
 
 
+def future_return_for_ticker(db_path, ticker, start, end):
+    """Mean future return (%) and share of positive returns of ONE ticker per horizon (long format)."""
+    parts = []
+    for h in HORIZONS:
+        col = "future_return_" + h
+        df = _read(db_path, """
+            SELECT COUNT(%s) AS n, AVG(%s) AS mean_return_pct,
+                   AVG(CASE WHEN %s > 0 THEN 1.0 WHEN %s < 0 THEN 0.0 END) AS share_up
+            FROM market_hourly_features
+            WHERE ticker = ? AND CAST(strftime('%%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?"""
+                   % (col, col, col, col), (ticker, start, end))        # '%%s' is the literal %s of strftime after formatting
+        df["horizon"] = h
+        parts.append(df)
+    return pd.concat(parts, ignore_index=True)
+
+
 def future_return_by_group(db_path, start, end):
     """Mean future return (%) and share of positive returns per asset class and horizon (long format)."""
     parts = []

@@ -23,19 +23,25 @@ HORIZONS = ("1h", "2h", "3h", "6h", "12h")
 MIN_N = 30                                  # same guard as the win-rate analysis (A2)
 
 common.setup("Hot Events: ชั่วโมงที่ Reddit คึกคักมาก (ส่วนขยาย)", "🔥")
+_, start, end, groups = common.sidebar(need_ticker=False)
+
+# the three thresholds are read from their keys, so the KPI cards can come first
+z_min = st.session_state.get("h_z", 2.0)
+s_min = st.session_state.get("h_s", 0.50)
+min_texts = st.session_state.get("h_n", 3)
+events = q("hot_events", start, end, float(z_min), float(s_min), int(min_texts))
+events = events[events.big_group.isin(groups)].copy()
+
+common.kpi_cards([("จำนวนเหตุการณ์ (ชั่วโมง × สินทรัพย์)", "{:,}".format(len(events)), None),
+                  ("จำนวนสินทรัพย์ที่เกิดเหตุการณ์", str(events.ticker.nunique()), None),
+                  ("จำนวนชั่วโมงที่ต่างกัน", "{:,}".format(events.hour_utc.nunique()), "หลายสินทรัพย์เกิดในชั่วโมงเดียวกันได้")])
 st.warning("**ส่วนขยายนอก proposal — ดูเหตุการณ์ย้อนหลัง ไม่ใช่สัญญาณซื้อขาย**  \n"
            "ผลทดสอบทั้งโครงการพบว่าความรู้สึกบน Reddit ทำนายทิศทางราคาได้ไม่ดีกว่าการสุ่ม (win rate ≈ 50%) "
            "ค่าที่ดูสูงในบางช่องมักเป็นความบังเอิญ โดยเฉพาะเมื่อจำนวนเหตุการณ์น้อย (ดูช่วงความเชื่อมั่นประกอบเสมอ)")
-_, start, end, groups = common.sidebar(need_ticker=False)
-
 c1, c2, c3 = st.columns(3)
-z_min = c1.slider("Volume Z-score ต้องเกิน", 1.5, 4.0, 2.0, 0.1, key="h_z")
-s_min = c2.slider("|Sentiment| ตั้งแต่", 0.05, 0.90, 0.50, 0.05, key="h_s")
-min_texts = c3.slider("ข้อความขั้นต่ำในชั่วโมงนั้น", 1, 20, 3, key="h_n")
-
-events = q("hot_events", start, end, float(z_min), float(s_min), int(min_texts))
-events = events[events.big_group.isin(groups)].copy()
-st.metric("จำนวนเหตุการณ์ (ชั่วโมง × สินทรัพย์)", "{:,}".format(len(events)))
+c1.slider("Volume Z-score ต้องเกิน", 1.5, 4.0, 2.0, 0.1, key="h_z")
+c2.slider("|Sentiment| ตั้งแต่", 0.05, 0.90, 0.50, 0.05, key="h_s")
+c3.slider("ข้อความขั้นต่ำในชั่วโมงนั้น", 1, 20, 3, key="h_n")
 if events.empty:
     st.info("ไม่พบเหตุการณ์ตามเกณฑ์นี้ในช่วงที่เลือก ลองลดเกณฑ์หรือขยายช่วงเวลา")
     st.stop()
@@ -69,12 +75,11 @@ st.caption("Win Rate = สัดส่วนที่ทิศของควา
 
 by_group = (events.assign(กลุ่ม=events.big_group.map(GROUP_LABELS)).groupby("กลุ่ม")
             .agg(เหตุการณ์=("ticker", "size"), สินทรัพย์=("ticker", "nunique")).reset_index())
-left, right = st.columns(2)
-left.subheader("แยกตามกลุ่มสินทรัพย์")
-left.dataframe(by_group, hide_index=True, width="stretch")
+st.subheader("แยกตามกลุ่มสินทรัพย์")
+st.dataframe(by_group, hide_index=True, width="stretch")
 top = events.groupby("ticker").size().sort_values(ascending=False).head(10).rename("เหตุการณ์").reset_index()
-right.subheader("สินทรัพย์ที่เกิดบ่อยสุด")
-right.dataframe(top, hide_index=True, width="stretch")
+st.subheader("สินทรัพย์ที่เกิดบ่อยสุด")
+st.dataframe(top, hide_index=True, width="stretch")
 
 st.subheader("รายการเหตุการณ์ (ล่าสุด 300 รายการ)")
 view = events.head(300).copy()

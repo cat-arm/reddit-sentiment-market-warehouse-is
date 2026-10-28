@@ -45,22 +45,21 @@ full = pd.DataFrame({"time": pd.date_range(everything.time.min(), everything.tim
 total = full.merge(total, on="time", how="left").fillna({"posts": 0, "comments": 0, "texts": 0})
 shown = common.resample(total, {"posts": "sum", "comments": "sum", "texts": "sum", "zscore": "max"}, how)
 
-# KPIs of proposal 7.1: Reddit_volume (total, per hour, busiest hour) and Volume Z-score (peak, spike hours)
-cols = st.columns(6 if restricted else 5)
-k1, k2, k3, k4, k5 = cols[:5]
-k1.metric(count_name + " รวม", "{:,}".format(int(total.texts.sum())),
-          help="โพสต์ + ความคิดเห็น" if not restricted else "จำนวนครั้งที่หลักทรัพย์ที่เลือกถูกพูดถึงในแหล่งข้อมูลที่เลือก")
-k2.metric("เฉลี่ยต่อชั่วโมง", "{:,.0f}".format(total.texts.mean()))
-k3.metric("ชั่วโมงที่คึกคักสุด", "{:,}".format(int(total.texts.max())),
-          help=str(total.loc[total.texts.idxmax(), "time"])[:16] + " UTC")
-k4.metric("Reddit Volume Z-score สูงสุด" if not restricted else "Volume Z-score ของที่เลือก สูงสุด", common.money(total.zscore.max()),
-          help="Z-score ของชั่วโมงที่คึกคักผิดปกติที่สุดในช่วงที่เลือก: สูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้ากี่เท่าของส่วนเบี่ยงเบนมาตรฐาน")
-k5.metric("ชั่วโมงที่ Z-score > 1.5", "{:,}".format(int((total.zscore > 1.5).sum())),
-          help="spike = ชั่วโมงที่ปริมาณสูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้า เกิน 1.5 เท่าของส่วนเบี่ยงเบนมาตรฐาน (เกณฑ์ 1.5 ตาม proposal)")
+# KPI cards (proposal 7.1: Reddit_volume total / per hour / busiest hour, Volume Z-score peak and spike hours)
+cards = [(count_name + " รวม", "{:,}".format(int(total.texts.sum())),
+          "โพสต์ + ความคิดเห็น" if not restricted else "จำนวนครั้งที่หลักทรัพย์ที่เลือกถูกพูดถึงในแหล่งข้อมูลที่เลือก"),
+         ("เฉลี่ยต่อชั่วโมง", "{:,.0f}".format(total.texts.mean()), None),
+         ("ชั่วโมงที่คึกคักสุด", "{:,}".format(int(total.texts.max())), str(total.loc[total.texts.idxmax(), "time"])[:16] + " UTC"),
+         ("Reddit Volume Z-score สูงสุด" if not restricted else "Volume Z-score ของที่เลือก สูงสุด", common.money(total.zscore.max()),
+          "Z-score ของชั่วโมงที่คึกคักผิดปกติที่สุดในช่วงที่เลือก: สูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้ากี่เท่าของส่วนเบี่ยงเบนมาตรฐาน"),
+         ("ชั่วโมงที่ Z-score > 1.5", "{:,}".format(int((total.zscore > 1.5).sum())),
+          "spike = ชั่วโมงที่ปริมาณสูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้า เกิน 1.5 เท่าของส่วนเบี่ยงเบนมาตรฐาน (เกณฑ์ 1.5 ตาม proposal)")]
 if restricted:
     base = float(everything.texts.sum())
-    cols[5].metric("Ticker Mention Rate (%)", "n/a" if not base else "{:.3f}".format(100.0 * total.texts.sum() / base),
-                   help="Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดของแหล่งข้อมูลเดียวกัน × 100")
+    cards.append(("Ticker Mention Rate (%)", "n/a" if not base else "{:.3f}".format(100.0 * total.texts.sum() / base),
+                  "Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดของแหล่งข้อมูลเดียวกัน × 100"))
+common.kpi_cards(cards)
+if restricted:
     st.info("เลือกหลักทรัพย์บางตัว จึงแสดง**จำนวนครั้งที่หลักทรัพย์เหล่านั้นถูกพูดถึง** (Ticker_mention_count) แทนข้อความทั้งหมด "
             "ข้อความเดียวที่พูดถึงหลายตัวหรือหลายครั้งนับหลายครั้ง ติ๊กให้ครบทุกตัวเพื่อกลับไปดูข้อความทั้งหมด")
     basis = total["basis"].dropna()

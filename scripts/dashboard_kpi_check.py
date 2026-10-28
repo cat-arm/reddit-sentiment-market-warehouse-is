@@ -82,6 +82,15 @@ def run(db_path):
                                            ("Normalized ATR เฉลี่ย", px.normalized_atr.mean(), e[3]),
                                            ("Future Return 3h เฉลี่ย", px.future_return_3h.mean(), e[4]), ("RSI เฉลี่ย", px.rsi.mean(), e[5])):
                 c.check("3 Price and Return", "%s %s: %s" % (wname, tk, label), shown, expected, 1e-7)
+            own = data.future_return_for_ticker(db_path, tk, start, end).set_index("horizon")
+            for h in ("1h", "6h", "12h"):
+                e = c.q("SELECT COUNT(future_return_%s), AVG(future_return_%s) FROM market_hourly_features WHERE ticker = ? "
+                        "AND CAST(strftime('%%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?" % (h, h), (tk, start, end))[0]
+                c.check("3 Price and Return", "%s %s: Future Return %s ของ Ticker (จำนวนตัวอย่าง)" % (wname, tk, h), int(own.loc[h, "n"]), e[0])
+                c.check("3 Price and Return", "%s %s: Future Return %s ของ Ticker (เฉลี่ย)" % (wname, tk, h), own.loc[h, "mean_return_pct"], e[1], 1e-7)
+            c.check("3 Price and Return", "%s %s: ATR เฉลี่ย (กราฟ ATR)" % (wname, tk), px.atr.mean(),
+                    c.q("SELECT AVG(atr) FROM market_hourly_features WHERE ticker = ? AND CAST(strftime('%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?",
+                        (tk, start, end))[0][0], 1e-7)
             ov = data.overview_series(db_path, tk, start, end)
             e = c.q("SELECT AVG(r.sentiment_mean), COUNT(r.sentiment_mean), AVG(r.pos_ratio) FROM reddit_hourly r JOIN market_hourly_features m ON m.ticker = r.ticker AND CAST(strftime('%s', m.hour_bucket) AS INTEGER) = r.hour_utc WHERE r.variant='all' AND r.ticker=? AND r.hour_utc BETWEEN ? AND ?", (tk, start, end))[0]
             c.check("4 Market and Sentiment", "%s %s: Sentiment Score เฉลี่ย (กราฟ) = reddit_hourly ที่มีราคา" % (wname, tk), ov.sentiment_mean.mean(), e[0], 1e-7)

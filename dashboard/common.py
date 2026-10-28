@@ -136,11 +136,10 @@ def tickers_restricted():
 def _source_filter():
     """The DimSource part of the sidebar: platform (fixed: Reddit) > communities > content type, every box ticked."""
     src = q("sources")
-    st.sidebar.write("แหล่งข้อมูล (DimSource)")
-    st.sidebar.caption("แพลตฟอร์ม: Reddit")
+    st.sidebar.markdown("**แหล่งข้อมูล (DimSource)**")
     for key in source_keys():
         st.session_state.setdefault(key, True)
-    st.sidebar.caption("ชุมชน")
+    st.sidebar.caption("แพลตฟอร์ม: Reddit › ชุมชน")
     for community in dict.fromkeys(src.subreddit):
         st.sidebar.checkbox(community, key=_community_key(community))
     st.sidebar.caption("ประเภทเนื้อหา")
@@ -156,7 +155,7 @@ def _time_filter(info):
     lo = dt.datetime.fromtimestamp(info["market_lo"], dt.timezone.utc).date()
     hi = dt.datetime.fromtimestamp(info["reddit_hi"], dt.timezone.utc).date()
     state = st.session_state
-    st.sidebar.write("เวลา (DimTime)")
+    st.sidebar.markdown("**เวลา (DimTime)**")
     state.setdefault("f_range", (max(lo, hi - dt.timedelta(days=DEFAULT_RANGE_DAYS)), hi))     # no `value=`: the key carries it
     state.setdefault("f_gran", DEFAULT_LEVEL)
     stored = state["f_range"]                                       # a stale range outside the data would make the box fail
@@ -164,8 +163,10 @@ def _time_filter(info):
     clipped = tuple(min(max(d, lo), hi) for d in given)
     if tuple(given) != clipped:
         state["f_range"] = clipped
+    st.sidebar.caption("ช่วงเวลา (UTC) ค่าเริ่มต้นย้อนหลัง 1 ปี")
     picked = st.sidebar.date_input("ช่วงเวลา (UTC)", min_value=lo, max_value=hi, key="f_range", format="YYYY/MM/DD",
-                                   help="ค่าเริ่มต้นย้อนหลัง 1 ปี พิมพ์วันที่ในช่องได้โดยตรง (ปี/เดือน/วัน) หรือคลิกจากปฏิทิน")
+                                   label_visibility="collapsed",
+                                   help="พิมพ์วันที่ในช่องได้โดยตรง (ปี/เดือน/วัน) หรือคลิกจากปฏิทิน")
     # While the user is still choosing, Streamlit returns only ONE date (a tuple of length 1): treat it as that single
     # day until the second date is clicked, so the page never breaks halfway through a selection.
     days = list(picked) if isinstance(picked, (tuple, list)) else [picked]
@@ -173,8 +174,9 @@ def _time_filter(info):
     if len(days) < 2:
         st.sidebar.caption("เลือกวันเดียวอยู่: ดูเฉพาะวันนี้ จนกว่าจะคลิกวันสุดท้ายของช่วง")
     st.sidebar.caption("ข้อมูล Reddit: %s → %s" % (dt.datetime.fromtimestamp(info["reddit_lo"], dt.timezone.utc).date(), hi))
-    st.sidebar.selectbox("ความละเอียดของกราฟ", list(GRANULARITY), key="f_gran",
-                         help="ระดับเวลาของ DimTime: ชั่วโมง วัน สัปดาห์ เดือน ปี (รายชั่วโมงในช่วงยาวมากอาจโหลดช้า)")
+    st.sidebar.caption("ระดับเวลาของกราฟ (ชั่วโมง › วัน › สัปดาห์ › เดือน › ปี)")
+    st.sidebar.radio("ระดับเวลาของกราฟ", list(GRANULARITY), key="f_gran", label_visibility="collapsed",
+                     help="ระดับเวลาของ DimTime (รายชั่วโมงในช่วงยาวมากอาจโหลดช้า)")
     return start_day, end_day
 
 
@@ -189,7 +191,7 @@ def _ticker_boxes(options, label):
     first, with two small buttons to tick / untick the whole list."""
     for key in ticker_keys():
         st.session_state.setdefault(key, True)
-    st.sidebar.caption("สินทรัพย์ (Ticker)")
+    st.sidebar.caption("สัญลักษณ์หลักทรัพย์")
     left, right = st.sidebar.columns(2)
     left.button("เลือกทั้งหมด", key="f_tk_all", on_click=_set_tickers, args=(options, True), width="content")
     right.button("ล้าง", key="f_tk_none", on_click=_set_tickers, args=(options, False), width="content")
@@ -200,9 +202,11 @@ def _ticker_boxes(options, label):
 
 
 def _asset_filter(universe, multi, need_ticker):
-    """The DimTicker part of the sidebar: asset-class boxes, then the ticker(s).  Returns (ticker or None, groups).
-    multi=True (pages 1-2): a multi-select where nothing chosen means every ticker of the ticked classes."""
-    st.sidebar.write("หลักทรัพย์ (DimTicker)")
+    """The DimTicker part of the sidebar: asset class > ticker.  Returns (ticker or None, groups).
+    multi=True (pages 1-2): one tick box per ticker.  Otherwise one ticker, picked from the same list (radio buttons);
+    need_ticker=False: the page does not use a ticker, so the list is not drawn."""
+    st.sidebar.markdown("**หลักทรัพย์ (DimTicker)**")
+    st.sidebar.caption("กลุ่มสินทรัพย์")
     # One tick box per asset class (instead of a multiselect whose chips are all the same colour): the coloured dot is
     # the colour this class has in every chart.
     groups = [key for key in GROUP_LABELS
@@ -218,15 +222,13 @@ def _asset_filter(universe, multi, need_ticker):
     if multi:
         _ticker_boxes(options, label)
         return None, groups
-    # The single-ticker box is drawn on EVERY page that draws the asset filter, even where the page does not use it
-    # (home, ranking): a widget that is not drawn on a page loses its value in Streamlit.
+    if not need_ticker:
+        return None, groups
     default = DEFAULT_TICKER if DEFAULT_TICKER in options else options[0]
     if st.session_state.get("f_ticker") not in options:       # the old choice may have left the chosen groups
         st.session_state["f_ticker"] = default
-    ticker = st.sidebar.selectbox("สินทรัพย์ (Ticker)", options, key="f_ticker",
-                                  format_func=lambda t: "%s  (%s)" % (label(t), GROUP_LABELS[kind_of[t]]))
-    if not need_ticker:
-        st.sidebar.caption("หน้านี้แสดงทุกสินทรัพย์ จึงไม่ใช้ช่อง Ticker (ค่ายังถูกจำไว้สำหรับหน้าอื่น)")
+    st.sidebar.caption("สัญลักษณ์หลักทรัพย์")
+    ticker = st.sidebar.radio("สัญลักษณ์หลักทรัพย์", options, key="f_ticker", format_func=label, label_visibility="collapsed")
     return ticker, groups
 
 
@@ -250,22 +252,27 @@ def sidebar(need_ticker=True, assets=True, sources=False, multi=False):
         _keep(["f_ticker"] + t_keys + group_keys)
     elif multi:
         _keep(["f_ticker"])
+    elif not need_ticker:
+        _keep(["f_ticker"] + t_keys)
     else:
         _keep(t_keys)
     start_day, end_day = _time_filter(info)
-    st.sidebar.divider()
     if sources:
-        _source_filter()
         st.sidebar.divider()
+        _source_filter()
     ticker, groups = None, list(GROUP_LABELS)
     if assets:
-        ticker, groups = _asset_filter(universe, multi, need_ticker)
         st.sidebar.divider()
-    else:
-        st.sidebar.caption("หน้านี้ไม่เกี่ยวกับสินทรัพย์ จึงไม่มีตัวกรองสินทรัพย์")
-    if not sources:
-        st.sidebar.caption("ตัวกรองชุมชนและประเภท (โพสต์/ความคิดเห็น) ใช้เฉพาะหน้า Reddit Volume และ Ticker Mentions")
+        ticker, groups = _asset_filter(universe, multi, need_ticker)
     return ticker, epoch(start_day), epoch(end_day, end_of_day=True), groups
+
+
+def kpi_cards(items):
+    """The KPI cards every page opens with, directly under the title: one bordered card per
+    (label, value, help) or (label, value, help, delta)."""
+    for cell, item in zip(st.columns(len(items)), items):
+        label, value, help_text = item[:3]
+        cell.metric(label, value, help=help_text, delta=item[3] if len(item) > 3 else None, delta_color="off", border=True)
 
 
 # Time levels follow DimTime (Hour, Day, Week, Month, Year).  Each has the pandas rule that rolls hourly rows up to it.

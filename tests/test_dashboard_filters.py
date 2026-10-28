@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
 SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # only these tables are split by source
 MULTI_PAGES = SOURCE_PAGES                                                    # and these take several tickers
+SINGLE_PAGES = {"pages/3_Price_and_Return.py", "pages/4_Market_and_Sentiment.py"}   # one ticker; the others draw no ticker list
 TIME_KEYS = ["f_range", "f_gran"]
 COMMUNITIES = ["r/wallstreetbets", "r/stocks", "r/investing", "r/StockMarket", "r/options", "r/CryptoCurrency"]
 SOURCE_KEYS = ["f_src_" + c for c in COMMUNITIES] + ["f_type_Post", "f_type_Comment"]
@@ -35,7 +36,7 @@ PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pa
 
 def expected_keys(page):
     """Sidebar order: time (DimTime) first, then source (DimSource), then asset (DimTicker)."""
-    asset = GROUP_KEYS + (["f_tk_" + s for s in TICKERS] if page in MULTI_PAGES else ["f_ticker"])
+    asset = GROUP_KEYS + (["f_tk_" + s for s in TICKERS] if page in MULTI_PAGES else ["f_ticker"] if page in SINGLE_PAGES else [])
     return TIME_KEYS + (SOURCE_KEYS if page in SOURCE_PAGES else []) + asset
 
 
@@ -75,9 +76,9 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(len(at.exception), 0, "%s raised %s" % (page, [e.value for e in at.exception]))
             self.assertFalse(at.sidebar.checkbox(key="f_group_crypto").value, page)
             self.assertTrue(at.sidebar.checkbox(key="f_group_stock_etf").value, page)
-            if page not in MULTI_PAGES:
-                self.assertEqual(at.sidebar.selectbox(key="f_ticker").value, "QQQ", page)
-            self.assertEqual(at.sidebar.selectbox(key="f_gran").value, "รายเดือน", page)
+            if page in SINGLE_PAGES:
+                self.assertEqual(at.sidebar.radio(key="f_ticker").value, "QQQ", page)
+            self.assertEqual(at.sidebar.radio(key="f_gran").value, "รายเดือน", page)
             self.assertEqual(tuple(at.sidebar.date_input(key="f_range").value),
                              (dt.date(2026, 8, 3), dt.date(2026, 8, 9)), page)
 
@@ -132,7 +133,8 @@ class FilterTests(unittest.TestCase):
                 at.radio(key=switch.key).set_value("แท่ง")
             at = at.run()
             self.assertEqual(len(at.exception), 0, "%s raised %s" % (page, [e.value for e in at.exception]))
-        self.assertEqual(len(list(self.run_page("pages/1_Reddit_Volume.py").sidebar.radio)), 0)
+        sidebar_radios = [r.key for r in self.run_page("pages/1_Reddit_Volume.py").sidebar.radio]
+        self.assertEqual(sidebar_radios, ["f_gran"])                    # the chart level only: no line / bar switch there
 
     def test_several_tickers_chart_survives_lines_and_bars(self):
         at = self.run_page("pages/2_Ticker_Mentions.py")
@@ -182,8 +184,26 @@ class FilterTests(unittest.TestCase):
     def test_ticker_outside_chosen_groups_falls_back_to_a_valid_one(self):
         at = self.run_page("pages/3_Price_and_Return.py", f_group_stock_etf=False, f_group_futures=False, f_ticker="SPY")
         self.assertEqual(len(at.exception), 0)
-        self.assertIn(at.sidebar.selectbox(key="f_ticker").value, ["BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD",
+        self.assertIn(at.sidebar.radio(key="f_ticker").value, ["BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD",
                                                                     "SOL-USD", "XRP-USD"])
+
+
+class DesignTests(unittest.TestCase):
+    """Every page opens the same way: title, KPI cards, then the rest; charts one under the other."""
+
+    def test_every_page_opens_with_kpi_cards_and_has_no_split_charts(self):
+        from streamlit.testing.v1 import AppTest
+        for page in PAGES:
+            at = AppTest.from_file(str(ROOT / "dashboard" / page), default_timeout=120).run()
+            self.assertEqual(len(at.exception), 0, page)
+            kinds = [type(e).__name__ for e in at.main]
+            first_metric = kinds.index("Metric")
+            before = [k for k in kinds[:first_metric] if k in ("Subheader", "Header", "Dataframe", "UnknownElement", "Radio")]
+            self.assertEqual(before, [], "%s has content before the KPI cards" % page)
+            for column in at.columns:                                # no chart or table inside a column
+                inner = [type(c).__name__ for c in column.children.values()]
+                self.assertNotIn("UnknownElement", inner, "%s has a chart inside a column" % page)
+                self.assertNotIn("Dataframe", inner, "%s has a table inside a column" % page)
 
 
 if __name__ == "__main__":

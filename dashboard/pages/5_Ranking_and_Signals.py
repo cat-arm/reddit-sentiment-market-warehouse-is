@@ -25,18 +25,11 @@ from dashboard.common import GROUP_LABELS, q  # noqa: E402
 common.setup("Ranking and Signals: จัดอันดับและตั้งค่าเกณฑ์ตรวจจับสัญญาณ", "🚦")
 _, start, end, groups = common.sidebar(need_ticker=False)
 
-# ---- the three controls of the proposal ---------------------------------------------------------------------
-st.subheader("เกณฑ์การตรวจจับสัญญาณ")
+# ---- the three controls of the proposal: their values are read from their keys, so the KPI cards can come first -----
 grid = signals.GRID
-c1, c2, c3 = st.columns(3)
-z_th = c1.slider("Z-score Threshold (ปริมาณต้อง **เกิน**)", 0.5, 4.0, 1.5, 0.1, key="s_z",
-                 help="ค่าที่อยู่ใน configs/detection.yaml: %s" % grid["zscore_thresholds"])
-s_th = c2.slider("Sentiment Threshold (|ความรู้สึก| **ตั้งแต่**)", 0.0, 1.0, 0.30, 0.05, key="s_s",
-                 help="ค่าที่อยู่ใน configs/detection.yaml: %s" % grid["sentiment_thresholds"])
-horizon = c3.selectbox("Horizon (กรอบเวลาของสถิติย้อนหลัง)", list(grid["horizons"]), key="s_h")
-st.caption("combined_signal = Volume Z-score เกินเกณฑ์ **และ** ความรู้สึกมีทิศชัด  \nความรู้สึกต้องมีอย่างน้อย %d ข้อความในชั่วโมงนั้น "
-           "· ระดับ low/medium/high คำนวณตามระยะที่เกินเกณฑ์ (กติกาใน configs/detection.yaml)"
-           % signals.RULES["min_texts_for_sentiment"])
+z_th = st.session_state.get("s_z", 1.5)
+s_th = st.session_state.get("s_s", 0.30)
+horizon = st.session_state.get("s_h", grid["horizons"][0])
 
 # ---- detection (on demand) ----------------------------------------------------------------------------------
 panel = q("signal_panel")
@@ -48,10 +41,20 @@ stats = stats[stats.horizon == horizon][["ticker", "winrate", "p_value", "correl
 period = q("ticker_period_stats", start, end, horizon)
 universe = q("tickers")
 
-m1, m2, m3 = st.columns(3)
-m1.metric("จำนวนสัญญาณที่ตรวจพบ", "{:,}".format(len(found)))
-m2.metric("จำนวนสินทรัพย์ที่เข้าเงื่อนไข", found.ticker.nunique())
-m3.metric("ชนิดสัญญาณที่พบ", found.signal_type.nunique())
+common.kpi_cards([("จำนวนสัญญาณที่ตรวจพบ", "{:,}".format(len(found)), None),
+                  ("จำนวนสินทรัพย์ที่เข้าเงื่อนไข", str(found.ticker.nunique()), None),
+                  ("ชนิดสัญญาณที่พบ", str(found.signal_type.nunique()), None)])
+
+st.subheader("เกณฑ์การตรวจจับสัญญาณ")
+c1, c2, c3 = st.columns(3)
+c1.slider("Z-score Threshold (ปริมาณต้อง **เกิน**)", 0.5, 4.0, 1.5, 0.1, key="s_z",
+          help="ค่าที่อยู่ใน configs/detection.yaml: %s" % grid["zscore_thresholds"])
+c2.slider("Sentiment Threshold (|ความรู้สึก| **ตั้งแต่**)", 0.0, 1.0, 0.30, 0.05, key="s_s",
+          help="ค่าที่อยู่ใน configs/detection.yaml: %s" % grid["sentiment_thresholds"])
+c3.selectbox("Horizon (กรอบเวลาของสถิติย้อนหลัง)", list(grid["horizons"]), key="s_h")
+st.caption("combined_signal = Volume Z-score เกินเกณฑ์ **และ** ความรู้สึกมีทิศชัด  \nความรู้สึกต้องมีอย่างน้อย %d ข้อความในชั่วโมงนั้น "
+           "· ระดับ low/medium/high คำนวณตามระยะที่เกินเกณฑ์ (กติกาใน configs/detection.yaml)"
+           % signals.RULES["min_texts_for_sentiment"])
 
 if found.empty:
     st.info("ไม่พบสัญญาณตามเกณฑ์นี้ในช่วงที่เลือก ลองลดเกณฑ์หรือขยายช่วงเวลา")
