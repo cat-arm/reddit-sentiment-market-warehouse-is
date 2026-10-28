@@ -82,6 +82,16 @@ def run(db_path):
                                            ("Normalized ATR เฉลี่ย", px.normalized_atr.mean(), e[3]),
                                            ("Future Return 3h เฉลี่ย", px.future_return_3h.mean(), e[4]), ("RSI เฉลี่ย", px.rsi.mean(), e[5])):
                 c.check("3 Price and Return", "%s %s: %s" % (wname, tk, label), shown, expected, 1e-7)
+            snap = data.ticker_snapshot(db_path, start, end).set_index("ticker").loc[tk]
+            e = c.q("SELECT SUM(log_return), AVG(normalized_atr), AVG(future_return_3h) FROM market_hourly_features WHERE ticker = ? "
+                    "AND CAST(strftime('%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?", (tk, start, end))[0]
+            last = c.q("SELECT close, rsi FROM market_hourly_features WHERE ticker = ? AND CAST(strftime('%s', hour_bucket) AS INTEGER) BETWEEN ? AND ? "
+                       "ORDER BY hour_bucket DESC LIMIT 1", (tk, start, end))[0]
+            c.check("3 Price and Return (รายสินทรัพย์)", "%s %s: Current Return รวม" % (wname, tk), snap.current_return_pct, e[0], 1e-7)
+            c.check("3 Price and Return (รายสินทรัพย์)", "%s %s: Normalized ATR เฉลี่ย" % (wname, tk), snap.mean_normalized_atr_pct, e[1], 1e-7)
+            c.check("3 Price and Return (รายสินทรัพย์)", "%s %s: ผลตอบแทน 3h เฉลี่ย" % (wname, tk), snap.fr_3h, e[2], 1e-7)
+            c.check("3 Price and Return (รายสินทรัพย์)", "%s %s: ราคาปิดล่าสุด" % (wname, tk), snap.last_close, last[0], 1e-9)
+            c.check("3 Price and Return (รายสินทรัพย์)", "%s %s: RSI ล่าสุด" % (wname, tk), snap.last_rsi, last[1], 1e-9)
             own = data.future_return_for_ticker(db_path, tk, start, end).set_index("horizon")
             for h in ("1h", "6h", "12h"):
                 e = c.q("SELECT COUNT(future_return_%s), AVG(future_return_%s) FROM market_hourly_features WHERE ticker = ? "

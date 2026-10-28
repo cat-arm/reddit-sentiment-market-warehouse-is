@@ -325,7 +325,8 @@ TIME_UNIT = {"Hourly": "utcyearmonthdatehours", "Daily": "utcyearmonthdate", "We
              "Monthly": "utcyearmonth", "Yearly": "utcyear"}     # gives every bar its own full-width slot (UTC)
 
 
-def series_chart(df, x, y, title, color, height, tooltip=None, fmt=None, peak=None, dots=False, y_zero=False, bar=False):
+def series_chart(df, x, y, title, color, height, tooltip=None, fmt=None, peak=None, dots=False, y_zero=False, bar=False,
+                 y_domain=None):
     """One time series as a line or as bars (`bar`, chosen with `kind`), x axis labelled for the chosen time level.
     `peak` = optional column holding a value that is on the SAME scale as `y` and higher (the busiest day of a month,
     next to the daily average): bars get a dark cap at that height.  `dots` = lines get dots that carry the tooltip
@@ -336,18 +337,19 @@ def series_chart(df, x, y, title, color, height, tooltip=None, fmt=None, peak=No
     ticks = {"tickCount": TICK_STEP[how]} if how in TICK_STEP else {}
     axis = alt.Axis(format=fmt, labelOverlap=True, **ticks)
     axis_y = alt.Axis(minExtent=55)                     # same left margin on every chart, so stacked charts line up
+    y_scale = alt.Scale(domain=y_domain) if y_domain else alt.Scale(zero=True) if y_zero else alt.Undefined
     if bar:
         size = {"size": 6} if how == "Weekly" else {}
         enc_x = alt.X(x + ":T", title=None, timeUnit=TIME_UNIT[how], axis=axis)
         layers = [alt.Chart(df).mark_bar(color=color, opacity=0.85, **size).encode(
-            x=enc_x, y=alt.Y(y + ":Q", title=title, axis=axis_y, scale=alt.Scale(zero=y_zero) if y_zero else alt.Undefined), tooltip=tooltip)]
+            x=enc_x, y=alt.Y(y + ":Q", title=title, axis=axis_y, scale=y_scale), tooltip=tooltip)]
         if peak:
             mark = df.assign(_peak_lo=df[peak] - 0.012 * float(df[peak].max() or 1))     # a thin dark cap at the peak
             layers.append(alt.Chart(mark).mark_bar(color="#222222", **size).encode(
                 x=enc_x, y=alt.Y(peak + ":Q"), y2="_peak_lo:Q", tooltip=tooltip))
     else:
         enc_x = alt.X(x + ":T", title=None, axis=axis)
-        enc_y = alt.Y(y + ":Q", title=title, axis=axis_y, scale=alt.Scale(zero=y_zero) if y_zero else alt.Undefined)
+        enc_y = alt.Y(y + ":Q", title=title, axis=axis_y, scale=y_scale)
         layers = [alt.Chart(df).mark_line(color=color).encode(x=enc_x, y=enc_y, tooltip=tooltip)]
         if dots:                                           # dots carry the tooltip with the peak
             hover = alt.selection_point(nearest=True, on="mouseover", empty=False, clear="mouseout", fields=[x])
@@ -405,13 +407,13 @@ def count_caption(how):
     return text + "  \nชี้เมาส์เพื่อดูค่าและวันที่"
 
 
-def line(df, x, y, title, color="#1f77b4", height=260, fmt=None, y_zero=False, dots=False, label=None, bar=False):
+def line(df, x, y, title, color="#1f77b4", height=260, fmt=None, y_zero=False, dots=False, label=None, bar=False, y_domain=None):
     """One series as a line or bars (`bar`, chosen with `kind`) at the chosen time level.  `fmt` overrides the x label format."""
     tip = None
     if label:                                               # Thai tooltip: the period, then the value
         tip = [alt.Tooltip(x + ":T", title=PERIOD_LABEL[granularity()], format=DATE_TIP[granularity()]),
                alt.Tooltip(y + ":Q", title=label, format=",.2f")]
-    return series_chart(df, x, y, title, color, height, tooltip=tip, fmt=fmt, y_zero=y_zero, dots=dots, bar=bar)
+    return series_chart(df, x, y, title, color, height, tooltip=tip, fmt=fmt, y_zero=y_zero, dots=dots, bar=bar, y_domain=y_domain)
 
 
 def multi_series_chart(df, x, y, series, title, height=300, bar=False, fmt=None):

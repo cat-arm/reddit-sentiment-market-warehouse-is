@@ -42,7 +42,7 @@ python steps/23_run_dashboard.py        # หรือ: streamlit run dashboard/
 |---|---|
 | **1 Reddit Volume** | มีโพสต์/คอมเมนต์รวมกี่ข้อความต่อชั่วโมง ช่วงไหนพุ่งผิดปกติ (Volume Z-score) ชุมชนไหนมากสุด (ถ้าเลือกหลักทรัพย์บางตัว จะดูจำนวนครั้งที่ถูกพูดถึงแทน) |
 | **2 Ticker Mentions** | สินทรัพย์ไหนถูกพูดถึงมากสุด และคิดเป็นกี่ % ของข้อความทั้งหมด (Ticker Mention Rate) |
-| **3 Price and Return** | การ์ด KPI 3 ตัวตาม proposal (Current Return, Volume Z-score, Normalized Average True Range) แล้วกราฟราคาปิด ปริมาณซื้อขาย RSI และ ATR ของ Ticker ที่เลือก ตารางรายละเอียดค่าวัด (ล่าสุด/เฉลี่ย/ต่ำสุด/สูงสุด) ผลตอบแทนล่วงหน้า 5 ช่วงของ Ticker นั้น และเทียบตามกลุ่มสินทรัพย์ว่ากลุ่มไหนผันผวนสุด |
+| **3 Price and Return** | การ์ด KPI 3 ตัวตาม proposal (Current Return, Volume Z-score, Normalized Average True Range) ของ Ticker ที่เลือก → **ภาพรวมตามกลุ่มสินทรัพย์ที่ติ๊ก** (ตารางรายสินทรัพย์ ผลตอบแทนล่วงหน้าแยกกลุ่ม กลุ่มไหนผันผวนสุด) → รายละเอียดของ Ticker ที่เลือก (กราฟราคาปิด ปริมาณ RSI ATR Normalized ATR ตารางค่าวัด ผลตอบแทนล่วงหน้า 5 ช่วง) |
 | **4 Market and Sentiment** | ราคาเทียบความรู้สึก (Sentiment Score) รายชั่วโมง สัดส่วน positive/negative/neutral และผลตอบแทนหลังจากความรู้สึกเสียงข้างมากแต่ละแบบ |
 | **5 Ranking and Signals** | จัดอันดับสินทรัพย์ด้วย Historical Win Rate และตั้งเกณฑ์ตรวจจับสัญญาณเอง |
 | **6 Hot Events** (ส่วนขยาย) | ชั่วโมงที่ Reddit คึกคักและความรู้สึกชัดเจน แล้วราคาเป็นอย่างไรต่อ พร้อมช่วงความเชื่อมั่น |

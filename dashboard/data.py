@@ -313,6 +313,25 @@ def ticker_risk(db_path, start, end):
         ORDER BY mean_normalized_atr_pct DESC""", (start, end))
 
 
+def ticker_snapshot(db_path, start, end):
+    """One row per ticker in the range: asset class, last close and RSI, Current Return (sum), mean Normalized ATR and
+    the mean future return of every horizon.  The page keeps the tickers of the ticked asset classes."""
+    agg = _read(db_path, """
+        SELECT m.ticker, k.AssetClass AS big_group, SUM(m.log_return) AS current_return_pct,
+               AVG(m.normalized_atr) AS mean_normalized_atr_pct,
+               AVG(m.future_return_1h) AS fr_1h, AVG(m.future_return_2h) AS fr_2h, AVG(m.future_return_3h) AS fr_3h,
+               AVG(m.future_return_6h) AS fr_6h, AVG(m.future_return_12h) AS fr_12h
+        FROM market_hourly_features m JOIN DimTicker k ON k.TickerSymbol = m.ticker
+        WHERE CAST(strftime('%s', m.hour_bucket) AS INTEGER) BETWEEN ? AND ? GROUP BY m.ticker""", (start, end))
+    last = _read(db_path, """
+        SELECT m.ticker, m.close AS last_close, m.rsi AS last_rsi
+        FROM market_hourly_features m
+        JOIN (SELECT ticker, MAX(hour_bucket) AS hb FROM market_hourly_features
+              WHERE CAST(strftime('%s', hour_bucket) AS INTEGER) BETWEEN ? AND ? GROUP BY ticker) x
+          ON x.ticker = m.ticker AND x.hb = m.hour_bucket""", (start, end))
+    return agg.merge(last, on="ticker", how="left")
+
+
 def future_return_for_ticker(db_path, ticker, start, end):
     """Mean future return (%) and share of positive returns of ONE ticker per horizon (long format)."""
     parts = []
