@@ -86,15 +86,12 @@ if not ratios.empty:
         tooltip=["time:T", "ประเภท", alt.Tooltip("สัดส่วน:Q", format=".1%")]).properties(height=240))
     st.altair_chart(area, width="stretch")
 
-left, right = st.columns(2)
-with left:
-    st.subheader("ประเภทความรู้สึกส่วนใหญ่ (จำนวนชั่วโมง)")
-    maj = series.majority_final_status.value_counts().rename_axis("ประเภท").reset_index(name="ชั่วโมง")
-    common.table(maj, hide_index=True, width="stretch")
-with right:
-    st.subheader("ปริมาณการกล่าวถึง")
-    st.altair_chart(common.line(shown, "time", "reddit_volume", "Reddit Volume (ข้อความ)", "#ff7f0e", 200, bar=common.kind(st, "s_volume")),
-                    width="stretch")
+st.subheader("ปริมาณการกล่าวถึง")
+st.altair_chart(common.line(shown, "time", "reddit_volume", "Reddit Volume (ข้อความ)", "#ff7f0e", 200, bar=common.kind(st, "s_volume")),
+                width="stretch")
+st.subheader("ประเภทความรู้สึกส่วนใหญ่ (จำนวนชั่วโมง)")
+maj = series.majority_final_status.value_counts().rename_axis("ประเภท").reset_index(name="ชั่วโมง")
+common.table(maj, hide_index=True, width="stretch")
 
 st.subheader("ประเภทความรู้สึกส่วนใหญ่ สอดคล้องกับทิศทางผลตอบแทนอนาคตหรือไม่")
 mv = q("majority_vs_return", ticker, start, end)

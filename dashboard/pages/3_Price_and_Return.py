@@ -29,9 +29,8 @@ else:
     shown = common.resample(price, {"close": "last", "volume": "sum", "rsi": "last", "atr": "last",
                                     "normalized_atr": "mean", "log_return": "sum", "volume_zscore_24": "max"}, how)
     st.altair_chart(common.line(shown, "time", "close", "ราคาปิด (USD)", bar=common.kind(st, "p_close")), width="stretch")
-    c1, c2 = st.columns(2)
-    c1.altair_chart(common.line(shown, "time", "volume", "ปริมาณซื้อขาย (หน่วย)", "#2ca02c", 220, bar=common.kind(c1, "p_volume")), width="stretch")
-    c2.altair_chart(common.line(shown, "time", "rsi", "RSI (0–100)", "#9467bd", 220, bar=common.kind(c2, "p_rsi"))
+    st.altair_chart(common.line(shown, "time", "volume", "ปริมาณซื้อขาย (หน่วย)", "#2ca02c", 220, bar=common.kind(st, "p_volume")), width="stretch")
+    st.altair_chart(common.line(shown, "time", "rsi", "RSI (0–100)", "#9467bd", 220, bar=common.kind(st, "p_rsi"))
                     + alt.Chart(alt.Data(values=[{"y": 30}, {"y": 70}])).mark_rule(strokeDash=[4, 4], color="gray")
                     .encode(y="y:Q"), width="stretch")
     k1, k2, k3, k4 = st.columns(4)

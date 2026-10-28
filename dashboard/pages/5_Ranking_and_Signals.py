@@ -56,17 +56,16 @@ m3.metric("ชนิดสัญญาณที่พบ", found.signal_type.nun
 if found.empty:
     st.info("ไม่พบสัญญาณตามเกณฑ์นี้ในช่วงที่เลือก ลองลดเกณฑ์หรือขยายช่วงเวลา")
 else:
-    left, right = st.columns(2)
     by_type = found.groupby(["signal_type", "signal_level"]).size().reset_index(name="n")
     chart = (alt.Chart(by_type).mark_bar().encode(
         x=alt.X("n:Q", title="จำนวนสัญญาณ"), y=alt.Y("signal_type:N", title=None),
         color=alt.Color("signal_level:N", sort=["low", "medium", "high"], title="ระดับ",
                         scale=alt.Scale(domain=["low", "medium", "high"], range=["#9ecae1", "#fdae6b", "#d62728"])),
         tooltip=["signal_type", "signal_level", "n"]).properties(height=200))
-    left.altair_chart(chart, width="stretch")
+    st.altair_chart(chart, width="stretch")
     by_group = found.groupby("big_group").agg(สัญญาณ=("ticker", "size"), สินทรัพย์=("ticker", "nunique")).reset_index()
     by_group["big_group"] = by_group.big_group.map(GROUP_LABELS)
-    right.dataframe(by_group.rename(columns={"big_group": "กลุ่ม"}), hide_index=True, width="stretch")
+    st.dataframe(by_group.rename(columns={"big_group": "กลุ่ม"}), hide_index=True, width="stretch")
 
 # ---- ranking ------------------------------------------------------------------------------------------------
 st.subheader("จัดอันดับสินทรัพย์ (Horizon %s)" % horizon)

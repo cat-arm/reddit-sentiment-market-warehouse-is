@@ -73,13 +73,11 @@ chart = (alt.Chart(top).mark_bar().encode(
     color=alt.Color("กลุ่ม:N", title="กลุ่ม", scale=common.group_scale()),
     tooltip=["ticker", "กลุ่ม", alt.Tooltip("mentions:Q", format=","), alt.Tooltip("mention_rate_pct:Q", format=".3f")])
     .properties(height=380))
-left, right = st.columns([3, 2])
-left.altair_chart(chart, width="stretch")
-with right:
-    common.table(rank[["ticker", "กลุ่ม", "mentions", "mention_rate_pct", "texts_about", "peak_hour_texts"]].rename(columns={
-        "mentions": "Ticker Mention Count", "mention_rate_pct": "Ticker Mention Rate (%)",
-        "texts_about": "ข้อความที่พูดถึง", "peak_hour_texts": "สูงสุดใน 1 ชั่วโมง"}).round(3),
-        hide_index=True, width="stretch", height=360)
+st.altair_chart(chart, width="stretch")
+common.table(rank[["ticker", "กลุ่ม", "mentions", "mention_rate_pct", "texts_about", "peak_hour_texts"]].rename(columns={
+    "mentions": "Ticker Mention Count", "mention_rate_pct": "Ticker Mention Rate (%)",
+    "texts_about": "ข้อความที่พูดถึง", "peak_hour_texts": "สูงสุดใน 1 ชั่วโมง"}).round(3),
+    hide_index=True, width="stretch", height=360)
 st.caption("Ticker Mention Rate (%) = Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดในช่วงเดียวกัน × 100  \n"
            "ข้อความเดียวที่พูดถึงหลายตัวนับให้ทุกตัว จึงห้ามรวมคอลัมน์ข้าม ticker" + (
                "" if rank.texts_about.notna().any() else
