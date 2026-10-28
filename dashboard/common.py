@@ -9,8 +9,8 @@ holds on all of them):
     time      DimTime    date range (default: the last year of the data) and the chart level (hour .. year)
     source    DimSource  platform (Reddit) > communities > Post / Comment: one tick box each, all ticked at first
                                                                            (pages 1-2 only)
-    asset     DimTicker  asset class (Big_Group) boxes > tickers; pages 1-2 take SEVERAL tickers (a multi-select whose
-                         empty state means "all"), the other pages one ticker
+    asset     DimTicker  asset class (Big_Group) boxes > tickers; pages 1-2 take SEVERAL tickers (one tick box each,
+                         all ticked at first), the other pages one ticker
   Times are UTC.  Rule: a central widget that a page does not draw is kept in a shadow key, because Streamlit
   forgets it otherwise.
 """
@@ -108,13 +108,22 @@ def selected_sources():
     return tuple(int(i) for i in keep.source_id)
 
 
+def _ticker_key(symbol):
+    return "f_tk_" + symbol
+
+
+def ticker_keys():
+    """Session keys of the multi-ticker filter: one tick box per ticker."""
+    return [_ticker_key(s) for s in q("tickers").ticker]
+
+
 def selected_tickers():
-    """Tickers kept by the asset filter of pages 1-2: the ticked asset classes, narrowed to the multi-select when it is
-    not empty (empty = every ticker of the ticked classes)."""
+    """Tickers kept by the asset filter of pages 1-2: the ticked asset classes, then the ticked tickers inside them
+    (everything is ticked at first; nothing ticked = every ticker of the ticked classes)."""
     universe = q("tickers")
     groups = [g for g in GROUP_LABELS if st.session_state.get("f_group_" + g, True)] or list(GROUP_LABELS)
     pool = list(universe[universe.big_group.isin(groups)].ticker)
-    chosen = [t for t in st.session_state.get("f_tickers", []) if t in pool]
+    chosen = [s for s in pool if st.session_state.get(_ticker_key(s), True)]
     return tuple(chosen or pool)
 
 
@@ -169,6 +178,27 @@ def _time_filter(info):
     return start_day, end_day
 
 
+def _set_tickers(symbols, value):
+    """Callback of the two small buttons: tick / untick the tickers that are on show."""
+    for symbol in symbols:
+        st.session_state[_ticker_key(symbol)] = value
+
+
+def _ticker_boxes(options, label):
+    """One tick box per ticker of the ticked classes, drawn like the other tick boxes of the sidebar, all ticked at
+    first, with two small buttons to tick / untick the whole list."""
+    for key in ticker_keys():
+        st.session_state.setdefault(key, True)
+    st.sidebar.caption("สินทรัพย์ (Ticker)")
+    left, right = st.sidebar.columns(2)
+    left.button("เลือกทั้งหมด", key="f_tk_all", on_click=_set_tickers, args=(options, True), width="content")
+    right.button("ล้าง", key="f_tk_none", on_click=_set_tickers, args=(options, False), width="content")
+    for symbol in options:
+        st.sidebar.checkbox(label(symbol), key=_ticker_key(symbol))
+    if not any(st.session_state[_ticker_key(s)] for s in options):
+        st.sidebar.caption("ไม่ได้ติ๊กหลักทรัพย์เลย จึงแสดงทั้งหมด")
+
+
 def _asset_filter(universe, multi, need_ticker):
     """The DimTicker part of the sidebar: asset-class boxes, then the ticker(s).  Returns (ticker or None, groups).
     multi=True (pages 1-2): a multi-select where nothing chosen means every ticker of the ticked classes."""
@@ -186,10 +216,7 @@ def _asset_filter(universe, multi, need_ticker):
     name = dict(zip(universe.ticker, universe.name))
     label = lambda t: "%s %s · %s" % (GROUP_DOTS[kind_of[t]], t, name[t])                     # noqa: E731
     if multi:
-        st.session_state["f_tickers"] = [t for t in st.session_state.get("f_tickers", []) if t in options]   # left the classes
-        st.sidebar.multiselect("สินทรัพย์ (Ticker) เลือกได้หลายตัว", options, key="f_tickers", format_func=label,
-                               placeholder="ทั้งหมดในกลุ่มที่ติ๊ก (เลือกเพื่อจำกัด)",
-                               help="ไม่เลือกเลย = ทุกตัวของกลุ่มที่ติ๊กไว้ เลือกตัวใดตัวหนึ่งเพื่อดูเฉพาะตัวนั้น")
+        _ticker_boxes(options, label)
         return None, groups
     # The single-ticker box is drawn on EVERY page that draws the asset filter, even where the page does not use it
     # (home, ranking): a widget that is not drawn on a page loses its value in Streamlit.
@@ -215,15 +242,16 @@ def sidebar(need_ticker=True, assets=True, sources=False, multi=False):
     st.sidebar.header("ตัวกรองกลาง")
     s_keys = source_keys()
     group_keys = ["f_group_" + k for k in GROUP_LABELS]
-    _restore(["f_ticker", "f_tickers"] + group_keys + s_keys)
+    t_keys = ticker_keys()
+    _restore(["f_ticker"] + t_keys + group_keys + s_keys)
     if not sources:
         _keep(s_keys)
     if not assets:
-        _keep(["f_ticker", "f_tickers"] + group_keys)
+        _keep(["f_ticker"] + t_keys + group_keys)
     elif multi:
         _keep(["f_ticker"])
     else:
-        _keep(["f_tickers"])
+        _keep(t_keys)
     start_day, end_day = _time_filter(info)
     st.sidebar.divider()
     if sources:

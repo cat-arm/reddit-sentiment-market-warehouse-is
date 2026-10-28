@@ -40,15 +40,14 @@ else:
     total = mentions.drop(columns="time").merge(z, on="hour_utc", how="outer").assign(
         time=lambda d: pd.to_datetime(d.hour_utc, unit="s", utc=True)).sort_values("time")
     count_name = "Ticker Mention Count"
-    st.info("เลือกหลักทรัพย์บางตัว จึงแสดง**จำนวนครั้งที่หลักทรัพย์เหล่านั้นถูกพูดถึง** (Ticker_mention_count) แทนข้อความทั้งหมด "
-            "ข้อความเดียวที่พูดถึงหลายตัวหรือหลายครั้งนับหลายครั้ง ติ๊กหรือเลือกให้ครบทุกตัวเพื่อกลับไปดูข้อความทั้งหมด")
 # a missing hour means "no texts", which is a real 0 for a count (unlike sentiment, where it is unknown)
 full = pd.DataFrame({"time": pd.date_range(everything.time.min(), everything.time.max(), freq="h")})
 total = full.merge(total, on="time", how="left").fillna({"posts": 0, "comments": 0, "texts": 0})
 shown = common.resample(total, {"posts": "sum", "comments": "sum", "texts": "sum", "zscore": "max"}, how)
 
 # KPIs of proposal 7.1: Reddit_volume (total, per hour, busiest hour) and Volume Z-score (peak, spike hours)
-k1, k2, k3, k4, k5 = st.columns(5)
+cols = st.columns(6 if restricted else 5)
+k1, k2, k3, k4, k5 = cols[:5]
 k1.metric(count_name + " รวม", "{:,}".format(int(total.texts.sum())),
           help="โพสต์ + ความคิดเห็น" if not restricted else "จำนวนครั้งที่หลักทรัพย์ที่เลือกถูกพูดถึงในแหล่งข้อมูลที่เลือก")
 k2.metric("เฉลี่ยต่อชั่วโมง", "{:,.0f}".format(total.texts.mean()))
@@ -60,9 +59,10 @@ k5.metric("ชั่วโมงที่ Z-score > 1.5", "{:,}".format(int((tot
           help="spike = ชั่วโมงที่ปริมาณสูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้า เกิน 1.5 เท่าของส่วนเบี่ยงเบนมาตรฐาน (เกณฑ์ 1.5 ตาม proposal)")
 if restricted:
     base = float(everything.texts.sum())
-    st.metric("สัดส่วนเทียบข้อความทั้งหมดของแหล่งข้อมูลที่เลือก (Ticker Mention Rate %)",
-              "n/a" if not base else "{:.3f}".format(100.0 * total.texts.sum() / base),
-              help="Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดของแหล่งข้อมูลเดียวกัน × 100")
+    cols[5].metric("Ticker Mention Rate (%)", "n/a" if not base else "{:.3f}".format(100.0 * total.texts.sum() / base),
+                   help="Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดของแหล่งข้อมูลเดียวกัน × 100")
+    st.info("เลือกหลักทรัพย์บางตัว จึงแสดง**จำนวนครั้งที่หลักทรัพย์เหล่านั้นถูกพูดถึง** (Ticker_mention_count) แทนข้อความทั้งหมด "
+            "ข้อความเดียวที่พูดถึงหลายตัวหรือหลายครั้งนับหลายครั้ง ติ๊กให้ครบทุกตัวเพื่อกลับไปดูข้อความทั้งหมด")
     basis = total["basis"].dropna()
     st.caption("Z-score คำนวณจาก%s" % ("จำนวนข้อความที่พูดถึงสินทรัพย์ (ค่าที่เก็บไว้ ใช้ใน panel_Ticker_spike)"
                                        if basis.empty or basis.iloc[0] == "texts" else

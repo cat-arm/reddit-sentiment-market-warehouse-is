@@ -16,13 +16,26 @@ TIME_KEYS = ["f_range", "f_gran"]
 COMMUNITIES = ["r/wallstreetbets", "r/stocks", "r/investing", "r/StockMarket", "r/options", "r/CryptoCurrency"]
 SOURCE_KEYS = ["f_src_" + c for c in COMMUNITIES] + ["f_type_Post", "f_type_Comment"]
 GROUP_KEYS = ["f_group_stock_etf", "f_group_futures", "f_group_crypto"]
+TICKERS = ["AAPL", "AMC", "AMD", "BITO", "BRK-B", "COIN", "GME", "HOOD", "IBIT", "IWM", "JNJ", "JPM", "KO", "MARA", "MSFT",
+           "MSTR", "NVDA", "PLTR", "QQQ", "SPY", "TSLA", "XOM", "CL=F", "ES=F", "GC=F", "NG=F", "NQ=F", "RTY=F",
+           "BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD", "SOL-USD", "XRP-USD"]
+
+
+def tick_only(at, keep):
+    """Tick exactly the tickers in `keep` on pages 1-2 (every other box is unticked), then rerun."""
+    for symbol in TICKERS:
+        try:
+            at.sidebar.checkbox(key="f_tk_" + symbol).set_value(symbol in keep)
+        except KeyError:
+            pass                                                     # its class is unticked: the box is not drawn
+    return at.run()
 PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
          "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Signals.py", "pages/6_Hot_Events.py"]
 
 
 def expected_keys(page):
     """Sidebar order: time (DimTime) first, then source (DimSource), then asset (DimTicker)."""
-    asset = GROUP_KEYS + (["f_tickers"] if page in MULTI_PAGES else ["f_ticker"])
+    asset = GROUP_KEYS + (["f_tk_" + s for s in TICKERS] if page in MULTI_PAGES else ["f_ticker"])
     return TIME_KEYS + (SOURCE_KEYS if page in SOURCE_PAGES else []) + asset
 
 
@@ -81,26 +94,31 @@ class FilterTests(unittest.TestCase):
             self.assertNotEqual(at.metric[0].value, smaller, page + " (posts off)")
             self.assertEqual(len(at.exception), 0, page)
 
+    def test_every_ticker_box_starts_ticked(self):
+        for page in MULTI_PAGES:
+            at = self.run_page(page)
+            for symbol in TICKERS:
+                self.assertTrue(at.sidebar.checkbox(key="f_tk_" + symbol).value, "%s %s" % (page, symbol))
+
     def test_several_tickers_and_classes_change_the_numbers(self):
-        """Pages 1-2: nothing chosen = every ticker; choosing tickers or unticking a class narrows the numbers."""
-        for page in SOURCE_PAGES:
+        """Pages 1-2: everything ticked = every ticker; ticking fewer narrows the numbers; unticking a class drops its tickers."""
+        for page in MULTI_PAGES:
             at = self.run_page(page)
             full = at.metric[0].value
-            at.multiselect(key="f_tickers").set_value(["TSLA", "NVDA"]).run()
+            at = tick_only(at, ["TSLA", "NVDA"])
             two = at.metric[0].value
             self.assertNotEqual(two, full, page)
-            at.multiselect(key="f_tickers").set_value(["TSLA", "NVDA", "BTC-USD"]).run()
+            at = tick_only(at, ["TSLA", "NVDA", "BTC-USD"])
             self.assertNotEqual(at.metric[0].value, two, page)
             at.sidebar.checkbox(key="f_group_crypto").set_value(False).run()          # BTC-USD leaves with its class
-            self.assertEqual(at.session_state["f_tickers"], ["TSLA", "NVDA"], page)
             self.assertEqual(at.metric[0].value, two, page)
             self.assertEqual(len(at.exception), 0, page)
 
-    def test_total_volume_page_shows_all_texts_unless_tickers_are_chosen(self):
+    def test_total_volume_page_shows_all_texts_unless_tickers_are_unticked(self):
         at = self.run_page("pages/1_Reddit_Volume.py")
         self.assertEqual(at.metric[0].label, "Reddit Volume รวม")
         self.assertEqual(len(at.info), 0)
-        at.multiselect(key="f_tickers").set_value(["SPY"]).run()
+        at = tick_only(at, ["SPY"])
         self.assertEqual(at.metric[0].label, "Ticker Mention Count รวม")
         self.assertEqual(len(at.info), 1)                            # the page says what it now counts
 
@@ -118,11 +136,11 @@ class FilterTests(unittest.TestCase):
 
     def test_several_tickers_chart_survives_lines_and_bars(self):
         at = self.run_page("pages/2_Ticker_Mentions.py")
-        at.multiselect(key="f_tickers").set_value(["TSLA", "NVDA", "SPY"]).run()
+        at = tick_only(at, ["TSLA", "NVDA", "SPY"])
         self.assertEqual(len(at.exception), 0)
         at.radio(key="ck_m_count").set_value("แท่ง").run()             # stacked bars, one colour per ticker
         self.assertEqual(len(at.exception), 0)
-        at.multiselect(key="f_tickers").set_value(list(["TSLA", "NVDA", "SPY", "QQQ", "AAPL", "AMD", "AMC", "GME", "MSFT"])).run()
+        at = tick_only(at, ["TSLA", "NVDA", "SPY", "QQQ", "AAPL", "AMD", "AMC", "GME", "MSFT"])
         self.assertEqual(len(at.exception), 0)                       # more than 8 tickers: one summed line
 
     def test_default_range_is_the_last_year_of_the_data(self):
@@ -132,22 +150,22 @@ class FilterTests(unittest.TestCase):
         self.assertEqual((hi - lo).days, 365)
 
     def test_source_and_ticker_choices_hold_across_pages_that_do_not_draw_them(self):
-        """The source filter and the multi-select are drawn on pages 1-2 only; a choice made there must come back."""
+        """The source filter and the ticker tick boxes are drawn on pages 1-2 only; a choice made there must come back."""
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(ROOT / "dashboard" / "pages/1_Reddit_Volume.py"), default_timeout=90).run()
         at.sidebar.checkbox(key="f_src_r/options").set_value(False)
         at.sidebar.checkbox(key="f_type_Post").set_value(False)
-        at.multiselect(key="f_tickers").set_value(["TSLA"])
-        at = at.run()
+        at = tick_only(at, ["TSLA"])
         self.assertEqual(len(at.exception), 0)
-        state = {"f_src_r/options": False, "f_type_Post": False, "f_tickers": ["TSLA"]}
+        state = {"f_src_r/options": False, "f_type_Post": False, "f_tk_TSLA": True, "f_tk_SPY": False}
         other = AppTest.from_file(str(ROOT / "dashboard" / "pages/3_Price_and_Return.py"), default_timeout=90)
         for key, value in state.items():
             other.session_state[key] = value
         other = other.run()                                         # page without the widgets: the values go to shadow keys
         self.assertFalse(other.session_state["_keep_f_src_r/options"])
         self.assertFalse(other.session_state["_keep_f_type_Post"])
-        self.assertEqual(other.session_state["_keep_f_tickers"], ["TSLA"])
+        self.assertTrue(other.session_state["_keep_f_tk_TSLA"])
+        self.assertFalse(other.session_state["_keep_f_tk_SPY"])
 
     def test_every_time_level_works_on_every_page(self):
         """Hour / day / week / month / year (DimTime levels) on a short, a medium and the full range."""
