@@ -206,8 +206,6 @@ def _ticker_boxes(options, label):
     right.button("ล้าง", key="f_tk_none", on_click=_set_all, args=(False,), width="content")
     for symbol in options:
         st.sidebar.checkbox(label(symbol), key=_ticker_key(symbol))
-    if not any(st.session_state[_ticker_key(s)] for s in options):
-        st.sidebar.caption("ไม่ได้ติ๊กหลักทรัพย์เลย จึงแสดงทั้งหมด")
 
 
 def _asset_filter(universe, multi, need_ticker):
