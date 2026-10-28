@@ -129,6 +129,19 @@ class FilterTests(unittest.TestCase):
                 self.assertTrue(at.sidebar.checkbox(key="f_tk_" + symbol).value, "%s %s" % (page, symbol))
             self.assertEqual(len(at.exception), 0, page)
 
+    def test_select_all_and_clear_also_set_the_asset_classes(self):
+        """The two buttons tick / untick every ticker and every asset class together."""
+        for page in MULTI_PAGES:
+            at = self.run_page(page)
+            at.button(key="f_tk_none").click().run()
+            self.assertFalse(any(at.sidebar.checkbox(key=k).value for k in GROUP_KEYS), page)
+            self.assertFalse(any(at.sidebar.checkbox(key="f_tk_" + s).value for s in TICKERS), page)
+            self.assertEqual(len(at.exception), 0, page)          # nothing ticked = everything is shown
+            at.button(key="f_tk_all").click().run()
+            self.assertTrue(all(at.sidebar.checkbox(key=k).value for k in GROUP_KEYS), page)
+            self.assertTrue(all(at.sidebar.checkbox(key="f_tk_" + s).value for s in TICKERS), page)
+            self.assertEqual(len(at.exception), 0, page)
+
     def test_price_page_follows_the_ticked_tickers(self):
         """One ticker, a few (one line each) and many (their average) all render, and the numbers follow the ticks."""
         page = "pages/3_Price_and_Return.py"

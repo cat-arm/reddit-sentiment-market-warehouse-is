@@ -188,10 +188,11 @@ def _group_toggled(group):
         st.session_state[_ticker_key(symbol)] = value
 
 
-def _set_tickers(symbols, value):
-    """Callback of the two small buttons: tick / untick the tickers that are on show."""
-    for symbol in symbols:
-        st.session_state[_ticker_key(symbol)] = value
+def _set_all(value):
+    """Callback of the two small buttons: tick / untick every ticker AND every asset class (nothing ticked = everything
+    is shown, so "clear" is the start of a new choice)."""
+    for key in ticker_keys() + ["f_group_" + g for g in GROUP_LABELS]:
+        st.session_state[key] = value
 
 
 def _ticker_boxes(options, label):
@@ -201,8 +202,8 @@ def _ticker_boxes(options, label):
         st.session_state.setdefault(key, True)
     st.sidebar.caption("สัญลักษณ์หลักทรัพย์")
     left, right = st.sidebar.columns(2)
-    left.button("เลือกทั้งหมด", key="f_tk_all", on_click=_set_tickers, args=(options, True), width="content")
-    right.button("ล้าง", key="f_tk_none", on_click=_set_tickers, args=(options, False), width="content")
+    left.button("เลือกทั้งหมด", key="f_tk_all", on_click=_set_all, args=(True,), width="content")
+    right.button("ล้าง", key="f_tk_none", on_click=_set_all, args=(False,), width="content")
     for symbol in options:
         st.sidebar.checkbox(label(symbol), key=_ticker_key(symbol))
     if not any(st.session_state[_ticker_key(s)] for s in options):
