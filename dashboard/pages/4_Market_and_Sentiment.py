@@ -59,7 +59,7 @@ shown = weighted_resample(series, how)
 st.subheader("%s: ราคาปิดเทียบค่าความรู้สึกเฉลี่ย" % ticker)
 if shown.sentiment_mean.notna().sum() == 0:
     st.info("ไม่มีข้อความที่พูดถึง %s ในช่วงนี้ จึงแสดงเฉพาะราคา" % ticker)
-    st.altair_chart(common.line(shown, "time", "close", "ราคาปิด (USD)"), width="stretch")
+    st.altair_chart(common.line(shown, "time", "close", "ราคาปิด (USD)", bar=common.kind(st, "s_close")), width="stretch")
 else:
     st.altair_chart(common.dual_axis(shown, "time", "close", "sentiment_mean", "ราคาปิด (USD)", "Sentiment Score"),
                     width="stretch")
@@ -93,7 +93,7 @@ with left:
     common.table(maj, hide_index=True, width="stretch")
 with right:
     st.subheader("ปริมาณการกล่าวถึง")
-    st.altair_chart(common.line(shown, "time", "reddit_volume", "Reddit Volume (ข้อความ)", "#ff7f0e", 200),
+    st.altair_chart(common.line(shown, "time", "reddit_volume", "Reddit Volume (ข้อความ)", "#ff7f0e", 200, bar=common.kind(st, "s_volume")),
                     width="stretch")
 
 st.subheader("ประเภทความรู้สึกส่วนใหญ่ สอดคล้องกับทิศทางผลตอบแทนอนาคตหรือไม่")

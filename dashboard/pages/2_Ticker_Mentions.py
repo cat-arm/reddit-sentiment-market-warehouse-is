@@ -14,7 +14,7 @@ import altair as alt  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from dashboard import common, drill  # noqa: E402
+from dashboard import common  # noqa: E402
 from dashboard.common import q  # noqa: E402
 
 common.setup("Ticker Mentions: สินทรัพย์ที่ถูกกล่าวถึงบน Reddit", "🗣️")
@@ -66,11 +66,13 @@ else:
         merged["mentions"] = merged["mentions"].fillna(0)          # nobody mentioned it = a real 0
         shown = common.resample(merged, {"mentions": "sum", "texts": "sum", "zscore": "max"}, how)
         shown["rate"] = 100.0 * shown["mentions"] / shown["texts"].where(shown["texts"] > 0)
-        st.altair_chart(common.line(shown, "time", "mentions", "Ticker Mention Count", "#2ca02c", fmt=common.DATE_FORMAT[how]), width="stretch")
+        st.altair_chart(common.line(shown, "time", "mentions", "Ticker Mention Count", "#2ca02c", fmt=common.DATE_FORMAT[how],
+                                    bar=common.kind(st, "m_count")), width="stretch")
         a, b = st.columns(2)
-        a.altair_chart(common.line(shown, "time", "rate", "Ticker Mention Rate (%)", "#9467bd", 220, fmt=common.DATE_FORMAT[how]), width="stretch")
+        a.altair_chart(common.line(shown, "time", "rate", "Ticker Mention Rate (%)", "#9467bd", 220, fmt=common.DATE_FORMAT[how],
+                                   bar=common.kind(a, "m_rate")), width="stretch")
         b.altair_chart(common.line(shown, "time", "zscore", "Volume Z-score ของ %s" % ticker, "#d62728", 220,
-                              fmt=common.DATE_FORMAT[how]), width="stretch")
+                                   fmt=common.DATE_FORMAT[how], bar=common.kind(b, "m_z")), width="stretch")
         # KPIs of proposal 7.1: Ticker Mention Count (measure), Ticker Mention Rate (%) and Reddit Volume Z-score
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Ticker Mention Count รวม (ครั้ง)", "{:,}".format(int(mentions.mentions.sum())))
@@ -91,34 +93,3 @@ else:
         st.write("พูดถึงที่ไหน (ชุมชน × ประเภทเนื้อหา)")
         source = q("volume_by_source", ticker, start, end, src_ids)
         common.table(source.rename(columns={"mentions": "ครั้งที่ถูกพูดถึง"}), hide_index=True, width="stretch")
-
-# ---- drill-down along the three dimensions (proposal figures 2-4: hierarchies from the largest to the smallest) ----
-st.header("เจาะลึกตามมิติ (Drill-down)")
-st.caption("ดูทีละระดับของมิติ: เลือกในกล่องใต้กราฟเพื่อลงไประดับถัดไป กดปุ่มด้านบนกราฟเพื่อย้อนกลับ  \n"
-           "ใช้ช่วงเวลาและแหล่งข้อมูลตามตัวกรองกลาง; แท็บเวลาและแหล่งข้อมูลดูการพูดถึง %s ส่วนแท็บหลักทรัพย์ดูทุกสินทรัพย์ในกลุ่มที่เลือก" % ticker)
-sources_table = q("sources")
-universe = q("tickers")
-names = dict(zip(universe.ticker, universe.name))
-
-
-def ticker_label(column, value, rows):
-    if column == "big_group":
-        return common.group_name(value)
-    return "%s · %s" % (value, names.get(value, ""))
-
-
-tab_time, tab_source, tab_ticker = st.tabs(["เวลา (DimTime): ปี › เดือน › สัปดาห์ › วัน › ชั่วโมง",
-                                            "แหล่งข้อมูล (DimSource): แพลตฟอร์ม › ชุมชน › ประเภท",
-                                            "หลักทรัพย์ (DimTicker): กลุ่มสินทรัพย์ › สัญลักษณ์"])
-raw = q("mention_hour_source", ticker, start, end, src_ids).merge(sources_table, on="source_id")
-with tab_time:
-    st.caption("จำนวนครั้งที่ %s ถูกพูดถึง" % ticker)
-    drill.drill("m_time", drill.time_frame(raw), drill.TIME_LEVELS, "#2ca02c", "ครั้งที่ถูกพูดถึง")
-with tab_source:
-    st.caption("จำนวนครั้งที่ %s ถูกพูดถึง" % ticker)
-    drill.drill("m_source", raw, drill.SOURCE_LEVELS, "#2ca02c", "ครั้งที่ถูกพูดถึง", horizontal=True, by_value=True)
-with tab_ticker:
-    st.caption("จำนวนครั้งที่แต่ละสินทรัพย์ถูกพูดถึง (ข้อความเดียวที่พูดถึงหลายตัวนับให้ทุกตัว)")
-    frame = rank.rename(columns={"mentions": "value"})[["big_group", "ticker", "value"]] if not rank.empty else rank
-    drill.drill("m_ticker", frame, drill.TICKER_LEVELS, "#9467bd", "ครั้งที่ถูกพูดถึง", label_of=ticker_label,
-                horizontal=True, by_value=True)

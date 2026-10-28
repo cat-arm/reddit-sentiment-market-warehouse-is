@@ -89,10 +89,6 @@ class DashboardTests(unittest.TestCase):
         self.assertGreater(texts, 0)
         self.assertEqual(int(data.total_volume_series(DB, start, end, ids).texts.sum()), texts)
         self.assertEqual(int(data.mention_series(DB, "TSLA", start, end, ids).mentions.sum()), mentions)
-        split = data.ticker_volume_series(DB, "TSLA", start, end, ids)
-        self.assertEqual(int(split.comments.sum()), mentions)
-        self.assertEqual(int(split.posts.sum()), 0)                  # posts were filtered out
-        self.assertEqual(int(data.mention_hour_source(DB, "TSLA", start, end, ids).value.sum()), mentions)
         ranking = data.mention_ranking(DB, start, end, ids)
         self.assertEqual(int(ranking[ranking.ticker == "TSLA"].mentions.iloc[0]), mentions)
         self.assertTrue(ranking.texts_about.isna().all())            # texts per source are not stored
@@ -110,16 +106,22 @@ class DashboardTests(unittest.TestCase):
         self.assertGreater(len(both), 700)
         self.assertLess(float((both.zscore_stored - both.zscore_own).abs().max()), 1e-9)
 
-    def test_drill_down_walks_every_level_on_both_pages(self):
+    def test_a_chosen_week_gives_the_dimtime_total(self):
+        """Choosing Year > Month > Week in the sidebar shows exactly the volume DimTime attributes to that week."""
         from streamlit.testing.v1 import AppTest
-        for page, key in (("pages/1_Reddit_Volume.py", "v_time"), ("pages/2_Ticker_Mentions.py", "m_time")):
-            at = AppTest.from_file(str(ROOT / "dashboard" / page), default_timeout=120).run()
-            for level in range(4):
-                at.selectbox(key="%s_pick_%d" % (key, level)).select_index(0).run()
-                self.assertEqual(len(at.exception), 0, "%s level %d: %s" % (page, level, [e.value for e in at.exception]))
-            self.assertEqual(len(at.session_state[key + "_path"]), 4)               # year, month, week, day
-            at.button(key=key + "_crumb_1").click().run()                           # back up to the year
-            self.assertEqual(len(at.session_state[key + "_path"]), 1)
+        at = AppTest.from_file(str(ROOT / "dashboard" / "pages/1_Reddit_Volume.py"), default_timeout=120).run()
+        at.sidebar.selectbox(key="f_year").select(2025).run()
+        at.sidebar.selectbox(key="f_month").select(3).run()
+        at.sidebar.selectbox(key="f_week").select(10).run()
+        self.assertEqual(len(at.exception), 0)
+        shown = int(at.metric[0].value.replace(",", ""))
+        db = sqlite3.connect("file:%s?mode=ro" % DB.as_posix(), uri=True)
+        try:
+            expected = db.execute("SELECT SUM(v.texts) FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID) "
+                                  "WHERE t.Year = 2025 AND t.Month = 3 AND t.Week = 10").fetchone()[0]
+        finally:
+            db.close()
+        self.assertEqual(shown, expected)
 
     def test_on_demand_signals_equal_stored_signals(self):
         from analysis import signals
