@@ -10,8 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
-NO_ASSET_PAGES = {"pages/1_Reddit_Volume.py"}     # total volume has no asset filter in the sidebar
-ASSET_KEYS = {"f_group_stock_etf", "f_group_futures", "f_group_crypto", "f_ticker"}
+SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # only these tables are split by source
+SOURCE_KEYS = {"f_comm", "f_type_Post", "f_type_Comment"}
 PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
          "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Signals.py"]
 CENTRAL_KEYS = ["f_group_stock_etf", "f_group_futures", "f_group_crypto", "f_ticker", "f_range", "f_gran", "f_chart"]
@@ -20,7 +20,7 @@ CENTRAL_KEYS = ["f_group_stock_etf", "f_group_futures", "f_group_crypto", "f_tic
 def sidebar_signature(at):
     """(kind, label, key) of every widget in the sidebar, in order."""
     out = []
-    for kind in ("checkbox", "selectbox", "date_input", "radio"):
+    for kind in ("checkbox", "selectbox", "multiselect", "date_input", "radio"):
         for w in getattr(at.sidebar, kind):
             out.append((w.key, kind, w.label))
     return sorted(out)
@@ -37,11 +37,12 @@ class FilterTests(unittest.TestCase):
 
     def test_sidebar_is_identical_on_every_page(self):
         signatures = {page: sidebar_signature(self.run_page(page)) for page in PAGES}
-        reference = signatures[PAGES[0]]
+        reference = signatures["app.py"]
         self.assertEqual({k for k, _, _ in reference}, set(CENTRAL_KEYS))
         for page, signature in signatures.items():
-            if page in NO_ASSET_PAGES:
-                self.assertEqual({k for k, _, _ in signature}, set(CENTRAL_KEYS) - ASSET_KEYS, page)
+            if page in SOURCE_PAGES:       # the same widgets plus the DimSource filter (communities, Post / Comment)
+                self.assertEqual({k for k, _, _ in signature}, set(CENTRAL_KEYS) | SOURCE_KEYS, page)
+                self.assertEqual([s for s in signature if s[0] in CENTRAL_KEYS], reference, page)
             else:
                 self.assertEqual(signature, reference, "%s has a different sidebar" % page)
 
@@ -51,14 +52,35 @@ class FilterTests(unittest.TestCase):
         for page in PAGES:
             at = self.run_page(page, **chosen)
             self.assertEqual(len(at.exception), 0, "%s raised %s" % (page, [e.value for e in at.exception]))
-            if page not in NO_ASSET_PAGES:
-                self.assertFalse(at.sidebar.checkbox(key="f_group_crypto").value, page)
-                self.assertTrue(at.sidebar.checkbox(key="f_group_stock_etf").value, page)
-                self.assertEqual(at.sidebar.selectbox(key="f_ticker").value, "QQQ", page)
+            self.assertFalse(at.sidebar.checkbox(key="f_group_crypto").value, page)
+            self.assertTrue(at.sidebar.checkbox(key="f_group_stock_etf").value, page)
+            self.assertEqual(at.sidebar.selectbox(key="f_ticker").value, "QQQ", page)
             self.assertEqual(at.sidebar.selectbox(key="f_gran").value, "รายเดือน", page)
             self.assertEqual(at.sidebar.radio(key="f_chart").value, "แท่ง", page)
             self.assertEqual(tuple(at.sidebar.date_input(key="f_range").value),
                              (dt.date(2026, 8, 3), dt.date(2026, 8, 9)), page)
+
+    def test_default_range_is_the_last_year_of_the_data(self):
+        at = self.run_page("app.py")
+        lo, hi = at.sidebar.date_input(key="f_range").value
+        self.assertEqual(hi, dt.date(2026, 8, 31))                 # last day of Reddit data
+        self.assertEqual((hi - lo).days, 365)
+
+    def test_source_choice_holds_across_pages_that_do_not_draw_it(self):
+        """The source filter is drawn on pages 1-2 only; a choice made there must come back when the user returns."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(ROOT / "dashboard" / "pages/1_Reddit_Volume.py"), default_timeout=90).run()
+        at.multiselect(key="f_comm").set_value(["r/stocks", "r/options"])
+        at.checkbox(key="f_type_Post").set_value(False)
+        at = at.run()
+        self.assertEqual(len(at.exception), 0)
+        state = dict(f_comm=["r/stocks", "r/options"], f_type_Post=False, f_type_Comment=True)
+        other = AppTest.from_file(str(ROOT / "dashboard" / "pages/3_Price_and_Return.py"), default_timeout=90)
+        for key, value in state.items():
+            other.session_state[key] = value
+        other = other.run()                                         # page without the widgets: the values go to shadow keys
+        self.assertEqual(other.session_state["_keep_f_comm"], ["r/stocks", "r/options"])
+        self.assertFalse(other.session_state["_keep_f_type_Post"])
 
     def test_every_time_level_works_on_every_page(self):
         """Hour / day / week / month / year (DimTime levels) on a short, a medium and the full range."""

@@ -1,6 +1,7 @@
 """Dashboard testing (proposal 8.4 part 3): every number the dashboard data layer returns is compared with an
 independent SQL query on the database (a different table or a different way of counting where possible).
 
+Also the source filter (communities x Post / Comment) and the drill-down levels of pages 1-2.
 Checked for 2 time windows x 4 tickers (one per asset class + the most talked-about stock): Reddit volume,
 Z-score, mention count and Ticker Mention Rate, price / Current Return, Normalized ATR, future return by group,
 sentiment ranking, win rate / correlation ranking, signal counts, home-page headline numbers.
@@ -104,6 +105,73 @@ def run(db_path):
         for tk in TICKERS:
             e = c.q("SELECT AVG(r.sentiment_mean) FROM reddit_hourly r JOIN market_hourly_features m ON m.ticker = r.ticker AND CAST(strftime('%s', m.hour_bucket) AS INTEGER) = r.hour_utc WHERE r.variant='all' AND r.ticker=? AND r.hour_utc BETWEEN ? AND ?", (tk, start, end))[0][0]
             c.check("4 Market and Sentiment", "%s %s: อันดับความรู้สึก (เฉลี่ย)" % (wname, tk), sent.loc[tk, "mean_sentiment"] if tk in sent.index else None, e, 1e-7)
+    # --- pages 1-2: source filter (DimSource) and drill-down (DimTime / DimSource / DimTicker) ---
+    from dashboard import drill
+    src = data.sources(db_path)
+    cond = {int(r.source_id): (r.subreddit.replace("r/", ""), "submission" if r.content_type == "Post" else "comment")
+            for r in src.itertuples()}
+    subsets = {"wsb+stocks ความคิดเห็น": (2, 4), "options+CryptoCurrency โพสต์": (9, 11), "ทุกแหล่ง": tuple(src.source_id)}
+    for wname, (start, end) in windows.items():
+        for sname, ids in subsets.items():
+            where = " OR ".join("(p.subreddit = '%s' AND p.content_type = '%s')" % cond[i] for i in ids)
+            base_sql = "FROM filtered_text p WHERE p.created_utc >= ? AND p.created_utc < ? AND (%s)" % where
+            n_texts = c.q("SELECT COUNT(*) " + base_sql, (start, end + 3600))[0][0]
+            tag = "%s, %s" % (wname, sname)
+            tot = data.total_volume_series(db_path, start, end, ids)
+            c.check("1 Reddit Volume (ตัวกรองแหล่งข้อมูล)", "%s: ข้อความรวม = นับตรงจาก filtered_text" % tag, int(tot.texts.sum()), n_texts)
+            c.check("1 Reddit Volume (ตัวกรองแหล่งข้อมูล)", "%s: Post + Comment = รวม" % tag, int(tot.posts.sum() + tot.comments.sum()), int(tot.texts.sum()))
+            c.check("1 Reddit Volume (ตัวกรองแหล่งข้อมูล)", "%s: รวมต่อชุมชน = รวมทั้งหมด" % tag,
+                    int(data.total_volume_by_source(db_path, start, end, ids).texts.sum()), n_texts)
+            rank = data.mention_ranking(db_path, start, end, ids)
+            for tk in ("TSLA", "BTC-USD"):
+                ment = c.q("SELECT COALESCE(SUM(m.mention_count), 0) FROM ticker_mentions m JOIN filtered_text p ON p.src_rowid = m.src_rowid "
+                           "WHERE m.ticker = ? AND p.created_utc >= ? AND p.created_utc < ? AND (%s)" % where, (tk, start, end + 3600))[0][0]
+                row = rank[rank.ticker == tk]
+                c.check("2 Ticker Mentions (ตัวกรองแหล่งข้อมูล)", "%s %s: Ticker_mention_count (อันดับ)" % (tag, tk), int(row.mentions.iloc[0]) if len(row) else 0, ment)
+                c.check("2 Ticker Mentions (ตัวกรองแหล่งข้อมูล)", "%s %s: Ticker Mention Rate (%%)" % (tag, tk),
+                        float(row.mention_rate_pct.iloc[0]) if len(row) else 0.0, 100.0 * ment / n_texts if n_texts else None, 1e-9)
+                split = data.ticker_volume_series(db_path, tk, start, end, ids)
+                c.check("1 Reddit Volume (ตัวกรองแหล่งข้อมูล)", "%s %s: Post + Comment ของการพูดถึง = Ticker_mention_count" % (tag, tk),
+                        int(split.posts.sum() + split.comments.sum()), ment)
+        # the Z-score rule re-applied to the hourly totals reproduces the stored one (so a filtered Z-score is comparable)
+        stored = data.total_volume_series(db_path, start, end)[["hour_utc", "zscore"]]
+        back = data._read(db_path, "SELECT CAST(strftime('%s', t.ts_utc) AS INTEGER) AS hour_utc, SUM(v.texts) AS n FROM reddit_volume_hourly v "
+                                   "JOIN DimTime t USING (TimeID) WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ? GROUP BY t.ts_utc",
+                          (start - 86400, end))
+        own = data._prior24_zscore(back.hour_utc, back.n.to_numpy(float), start, end)
+        both = stored.merge(own, on="hour_utc", suffixes=("_s", "_o")).dropna()
+        c.check("1 Reddit Volume (ตัวกรองแหล่งข้อมูล)", "%s: Z-score คำนวณซ้ำจากยอดรายชั่วโมง = ค่าที่เก็บไว้ (ต่างสูงสุด)" % wname,
+                float((both.zscore_s - both.zscore_o).abs().max()), 0.0, 1e-9)
+        # drill-down: every level adds up, and the DimTime attributes (Year / Month / Week / Day) agree with the grouping
+        raw = data.volume_hour_source(db_path, start, end).merge(src, on="source_id")
+        frame = drill.time_frame(raw)
+        full = int(raw.value.sum())
+        years = drill.level_totals(frame, drill.TIME_LEVELS, [])
+        c.check("1 Reddit Volume (drill-down)", "%s: รวมทุกปี = รวมทั้งหมด" % wname, int(years.value.sum()), full)
+        for year, month in sorted(set(zip(frame.year, frame.month))):
+            weeks = drill.level_totals(frame, drill.TIME_LEVELS, [year, month])
+            exp = {r[0]: r[1] for r in c.q(
+                "SELECT t.Week, SUM(v.texts) FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID) WHERE t.Year = ? AND t.Month = ? "
+                "AND CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ? GROUP BY t.Week", (int(year), int(month), start, end))}
+            c.check("1 Reddit Volume (drill-down)", "%s %d-%02d: สัปดาห์ (DimTime.Week) ทุกสัปดาห์ตรง" % (wname, year, month),
+                    int(sum(1 for w, v in zip(weeks.week, weeks.value) if exp.get(int(w)) == v)), len(exp))
+            days = drill.level_totals(frame, drill.TIME_LEVELS, [year, month, int(weeks.week.iloc[0])])
+            exp_days = {r[0]: r[1] for r in c.q(
+                "SELECT t.Day, SUM(v.texts) FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID) WHERE t.Year = ? AND t.Month = ? AND t.Week = ? "
+                "AND CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ? GROUP BY t.Day", (int(year), int(month), int(weeks.week.iloc[0]), start, end))}
+            c.check("1 Reddit Volume (drill-down)", "%s %d-%02d: วันในสัปดาห์แรก (DimTime.Day) ตรง" % (wname, year, month),
+                    int(sum(1 for d, v in zip(days.day, days.value) if exp_days.get(int(d[8:])) == v)), len(exp_days))
+        comm = drill.level_totals(frame, drill.SOURCE_LEVELS, ["Reddit"])
+        by_src = data.total_volume_by_source(db_path, start, end).groupby("subreddit").texts.sum()
+        c.check("1 Reddit Volume (drill-down)", "%s: ชุมชนในระดับ drill-down = แยกตามชุมชน" % wname,
+                int(sum(1 for s, v in zip(comm.subreddit, comm.value) if by_src.get(s) == v)), len(by_src))
+        ticks = data.mention_ranking(db_path, start, end)
+        groups = ticks.groupby("big_group").mentions.sum()
+        exp_g = {r[0]: r[1] for r in c.q(
+            "SELECT k.AssetClass, SUM(f.ticker_mention_count) FROM FactRedditVolume f JOIN DimTime t USING (TimeID) JOIN DimTicker k USING (TickerID) "
+            "WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ? GROUP BY k.AssetClass", (start, end))}
+        c.check("2 Ticker Mentions (drill-down)", "%s: การพูดถึงรายกลุ่มสินทรัพย์ตรงกับ FactRedditVolume" % wname,
+                int(sum(1 for g, v in groups.items() if exp_g.get(g) == v)), len(exp_g))
     # --- page 5: ranking, signals, home page ---
     rk = data.ranking_table(db_path)
     for tk in TICKERS:

@@ -47,7 +47,7 @@ reddit-sentiment-market-warehouse/
 | 7.1 กรองคุณภาพ/ภาษา | T2 | `etl/quality_filter.py` | `text_filter`, `data_quality_audit`, view `filtered_text` | ✅ รันแล้ว 2026-10-10 |
 | 7.1 พจนานุกรม Ticker | T3 | `configs/tickers.yaml`, `etl/ticker_dict.py` | — | ✅ |
 | 7.1 สกัด Ticker | T4 | `etl/extract_tickers.py` | `ticker_mentions` | ✅ รันแล้ว 2026-10-10 |
-| 7.1 Fact + dashboard 7.1-1 | T5, D1 | `etl/load_fact_reddit_volume.py`, `dashboard/pages/1_Reddit_Volume.py` (ปริมาณรวม ไม่มีตัวกรองสินทรัพย์), `dashboard/pages/2_Ticker_Mentions.py` (สินทรัพย์ที่ถูกพูดถึง) | `FactRedditVolume` | ✅ รันแล้ว 2026-10-11 |
+| 7.1 Fact + dashboard 7.1-1 | T5, D1 | `etl/load_fact_reddit_volume.py`, `dashboard/pages/1_Reddit_Volume.py` (ปริมาณรวม หรือเฉพาะที่พูดถึง ticker + ตัวกรองแหล่งข้อมูล + drill-down เวลา/แหล่งข้อมูล), `dashboard/pages/2_Ticker_Mentions.py` (สินทรัพย์ที่ถูกพูดถึง + drill-down เวลา/แหล่งข้อมูล/หลักทรัพย์), `dashboard/drill.py` (drill-down ตามลำดับชั้นของมิติ), `tests/test_drill.py` | `FactRedditVolume` | ✅ รันแล้ว 2026-10-11 |
 | 7.2 ดึงราคา | M2 | `ingest/market_fetch.py` | `market_bars` | ✅ (gap ~0.5% รอปิด) |
 | 7.2 feature ราคา | M1 | `etl/market_features.py` | `market_hourly_features`, `FactMarketPrice` | ✅ รันแล้ว 2026-10-10 |
 | 7.2 dashboard 7.2-1 | D2 | `dashboard/pages/3_Price_and_Return.py` | — | ✅ รันแล้ว 2026-10-11 |

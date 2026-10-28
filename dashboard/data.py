@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from etl.reddit_features import volume_features
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB = ROOT / "output" / "reddit.sqlite3"
 HORIZONS = ("1h", "2h", "3h", "6h", "12h")
@@ -27,6 +29,30 @@ def _read(db_path, sql, params=()):
         return pd.read_sql_query(sql, db, params=params)
     finally:
         db.close()
+
+
+def _src_filter(source_ids, column="v.SourceID"):
+    """(' AND <column> IN (?,?,..)', ids) for a tuple of DimSource ids; ('', ()) = every source."""
+    if source_ids is None:
+        return "", ()
+    ids = tuple(int(i) for i in source_ids)
+    return " AND %s IN (%s)" % (column, ",".join("?" * len(ids))), ids
+
+
+def _all_sources(db_path, source_ids):
+    """True when the filter keeps every source (then the stored all-source statistics can be used)."""
+    return source_ids is None or len(set(source_ids)) == len(sources(db_path))
+
+
+def _prior24_zscore(hours, counts, start, end):
+    """Volume Z-score of the proposal (mean / std of the 24 clock hours BEFORE, current hour excluded) for the hourly
+    counts `counts` indexed by epoch `hours`; hours without any text are real zeros.  `hours` must start 24 hours
+    before `start`; returns a DataFrame(hour_utc, zscore) for start..end only."""
+    grid = pd.Index(range(int(start) - 86400, int(end) + 3600, 3600), name="hour_utc")
+    series = pd.Series(counts, index=hours).groupby(level=0).sum().reindex(grid).fillna(0)
+    z, _ = volume_features(series.to_frame("v"))
+    out = z["v"].reset_index().rename(columns={"v": "zscore"})
+    return out[(out.hour_utc >= start) & (out.hour_utc <= end)].reset_index(drop=True)
 
 
 def to_time(df, col="hour_utc"):
@@ -42,6 +68,12 @@ def tickers(db_path):
     return _read(db_path, "SELECT TickerSymbol AS ticker, AssetClass AS big_group, TickerName AS name "
                           "FROM DimTicker ORDER BY CASE AssetClass WHEN 'stock_etf' THEN 1 WHEN 'futures' THEN 2 ELSE 3 END, "
                           "TickerSymbol")
+
+
+def sources(db_path):
+    """DimSource: the 12 sources (6 communities x Post / Comment) with their ids."""
+    return _read(db_path, "SELECT SourceID AS source_id, Platform AS platform, Subreddit AS subreddit, "
+                          "ContentType AS content_type FROM DimSource ORDER BY SourceID")
 
 
 def data_range(db_path):
@@ -84,29 +116,41 @@ def overview_counts(db_path):
 
 
 # ------------------------------------------------------------------------------------------------ D1: Reddit volume
-def total_volume_series(db_path, start, end):
+def total_volume_series(db_path, start, end, source_ids=None):
     """Reddit_volume of proposal table 3: ALL posts and comments per hour (6 communities), split Post / Comment,
     plus the Volume Z-score of the hourly total (24 prior hours, current hour excluded).  Hours without any text
-    are missing here; the page fills them with 0 (no texts is a real count)."""
+    are missing here; the page fills them with 0 (no texts is a real count).
+    `source_ids` (DimSource ids) keeps only those communities / content types; the Z-score is then recomputed from the
+    filtered hourly total with the same rule (it equals the stored all-source value when nothing is filtered out)."""
+    flt, extra = _src_filter(source_ids)
     df = _read(db_path, """
         SELECT CAST(strftime('%s', t.ts_utc) AS INTEGER) AS hour_utc,
                SUM(CASE WHEN s.ContentType = 'Post' THEN v.texts ELSE 0 END) AS posts,
                SUM(CASE WHEN s.ContentType = 'Comment' THEN v.texts ELSE 0 END) AS comments, SUM(v.texts) AS texts
         FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID) JOIN DimSource s ON s.SourceID = v.SourceID
-        WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ? GROUP BY t.ts_utc ORDER BY hour_utc""",
-               (start, end))
-    z = _read(db_path, "SELECT hour_utc, reddit_volume_zscore_24 AS zscore FROM reddit_hourly_features "
-                       "WHERE variant = 'all' AND ticker = 'ALL' AND hour_utc BETWEEN ? AND ?", (start, end))
+        WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt + """
+        GROUP BY t.ts_utc ORDER BY hour_utc""", (start, end, *extra))
+    if _all_sources(db_path, source_ids):
+        z = _read(db_path, "SELECT hour_utc, reddit_volume_zscore_24 AS zscore FROM reddit_hourly_features "
+                           "WHERE variant = 'all' AND ticker = 'ALL' AND hour_utc BETWEEN ? AND ?", (start, end))
+    else:
+        back = _read(db_path, """
+            SELECT CAST(strftime('%s', t.ts_utc) AS INTEGER) AS hour_utc, SUM(v.texts) AS n
+            FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID)
+            WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt + """
+            GROUP BY t.ts_utc""", (start - 86400, end, *extra))
+        z = _prior24_zscore(back.hour_utc, back.n.to_numpy(float), start, end)
     return to_time(df.merge(z, on="hour_utc", how="left"))
 
 
-def total_volume_by_source(db_path, start, end):
+def total_volume_by_source(db_path, start, end, source_ids=None):
     """Total posts/comments per community and content type in the range (DimSource)."""
+    flt, extra = _src_filter(source_ids)
     return _read(db_path, """
         SELECT s.Subreddit AS subreddit, s.ContentType AS content_type, SUM(v.texts) AS texts
         FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID) JOIN DimSource s ON s.SourceID = v.SourceID
-        WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?
-        GROUP BY s.Subreddit, s.ContentType ORDER BY texts DESC""", (start, end))
+        WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt + """
+        GROUP BY s.Subreddit, s.ContentType ORDER BY texts DESC""", (start, end, *extra))
 
 
 def volume_series(db_path, ticker, start, end):
@@ -118,42 +162,110 @@ def volume_series(db_path, ticker, start, end):
     return to_time(df)
 
 
-def mention_series(db_path, ticker, start, end):
-    """Hourly number of mentions of the ticker (sum over communities) = Ticker_mention_count of FactRedditVolume."""
+def mention_series(db_path, ticker, start, end, source_ids=None):
+    """Hourly number of mentions of the ticker (sum over the chosen communities) = Ticker_mention_count of FactRedditVolume."""
+    flt, extra = _src_filter(source_ids, "f.SourceID")
     df = _read(db_path, """
         SELECT CAST(strftime('%s', t.ts_utc) AS INTEGER) AS hour_utc, SUM(f.ticker_mention_count) AS mentions
         FROM FactRedditVolume f JOIN DimTime t USING (TimeID) JOIN DimTicker k USING (TickerID)
-        WHERE k.TickerSymbol = ? AND CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?
-        GROUP BY t.ts_utc ORDER BY hour_utc""", (ticker, start, end))
+        WHERE k.TickerSymbol = ? AND CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt + """
+        GROUP BY t.ts_utc ORDER BY hour_utc""", (ticker, start, end, *extra))
     return to_time(df)
 
 
-def volume_by_source(db_path, ticker, start, end):
+def ticker_volume_series(db_path, ticker, start, end, source_ids=None):
+    """Hourly Ticker_mention_count of one ticker split into mentions inside posts and inside comments."""
+    flt, extra = _src_filter(source_ids, "f.SourceID")
+    df = _read(db_path, """
+        SELECT CAST(strftime('%s', t.ts_utc) AS INTEGER) AS hour_utc,
+               SUM(CASE WHEN s.ContentType = 'Post' THEN f.ticker_mention_count ELSE 0 END) AS posts,
+               SUM(CASE WHEN s.ContentType = 'Comment' THEN f.ticker_mention_count ELSE 0 END) AS comments,
+               SUM(f.ticker_mention_count) AS mentions
+        FROM FactRedditVolume f JOIN DimTime t USING (TimeID) JOIN DimTicker k USING (TickerID)
+        JOIN DimSource s ON s.SourceID = f.SourceID
+        WHERE k.TickerSymbol = ? AND CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt + """
+        GROUP BY t.ts_utc ORDER BY hour_utc""", (ticker, start, end, *extra))
+    return to_time(df)
+
+
+def ticker_zscore(db_path, ticker, start, end, source_ids=None):
+    """Volume Z-score of one ticker per hour (hours with Reddit data only; the page treats the others as unknown).
+    All sources: the stored value, based on the number of TEXTS that mention the ticker (the one panel_Ticker_spike uses).
+    Narrowed sources: the same rule on the Ticker_mention_count of the chosen sources (texts per source are not stored).
+    Column `basis` says which one it is ('texts' / 'mentions')."""
+    if _all_sources(db_path, source_ids):
+        df = _read(db_path, """
+            SELECT hour_utc, reddit_volume_zscore_24 AS zscore FROM reddit_hourly_features
+            WHERE variant = 'all' AND ticker = ? AND hour_utc BETWEEN ? AND ? ORDER BY hour_utc""", (ticker, start, end))
+        df["basis"] = "texts"
+    else:
+        flt, extra = _src_filter(source_ids, "f.SourceID")
+        back = _read(db_path, """
+            SELECT CAST(strftime('%s', t.ts_utc) AS INTEGER) AS hour_utc, SUM(f.ticker_mention_count) AS n
+            FROM FactRedditVolume f JOIN DimTime t USING (TimeID) JOIN DimTicker k USING (TickerID)
+            WHERE k.TickerSymbol = ? AND CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt + """
+            GROUP BY t.ts_utc""", (ticker, start - 86400, end, *extra))
+        df = _prior24_zscore(back.hour_utc, back.n.to_numpy(float), start, end)
+        df["basis"] = "mentions"
+    return to_time(df)
+
+
+def volume_hour_source(db_path, start, end, source_ids=None):
+    """Texts per hour and source (input of the drill-down of the total volume)."""
+    flt, extra = _src_filter(source_ids)
+    return _read(db_path, """
+        SELECT CAST(strftime('%s', t.ts_utc) AS INTEGER) AS hour_utc, v.SourceID AS source_id, v.texts AS value
+        FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID)
+        WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt, (start, end, *extra))
+
+
+def mention_hour_source(db_path, ticker, start, end, source_ids=None):
+    """Mentions of one ticker per hour and source (input of the drill-down of the ticker)."""
+    flt, extra = _src_filter(source_ids, "f.SourceID")
+    return _read(db_path, """
+        SELECT CAST(strftime('%s', t.ts_utc) AS INTEGER) AS hour_utc, f.SourceID AS source_id,
+               f.ticker_mention_count AS value
+        FROM FactRedditVolume f JOIN DimTime t USING (TimeID) JOIN DimTicker k USING (TickerID)
+        WHERE k.TickerSymbol = ? AND CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt,
+                 (ticker, start, end, *extra))
+
+
+def volume_by_source(db_path, ticker, start, end, source_ids=None):
     """Where the ticker is discussed: mentions per community and content type (DimSource) in the range."""
+    flt, extra = _src_filter(source_ids, "f.SourceID")
     return _read(db_path, """
         SELECT s.Subreddit AS subreddit, s.ContentType AS content_type, SUM(f.ticker_mention_count) AS mentions
         FROM FactRedditVolume f JOIN DimTime t USING (TimeID) JOIN DimTicker k USING (TickerID)
         JOIN DimSource s ON s.SourceID = f.SourceID
-        WHERE k.TickerSymbol = ? AND CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?
-        GROUP BY s.Subreddit, s.ContentType ORDER BY mentions DESC""", (ticker, start, end))
+        WHERE k.TickerSymbol = ? AND CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt + """
+        GROUP BY s.Subreddit, s.ContentType ORDER BY mentions DESC""", (ticker, start, end, *extra))
 
 
-def mention_ranking(db_path, start, end):
+def mention_ranking(db_path, start, end, source_ids=None):
     """Most discussed tickers in the range: Ticker_mention_count, texts that mention it, and the proposal's KPI
-    Ticker Mention Rate (%) = Ticker_mention_count / Reddit_volume (ALL posts and comments) x 100."""
-    df = _read(db_path, """
-        SELECT h.ticker, k.AssetClass AS big_group, SUM(h.reddit_volume) AS texts_about, MAX(h.reddit_volume) AS peak_hour_texts
-        FROM reddit_hourly h JOIN DimTicker k ON k.TickerSymbol = h.ticker
-        WHERE h.variant = 'all' AND h.ticker != 'ALL' AND h.hour_utc BETWEEN ? AND ?
-        GROUP BY h.ticker""", (start, end))
+    Ticker Mention Rate (%) = Ticker_mention_count / Reddit_volume (ALL posts and comments) x 100.
+    With `source_ids` both the mentions and the Reddit_volume denominator keep only those sources; the number of
+    TEXTS that mention a ticker (`texts_about`, `peak_hour_texts`) is not stored per source, so it is NaN then."""
+    flt, extra = _src_filter(source_ids, "f.SourceID")
+    flt_v, extra_v = _src_filter(source_ids, "v.SourceID")
+    out = _read(db_path, """
+        SELECT k.TickerSymbol AS ticker, k.AssetClass AS big_group, SUM(f.ticker_mention_count) AS mentions
+        FROM FactRedditVolume f JOIN DimTime t USING (TimeID) JOIN DimTicker k USING (TickerID)
+        WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt + """
+        GROUP BY k.TickerSymbol""", (start, end, *extra))
     total = _read(db_path, """
         SELECT SUM(v.texts) AS n FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID)
-        WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""", (start, end)).iloc[0].n
-    mentions = _read(db_path, """
-        SELECT k.TickerSymbol AS ticker, SUM(f.ticker_mention_count) AS mentions
-        FROM FactRedditVolume f JOIN DimTime t USING (TimeID) JOIN DimTicker k USING (TickerID)
-        WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ? GROUP BY k.TickerSymbol""", (start, end))
-    out = df.merge(mentions, on="ticker", how="left").sort_values("mentions", ascending=False)
+        WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt_v, (start, end, *extra_v)).iloc[0].n
+    if _all_sources(db_path, source_ids):
+        texts = _read(db_path, """
+            SELECT h.ticker, SUM(h.reddit_volume) AS texts_about, MAX(h.reddit_volume) AS peak_hour_texts
+            FROM reddit_hourly h WHERE h.variant = 'all' AND h.ticker != 'ALL' AND h.hour_utc BETWEEN ? AND ?
+            GROUP BY h.ticker""", (start, end))
+        out = out.merge(texts, on="ticker", how="left")
+    else:
+        out["texts_about"] = float("nan")
+        out["peak_hour_texts"] = float("nan")
+    out = out.sort_values("mentions", ascending=False)
     out["total_volume"] = total
     out["mention_rate_pct"] = 100.0 * out["mentions"] / total if total else float("nan")
     return out.reset_index(drop=True)

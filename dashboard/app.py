@@ -1,8 +1,8 @@
 """Home page of the dashboard.  Start with:   streamlit run dashboard/app.py
 
 Six content pages live in dashboard/pages/ (the sidebar menu lists them):
-  1 Reddit Volume          proposal 7.1-1   all posts + comments per hour and its Z-score (no asset filter)
-  2 Ticker Mentions        proposal 7.1-2   how often each asset is mentioned, mention rate
+  1 Reddit Volume          proposal 7.1-1   all posts + comments per hour (or only what mentions a ticker), Z-score, drill-down
+  2 Ticker Mentions        proposal 7.1-2   how often each asset is mentioned, mention rate, drill-down on time / source / ticker
   3 Price and Return       proposal 7.2-1   close, volume, future returns, volatility
   4 Market and Sentiment   proposal 7.5-1   price next to Reddit sentiment, ratios, majority status
   5 Ranking and Signals    proposal 7.5-2   win-rate ranking + adjustable signal thresholds (7.6)
@@ -53,8 +53,9 @@ st.caption("ช่วงข้อมูลทั้งหมด (ไม่ขึ
 
 st.subheader("วิธีใช้")
 st.markdown("""
-- เลือก **กลุ่มสินทรัพย์ / Ticker / ช่วงเวลา / ความละเอียด (ชั่วโมง วัน สัปดาห์ เดือน ปี)** ที่แถบด้านซ้าย ตัวกรองนี้ใช้ร่วมกันทุกหน้า (หน้า Reddit Volume ไม่มีตัวกรองสินทรัพย์ เพราะนับข้อความทั้งหมด)
-- **Reddit Volume**: ปริมาณโพสต์และความคิดเห็นทั้งหมด และ Z-score เทียบกับ 24 ชั่วโมงก่อนหน้า (ไม่รวมชั่วโมงปัจจุบัน)
+- เลือก **กลุ่มสินทรัพย์ / Ticker / ช่วงเวลา (ค่าเริ่มต้นย้อนหลัง 1 ปี) / ความละเอียด (ชั่วโมง วัน สัปดาห์ เดือน ปี)** ที่แถบด้านซ้าย ตัวกรองนี้ใช้ร่วมกันทุกหน้า
+- หน้า Reddit Volume และ Ticker Mentions มีตัวกรอง **แหล่งข้อมูล** เพิ่ม (ชุมชน และโพสต์/ความคิดเห็น) และมีส่วน **เจาะลึกตามมิติ (Drill-down)** ลงทีละระดับ: เวลา ปี › เดือน › สัปดาห์ › วัน › ชั่วโมง, แหล่งข้อมูล แพลตฟอร์ม › ชุมชน › ประเภท, หลักทรัพย์ กลุ่ม › สัญลักษณ์
+- **Reddit Volume**: ปริมาณโพสต์และความคิดเห็นทั้งหมด (หรือเฉพาะที่พูดถึงสินทรัพย์ที่เลือก) และ Z-score เทียบกับ 24 ชั่วโมงก่อนหน้า (ไม่รวมชั่วโมงปัจจุบัน)
 - **Ticker Mentions**: อันดับสินทรัพย์ที่ถูกพูดถึง แนวโน้มของสินทรัพย์ที่เลือก และสัดส่วนการพูดถึง
 - **Price and Return**: ราคาปิด ปริมาณซื้อขาย ผลตอบแทนล่วงหน้า 1/2/3/6/12 ชั่วโมง และความผันผวน
 - **Market and Sentiment**: ราคาเทียบกับค่าความรู้สึกเฉลี่ย สัดส่วนบวก/ลบ/กลาง และประเภทความรู้สึกส่วนใหญ่

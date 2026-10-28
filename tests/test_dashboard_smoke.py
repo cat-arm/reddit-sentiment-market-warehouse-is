@@ -71,6 +71,56 @@ class DashboardTests(unittest.TestCase):
         self.assertGreater(expected, 0)
         self.assertEqual(len(got), expected)
 
+    def test_source_filter_matches_direct_sql(self):
+        """r/wallstreetbets + r/stocks comments only: totals and the mentions of one ticker equal a direct count on the texts."""
+        from dashboard import data
+        start, end = 1740787200, 1743379200                         # March 2025
+        ids = (2, 4)                                                # DimSource: wallstreetbets Comment, stocks Comment
+        db = sqlite3.connect("file:%s?mode=ro" % DB.as_posix(), uri=True)
+        try:
+            where = ("p.created_utc >= ? AND p.created_utc < ? AND p.content_type = 'comment' "
+                     "AND p.subreddit IN ('wallstreetbets', 'stocks')")
+            texts = db.execute("SELECT COUNT(*) FROM filtered_text p WHERE " + where, (start, end + 3600)).fetchone()[0]
+            mentions = db.execute("SELECT COALESCE(SUM(m.mention_count), 0) FROM ticker_mentions m JOIN filtered_text p "
+                                  "ON p.src_rowid = m.src_rowid WHERE m.ticker = 'TSLA' AND " + where,
+                                  (start, end + 3600)).fetchone()[0]
+        finally:
+            db.close()
+        self.assertGreater(texts, 0)
+        self.assertEqual(int(data.total_volume_series(DB, start, end, ids).texts.sum()), texts)
+        self.assertEqual(int(data.mention_series(DB, "TSLA", start, end, ids).mentions.sum()), mentions)
+        split = data.ticker_volume_series(DB, "TSLA", start, end, ids)
+        self.assertEqual(int(split.comments.sum()), mentions)
+        self.assertEqual(int(split.posts.sum()), 0)                  # posts were filtered out
+        self.assertEqual(int(data.mention_hour_source(DB, "TSLA", start, end, ids).value.sum()), mentions)
+        ranking = data.mention_ranking(DB, start, end, ids)
+        self.assertEqual(int(ranking[ranking.ticker == "TSLA"].mentions.iloc[0]), mentions)
+        self.assertTrue(ranking.texts_about.isna().all())            # texts per source are not stored
+
+    def test_recomputed_zscore_equals_the_stored_one(self):
+        """The Z-score rule re-applied to the hourly totals gives the stored value, so the filtered view is consistent."""
+        from dashboard import data
+        start, end = 1740787200, 1743379200
+        stored = data.total_volume_series(DB, start, end)[["hour_utc", "zscore"]]
+        back = data._read(DB, "SELECT CAST(strftime('%s', t.ts_utc) AS INTEGER) AS hour_utc, SUM(v.texts) AS n "
+                              "FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID) WHERE CAST(strftime('%s', t.ts_utc) "
+                              "AS INTEGER) BETWEEN ? AND ? GROUP BY t.ts_utc", (start - 86400, end))
+        own = data._prior24_zscore(back.hour_utc, back.n.to_numpy(float), start, end)
+        both = stored.merge(own, on="hour_utc", suffixes=("_stored", "_own"))
+        self.assertGreater(len(both), 700)
+        self.assertLess(float((both.zscore_stored - both.zscore_own).abs().max()), 1e-9)
+
+    def test_drill_down_walks_every_level_on_both_pages(self):
+        from streamlit.testing.v1 import AppTest
+        for page, key in (("pages/1_Reddit_Volume.py", "v_time"), ("pages/2_Ticker_Mentions.py", "m_time")):
+            at = AppTest.from_file(str(ROOT / "dashboard" / page), default_timeout=120).run()
+            for level in range(4):
+                at.selectbox(key="%s_pick_%d" % (key, level)).select_index(0).run()
+                self.assertEqual(len(at.exception), 0, "%s level %d: %s" % (page, level, [e.value for e in at.exception]))
+            self.assertEqual(len(at.session_state[key + "_path"]), 4)               # year, month, week, day
+            at.button(key=key + "_crumb_1").click().run()                           # back up to the year
+            self.assertEqual(len(at.session_state[key + "_path"]), 1)
+
     def test_on_demand_signals_equal_stored_signals(self):
         from analysis import signals
         from dashboard import data
