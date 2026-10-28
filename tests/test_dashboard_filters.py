@@ -11,8 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
 SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # only these tables are split by source
-MULTI_PAGES = SOURCE_PAGES                                                    # and these take several tickers
-SINGLE_PAGES = {"pages/3_Price_and_Return.py", "pages/4_Market_and_Sentiment.py"}   # one ticker; the others draw no ticker list
+MULTI_PAGES = SOURCE_PAGES | {"pages/3_Price_and_Return.py"}                   # these take several tickers
+SINGLE_PAGES = {"pages/4_Market_and_Sentiment.py"}                            # one ticker; the others draw no ticker list
 TIME_KEYS = ["f_range", "f_gran"]
 COMMUNITIES = ["r/wallstreetbets", "r/stocks", "r/investing", "r/StockMarket", "r/options", "r/CryptoCurrency"]
 SOURCE_KEYS = ["f_src_" + c for c in COMMUNITIES] + ["f_type_Post", "f_type_Comment"]
@@ -115,6 +115,35 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(at.metric[0].value, two, page)
             self.assertEqual(len(at.exception), 0, page)
 
+    def test_ticking_a_class_ticks_all_its_tickers(self):
+        """Pages 1-3: unticking a class clears its tickers, ticking it again ticks the whole class (even a ticker unticked before)."""
+        crypto = ["BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD", "SOL-USD", "XRP-USD"]
+        for page in MULTI_PAGES:
+            at = self.run_page(page)
+            at.sidebar.checkbox(key="f_tk_BTC-USD").set_value(False).run()           # one crypto ticker out
+            at.sidebar.checkbox(key="f_group_crypto").set_value(False).run()
+            for symbol in crypto:
+                self.assertNotIn("f_tk_" + symbol, [c.key for c in at.sidebar.checkbox], "%s %s" % (page, symbol))
+            at.sidebar.checkbox(key="f_group_crypto").set_value(True).run()
+            for symbol in crypto:
+                self.assertTrue(at.sidebar.checkbox(key="f_tk_" + symbol).value, "%s %s" % (page, symbol))
+            self.assertEqual(len(at.exception), 0, page)
+
+    def test_price_page_follows_the_ticked_tickers(self):
+        """One ticker, a few (one line each) and many (their average) all render, and the numbers follow the ticks."""
+        page = "pages/3_Price_and_Return.py"
+        at = self.run_page(page)
+        many = at.metric[0].value
+        at = tick_only(at, ["SPY"])
+        self.assertEqual(len(at.exception), 0)
+        one = at.metric[0].value
+        at = tick_only(at, ["SPY", "TSLA", "BTC-USD"])
+        self.assertEqual(len(at.exception), 0)
+        self.assertNotEqual(at.metric[0].value, one)
+        self.assertNotEqual(one, many)
+        for key in ("ck_p_close",):
+            self.assertNotIn(key, [r.key for r in at.radio])                          # a few tickers: lines only, no bar switch
+
     def test_total_volume_page_shows_all_texts_unless_tickers_are_unticked(self):
         at = self.run_page("pages/1_Reddit_Volume.py")
         self.assertEqual(at.metric[0].label, "Reddit Volume รวม")
@@ -160,7 +189,7 @@ class FilterTests(unittest.TestCase):
         at = tick_only(at, ["TSLA"])
         self.assertEqual(len(at.exception), 0)
         state = {"f_src_r/options": False, "f_type_Post": False, "f_tk_TSLA": True, "f_tk_SPY": False}
-        other = AppTest.from_file(str(ROOT / "dashboard" / "pages/3_Price_and_Return.py"), default_timeout=90)
+        other = AppTest.from_file(str(ROOT / "dashboard" / "pages/4_Market_and_Sentiment.py"), default_timeout=90)
         for key, value in state.items():
             other.session_state[key] = value
         other = other.run()                                         # page without the widgets: the values go to shadow keys
@@ -182,7 +211,7 @@ class FilterTests(unittest.TestCase):
                         page, level, rng, [e.value for e in at.exception]))
 
     def test_ticker_outside_chosen_groups_falls_back_to_a_valid_one(self):
-        at = self.run_page("pages/3_Price_and_Return.py", f_group_stock_etf=False, f_group_futures=False, f_ticker="SPY")
+        at = self.run_page("pages/4_Market_and_Sentiment.py", f_group_stock_etf=False, f_group_futures=False, f_ticker="SPY")
         self.assertEqual(len(at.exception), 0)
         self.assertIn(at.sidebar.radio(key="f_ticker").value, ["BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD",
                                                                     "SOL-USD", "XRP-USD"])

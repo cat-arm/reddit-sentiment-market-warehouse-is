@@ -180,6 +180,14 @@ def _time_filter(info):
     return start_day, end_day
 
 
+def _group_toggled(group):
+    """Callback of an asset-class box: ticking a class ticks the whole class, unticking it clears it."""
+    universe = q("tickers")
+    value = st.session_state["f_group_" + group]
+    for symbol in universe[universe.big_group == group].ticker:
+        st.session_state[_ticker_key(symbol)] = value
+
+
 def _set_tickers(symbols, value):
     """Callback of the two small buttons: tick / untick the tickers that are on show."""
     for symbol in symbols:
@@ -210,7 +218,8 @@ def _asset_filter(universe, multi, need_ticker):
     # One tick box per asset class (instead of a multiselect whose chips are all the same colour): the coloured dot is
     # the colour this class has in every chart.
     groups = [key for key in GROUP_LABELS
-              if st.sidebar.checkbox(GROUP_DOTS[key] + " " + GROUP_LABELS[key], value=True, key="f_group_" + key)]
+              if st.sidebar.checkbox(GROUP_DOTS[key] + " " + GROUP_LABELS[key], value=True, key="f_group_" + key,
+                                     on_change=_group_toggled, args=(key,))]
     if not groups:                                          # nothing ticked would empty every page: use all
         st.sidebar.caption("ไม่ได้ติ๊กกลุ่มใดเลย จึงแสดงทุกกลุ่ม")
         groups = list(GROUP_LABELS)
@@ -416,20 +425,22 @@ def line(df, x, y, title, color="#1f77b4", height=260, fmt=None, y_zero=False, d
     return series_chart(df, x, y, title, color, height, tooltip=tip, fmt=fmt, y_zero=y_zero, dots=dots, bar=bar, y_domain=y_domain)
 
 
-def multi_series_chart(df, x, y, series, title, height=300, bar=False, fmt=None):
-    """Several series (one per value of column `series`) over time: lines, or stacked bars when `bar`."""
+def multi_series_chart(df, x, y, series, title, height=300, bar=False, fmt=None, log=False, y_domain=None):
+    """Several series (one per value of column `series`) over time: lines, or stacked bars when `bar`.  `log` = logarithmic
+    y axis (series of very different size), `y_domain` = fixed y range."""
     how = granularity()
     ticks = {"tickCount": TICK_STEP[how]} if how in TICK_STEP else {}
     axis = alt.Axis(format=fmt or DATE_FORMAT[how], labelOverlap=True, **ticks)
     tip = [alt.Tooltip(x + ":T"), alt.Tooltip(series + ":N", title="หลักทรัพย์"), alt.Tooltip(y + ":Q", format=",.0f")]
     color = alt.Color(series + ":N", title="หลักทรัพย์")
+    y_scale = alt.Scale(domain=y_domain) if y_domain else alt.Scale(type="log") if log else alt.Undefined
     if bar:
         chart = alt.Chart(df).mark_bar(opacity=0.9).encode(
             x=alt.X(x + ":T", title=None, timeUnit=TIME_UNIT[how], axis=axis),
             y=alt.Y(y + ":Q", title=title, stack=True, axis=alt.Axis(minExtent=55)), color=color, tooltip=tip)
     else:
         chart = alt.Chart(df).mark_line().encode(x=alt.X(x + ":T", title=None, axis=axis),
-                                                 y=alt.Y(y + ":Q", title=title, axis=alt.Axis(minExtent=55)),
+                                                 y=alt.Y(y + ":Q", title=title, axis=alt.Axis(minExtent=55), scale=y_scale),
                                                  color=color, tooltip=tip)
     return chart.properties(height=height).interactive()
 

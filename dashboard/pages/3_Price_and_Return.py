@@ -2,6 +2,10 @@
 
 Questions answered: how did price and volume move, how do future returns differ between asset classes, and which
 asset class is the most volatile (Normalized ATR, KPI 3 of table 8).
+The sidebar has the two dimensions of 7.2 (time, asset): ticking an asset class ticks all its tickers, tickers can be
+ticked one by one, and everything on the page follows the ticked tickers.  One ticker: its own series.  Up to
+MAX_LINES tickers: one line each (price and volume as an index, because the prices have very different sizes).  More:
+the average of the ticked tickers.
 Data: market_hourly_features (valid price bars only; closed-market placeholder rows are excluded upstream).
 """
 
@@ -17,49 +21,107 @@ import streamlit as st  # noqa: E402
 from dashboard import common  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
+MAX_LINES = 8                       # up to this many tickers: one line per ticker, otherwise their average
+
 common.setup("Price and Return: ราคาและผลตอบแทนรายชั่วโมง", "📈")
-ticker, start, end, groups = common.sidebar()
+_, start, end, _ = common.sidebar(multi=True)
 how = common.granularity(start, end, "g_price")
+tickers = common.selected_tickers()
 universe = q("tickers")
-name = dict(zip(universe.ticker, universe.name))
-st.caption("การ์ดและกราฟรายละเอียดด้านล่างเป็นของ **%s · %s** (เลือกที่แถบข้าง); ส่วน \"ภาพรวมตามกลุ่มสินทรัพย์\" เป็นของทุกกลุ่มที่ติ๊ก"
-           % (ticker, name.get(ticker, "")))
-price = q("price_series", ticker, start, end)
+names = dict(zip(universe.ticker, universe.name))
+one = len(tickers) == 1
+per_ticker = 1 < len(tickers) <= MAX_LINES
 
-# ---- KPI cards first: exactly the three KPIs of table 8 (close, volume, RSI and ATR are measures, shown below)
-if price.empty:
-    st.info("ไม่มีข้อมูลราคาของ %s ในช่วงนี้ (ตลาดอาจปิด)" % ticker)
+hourly = q("price_series_for", tickers, start, end)
+if hourly.empty:
+    st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
+    st.stop()
+
+# ---- KPI cards first: the three KPIs of table 8 (close, volume, RSI and ATR are measures, shown below)
+# log_return (DB column) = Current Return (proposal name) - same formula.  Several tickers: the average over them.
+by = hourly.groupby("ticker")
+returns = by.log_return.sum()
+natr = by.normalized_atr.mean()
+vz = by.volume_zscore_24.apply(lambda s: s.dropna().iloc[-1] if s.notna().any() else float("nan"))
+suffix = "" if one else " (เฉลี่ยของ %d ตัว)" % len(by)
+common.kpi_cards([
+    ("Current Return (%)", common.money(returns.mean()),
+     "ผลตอบแทนช่วงเวลาปัจจุบัน = ln(close_t / close_t−1) × 100 รวมทุกชั่วโมงในช่วงที่เลือก" + suffix),
+    ("Volume Z-score", common.money(vz.mean()),
+     "ค่าล่าสุดในช่วงที่เลือก = (volume_t − μ24h) ÷ σ24h เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน" + suffix),
+    ("Normalized Average True Range (%)", common.money(natr.mean()),
+     "อัตราความผันผวนสัมพัทธ์ = (ATR 24 ชั่วโมง ÷ close) × 100 เฉลี่ยในช่วงที่เลือก" + suffix)])
+st.caption("หลักทรัพย์ที่แสดง: %s" % (("%s · %s" % (tickers[0], names.get(tickers[0], ""))) if one else
+                                     "%d ตัว (%s)" % (len(tickers), ", ".join(tickers[:8]) + (" ..." if len(tickers) > 8 else ""))))
+
+# ---- one table per level of detail: every chart is built from the same long frame (ticker, time, measures)
+pieces = []
+for symbol, part in hourly.groupby("ticker"):
+    part = part.copy()
+    first = part.close.dropna().iloc[0] if part.close.notna().any() else float("nan")
+    part["price_index"] = 100.0 * part.close / first                          # price rebased: the first close = 100
+    mean_volume = part.volume.mean()
+    part["volume_index"] = 100.0 * part.volume / mean_volume if mean_volume else float("nan")   # volume: the mean = 100
+    shown_part = common.resample(part, {"close": "last", "volume": "sum", "rsi": "last", "atr": "last", "normalized_atr": "mean",
+                                        "log_return": "sum", "volume_zscore_24": "max", "price_index": "last",
+                                        "volume_index": "mean"}, how)
+    shown_part["ticker"] = symbol
+    pieces.append(shown_part)
+long = pd.concat(pieces, ignore_index=True)
+if len(tickers) > MAX_LINES:                                                  # the average of the ticked tickers
+    mean_frame = long.groupby("time", as_index=False).mean(numeric_only=True)
+    shown = mean_frame
 else:
-    common.kpi_cards([
-        ("Current Return (%)", common.money(price.log_return.sum()),
-         "ผลตอบแทนช่วงเวลาปัจจุบัน = ln(close_t / close_t−1) × 100 รวมทุกชั่วโมงในช่วงที่เลือก"),
-        ("Volume Z-score", common.money(price.volume_zscore_24.dropna().iloc[-1]
-                                        if price.volume_zscore_24.notna().any() else float("nan")),
-         "ค่าล่าสุดในช่วงที่เลือก = (volume_t − μ24h) ÷ σ24h เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน"),
-        ("Normalized Average True Range (%)", common.money(price.normalized_atr.mean()),
-         "อัตราความผันผวนสัมพัทธ์ = (ATR 24 ชั่วโมง ÷ close) × 100 เฉลี่ยในช่วงที่เลือก")])
+    shown = long
 
-# ---- by asset class (proposal: "แยกตาม Ticker และกลุ่มสินทรัพย์"): follows the asset-class boxes of the sidebar
-st.header("ภาพรวมตามกลุ่มสินทรัพย์ที่ติ๊ก")
-snap = q("ticker_snapshot", start, end)
-snap = snap[snap.big_group.isin(groups)].copy()
-if snap.empty:
-    st.info("ไม่มีข้อมูลราคาของกลุ่มที่ติ๊กในช่วงนี้")
-else:
-    snap["สินทรัพย์"] = snap.ticker.map(lambda s: "%s · %s" % (s, name.get(s, "")))
-    snap["กลุ่ม"] = snap.big_group.map(GROUP_LABELS)
-    st.subheader("รายสินทรัพย์ในกลุ่มที่ติ๊ก")
-    common.table(snap[["สินทรัพย์", "กลุ่ม", "last_close", "current_return_pct", "mean_normalized_atr_pct", "last_rsi",
-                       "fr_1h", "fr_2h", "fr_3h", "fr_6h", "fr_12h"]].rename(columns={
-        "last_close": "ราคาปิดล่าสุด (USD)", "current_return_pct": "Current Return รวม (%)",
-        "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)", "last_rsi": "RSI ล่าสุด",
-        "fr_1h": "ผลตอบแทน 1h (%)", "fr_2h": "2h (%)", "fr_3h": "3h (%)", "fr_6h": "6h (%)", "fr_12h": "12h (%)"}).round(4),
-        hide_index=True, width="stretch", height=420)
-    st.caption("ผลตอบแทนล่วงหน้า = ค่าเฉลี่ยของแต่ละกรอบเวลาในช่วงที่เลือก ว่างเมื่อไม่มีแท่งราคาครบตามกรอบเวลา (หุ้น/ETF ที่ 12h ไม่มีเลย เพราะตลาดปิดกลางคืน)")
 
+def trend(col, title, color, key, height=220, log=False, **kw):
+    """One trend chart: the single series, one line per ticker, or the average of many."""
+    if one or len(tickers) > MAX_LINES:
+        label = title + ("" if one else " (เฉลี่ยของที่เลือก)")
+        return common.line(shown, "time", col, label, color, height, bar=common.kind(st, key), **kw)
+    return common.multi_series_chart(long, "time", col, "ticker", title, height, log=log, y_domain=kw.get("y_domain"))
+
+
+price_title = "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)"
+st.altair_chart(trend("close" if one else "price_index", price_title, "#1f77b4", "p_close", 300), width="stretch")
+if not one:
+    st.caption("เลือกหลายตัวจึงปรับราคาแต่ละตัวให้ค่าแรกของช่วง = 100 เพื่อเทียบกันได้ (ราคาจริงต่างขนาดกันมาก เช่น SPY หลักร้อย BTC หลักแสน)")
+st.altair_chart(trend("volume" if one else "volume_index", "ปริมาณซื้อขาย (หน่วย)" if one else "ปริมาณซื้อขาย ดัชนี (ค่าเฉลี่ย = 100)",
+                      "#2ca02c", "p_volume"), width="stretch")
+st.altair_chart(trend("rsi", "RSI", "#9467bd", "p_rsi", y_domain=[0, 100])
+                + alt.Chart(alt.Data(values=[{"y": 30}, {"y": 70}])).mark_rule(strokeDash=[4, 4], color="gray")
+                .encode(y="y:Q"), width="stretch")
+st.caption("RSI = ดัชนีความแข็งแกร่งสัมพัทธ์ 0–100 (Wilder 14 แท่ง) วัดความเร็วและการเปลี่ยนแปลงของการเคลื่อนไหวของราคา "
+           "เส้นประที่ 30 และ 70 คือระดับที่นิยมใช้อ่านว่าขายมากเกินไป / ซื้อมากเกินไป")
+if len(tickers) <= MAX_LINES:
+    st.altair_chart(trend("atr", "ATR (USD)" if one else "ATR (USD) แกนลอการิทึม", "#8c564b", "p_atr", log=True, y_zero=one)
+                    if not one else common.line(shown, "time", "atr", "ATR (USD)", "#8c564b", 220, y_zero=True,
+                                                bar=common.kind(st, "p_atr")), width="stretch")
+    st.caption("ATR = ช่วงความผันผวนเฉลี่ยที่แท้จริง (ดอลลาร์สหรัฐ) เฉลี่ย True Range 24 ชั่วโมง วัดระดับความผันผวนของราคาโดยไม่พิจารณาทิศทาง "
+               "ค่าเป็นดอลลาร์ จึงเทียบข้ามสินทรัพย์ไม่ได้ ให้ดู Normalized ATR")
+st.altair_chart(trend("normalized_atr", "Normalized ATR (%)", "#e377c2", "p_natr", y_zero=True), width="stretch")
+st.caption("Normalized ATR = ATR 24 ชั่วโมง ÷ close × 100  \nCurrent Return = ln(close_t / close_t−1) × 100  \n"
+           "ผลตอบแทนล่วงหน้านับจากชั่วโมงที่เกิดข้อมูล เว้นว่างเมื่อไม่มีบาร์ราคาครบตามกรอบเวลา (เช่น ตลาดปิด)")
+
+# ---- the measures of every ticked ticker
+st.subheader("รายละเอียดค่าวัดของหลักทรัพย์ที่เลือก")
+snap = q("ticker_snapshot", start, end, tickers)
+snap["สินทรัพย์"] = snap.ticker.map(lambda s: "%s · %s" % (s, names.get(s, "")))
+snap["กลุ่ม"] = snap.big_group.map(GROUP_LABELS)
+rsi_zones = hourly.dropna(subset=["rsi"]).groupby("ticker").rsi.agg(over70=lambda s: (s > 70).mean(), under30=lambda s: (s < 30).mean())
+snap = snap.merge(rsi_zones, left_on="ticker", right_index=True, how="left")
+common.table(snap[["สินทรัพย์", "กลุ่ม", "last_close", "last_rsi", "over70", "under30", "current_return_pct", "mean_normalized_atr_pct",
+                   "fr_1h", "fr_2h", "fr_3h", "fr_6h", "fr_12h"]].rename(columns={
+    "last_close": "ราคาปิดล่าสุด (USD)", "last_rsi": "RSI ล่าสุด", "over70": "สัดส่วน RSI > 70", "under30": "สัดส่วน RSI < 30",
+    "current_return_pct": "Current Return รวม (%)", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)",
+    "fr_1h": "ผลตอบแทน 1h (%)", "fr_2h": "2h (%)", "fr_3h": "3h (%)", "fr_6h": "6h (%)", "fr_12h": "12h (%)"}).round(4),
+    hide_index=True, width="stretch", height=min(420, 60 + 36 * len(snap)))
+st.caption("ผลตอบแทนล่วงหน้า = ค่าเฉลี่ยของแต่ละกรอบเวลาในช่วงที่เลือก ว่างเมื่อไม่มีแท่งราคาครบตามกรอบเวลา (หุ้น/ETF ที่ 12h ไม่มีเลย เพราะตลาดปิดกลางคืน)")
+
+# ---- below, as before: asset classes (computed over the ticked tickers)
 st.subheader("ผลตอบแทนล่วงหน้าแยกตามกลุ่มสินทรัพย์")
-fr = q("future_return_by_group", start, end)
-fr = fr[fr.big_group.isin(groups)].copy()
+fr = q("future_return_by_group", start, end, tickers)
 if fr.empty or fr.n.sum() == 0:
     st.info("ไม่มีข้อมูลผลตอบแทนล่วงหน้าในช่วงนี้")
 else:
@@ -77,58 +139,10 @@ else:
     st.caption("จำนวนตัวอย่างหุ้น/ETF ที่ 6h น้อยและที่ 12h เป็น 0 เพราะตลาดปิดกลางคืนจึงมีบาร์รายชั่วโมงไม่ครบ ไม่ได้แปลว่าผลตอบแทนเป็น 0")
 
 st.subheader("กลุ่มสินทรัพย์ใดผันผวนสูงที่สุด")
-risk = q("group_risk", start, end)
-risk = risk[risk.big_group.isin(groups)].copy()
+risk = q("group_risk", start, end, tickers)
 risk["กลุ่ม"] = risk.big_group.map(GROUP_LABELS)
-common.table(risk[["กลุ่ม", "bars", "mean_normalized_atr_pct", "mean_abs_log_return_pct"]].rename(columns={
-    "bars": "จำนวนบาร์", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)",
+common.table(risk[["กลุ่ม", "tickers", "bars", "mean_normalized_atr_pct", "mean_abs_log_return_pct"]].rename(columns={
+    "tickers": "จำนวนสินทรัพย์", "bars": "จำนวนบาร์", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)",
     "mean_abs_log_return_pct": "|Current Return| เฉลี่ย (%)"}).round(4), hide_index=True, width="stretch")
-st.caption("Normalized ATR = ATR 24 ชั่วโมง ÷ close × 100 ยิ่งสูงยิ่งผันผวน (เทียบข้ามสินทรัพย์ได้เพราะเป็นเปอร์เซ็นต์)")
-
-# ---- the chosen ticker: trend charts of the measures (close, volume, RSI, ATR) and its own future returns
-st.header("รายละเอียดของ %s" % ticker)
-if price.empty:
-    st.stop()
-# log_return (DB column) = Current Return (proposal name) - same formula
-shown = common.resample(price, {"close": "last", "volume": "sum", "rsi": "last", "atr": "last",
-                                "normalized_atr": "mean", "log_return": "sum", "volume_zscore_24": "max"}, how)
-st.altair_chart(common.line(shown, "time", "close", "ราคาปิด (USD)", bar=common.kind(st, "p_close")), width="stretch")
-st.altair_chart(common.line(shown, "time", "volume", "ปริมาณซื้อขาย", "#2ca02c", 220, bar=common.kind(st, "p_volume")), width="stretch")
-st.altair_chart(common.line(shown, "time", "rsi", "RSI", "#9467bd", 220, bar=common.kind(st, "p_rsi"), y_domain=[0, 100])
-                + alt.Chart(alt.Data(values=[{"y": 30}, {"y": 70}])).mark_rule(strokeDash=[4, 4], color="gray")
-                .encode(y="y:Q"), width="stretch")
-st.caption("RSI = ดัชนีความแข็งแกร่งสัมพัทธ์ 0–100 (Wilder 14 แท่ง) วัดความเร็วและการเปลี่ยนแปลงของการเคลื่อนไหวของราคา "
-           "เส้นประที่ 30 และ 70 คือระดับที่นิยมใช้อ่านว่าขายมากเกินไป / ซื้อมากเกินไป")
-st.altair_chart(common.line(shown, "time", "atr", "ATR (USD)", "#8c564b", 220, y_zero=True, bar=common.kind(st, "p_atr")), width="stretch")
-st.caption("ATR = ช่วงความผันผวนเฉลี่ยที่แท้จริง (ดอลลาร์สหรัฐ) เฉลี่ย True Range 24 ชั่วโมง วัดระดับความผันผวนของราคาโดยไม่พิจารณาทิศทาง "
-           "ค่าเป็นดอลลาร์ จึงเทียบข้ามสินทรัพย์ไม่ได้ ให้ดู Normalized ATR")
-st.altair_chart(common.line(shown, "time", "normalized_atr", "Normalized ATR (%)", "#e377c2", 220, y_zero=True,
-                            bar=common.kind(st, "p_natr")), width="stretch")
-st.caption("Normalized ATR = ATR 24 ชั่วโมง ÷ close × 100  \nCurrent Return = ln(close_t / close_t−1) × 100  \n"
-           "ผลตอบแทนล่วงหน้านับจากชั่วโมงที่เกิดข้อมูล เว้นว่างเมื่อไม่มีบาร์ราคาครบตามกรอบเวลา (เช่น ตลาดปิด)")
-
-st.subheader("รายละเอียดค่าวัดของ %s" % ticker)
-detail = pd.DataFrame([{"ค่าวัด": label, "ล่าสุด": s.dropna().iloc[-1] if s.notna().any() else float("nan"),
-                        "เฉลี่ย": s.mean(), "ต่ำสุด": s.min(), "สูงสุด": s.max(), "จำนวนชั่วโมงที่มีค่า": int(s.notna().sum())}
-                       for label, s in (("close ราคาปิด (USD)", price.close), ("volume ปริมาณซื้อขาย (หน่วย)", price.volume),
-                                        ("RSI (0–100)", price.rsi), ("ATR (USD)", price.atr),
-                                        ("Normalized ATR (%)", price.normalized_atr), ("Current Return (%)", price.log_return))])
-common.table(detail.round(4), hide_index=True, width="stretch")
-rsi = price.rsi.dropna()
-st.caption("RSI > 70 (ซื้อมากเกินไป) %s ของชั่วโมงที่มีค่า · RSI < 30 (ขายมากเกินไป) %s" % (
-    "n/a" if rsi.empty else "{:.1%}".format((rsi > 70).mean()), "n/a" if rsi.empty else "{:.1%}".format((rsi < 30).mean())))
-
-st.subheader("ผลตอบแทนล่วงหน้า 5 ช่วงเวลาของ %s" % ticker)
-own = q("future_return_for_ticker", ticker, start, end)
-if own.n.sum() == 0:
-    st.info("ไม่มีผลตอบแทนล่วงหน้าของ %s ในช่วงนี้" % ticker)
-else:
-    own_chart = (alt.Chart(own).mark_bar(color="#1f77b4").encode(
-        x=alt.X("horizon:N", sort=["1h", "2h", "3h", "6h", "12h"], title="กรอบเวลา"),
-        y=alt.Y("mean_return_pct:Q", title="ผลตอบแทนเฉลี่ย (%)"),
-        tooltip=["horizon", alt.Tooltip("mean_return_pct:Q", format=".4f"), alt.Tooltip("share_up:Q", format=".1%"),
-                 alt.Tooltip("n:Q", format=",")]).properties(height=240))
-    st.altair_chart(own_chart, width="stretch")
-    common.table(own[["horizon", "n", "mean_return_pct", "share_up"]].rename(columns={
-        "horizon": "กรอบเวลา", "n": "จำนวนตัวอย่าง", "mean_return_pct": "ผลตอบแทนเฉลี่ย (%)", "share_up": "สัดส่วนที่เป็นบวก"}),
-        hide_index=True, width="stretch")
+tr = q("ticker_risk", start, end, tickers)
+common.table(tr.round(4), hide_index=True, width="stretch", height=260)

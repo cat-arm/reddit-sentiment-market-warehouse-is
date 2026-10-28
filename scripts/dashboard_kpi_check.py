@@ -178,6 +178,23 @@ def run(db_path):
                 int(split.posts.sum() + split.comments.sum()), ment_pair)
         c.check("2 Ticker Mentions (หลาย Ticker)", "%s TSLA+BTC-USD: รายตัวรวมกัน = รวม" % wname,
                 int(data.mention_series_by_ticker(db_path, pair, start, end, (2,)).mentions.sum()), ment_pair)
+        # price page: the ticked tickers drive the class-level numbers
+        pick = ("SPY", "TSLA", "BTC-USD")
+        marks = ",".join("'%s'" % s for s in pick)
+        gr = data.group_risk(db_path, start, end, pick).set_index("big_group")
+        exp = {r[0]: r for r in c.q("SELECT k.AssetClass, AVG(m.normalized_atr), COUNT(DISTINCT m.ticker) FROM market_hourly_features m "
+                                    "JOIN DimTicker k ON k.TickerSymbol = m.ticker WHERE m.ticker IN (%s) AND CAST(strftime('%%s', m.hour_bucket) AS INTEGER) "
+                                    "BETWEEN ? AND ? GROUP BY k.AssetClass" % marks, (start, end))}
+        for g, row in exp.items():
+            c.check("3 Price and Return (หลาย Ticker)", "%s %s: Normalized ATR เฉลี่ยของกลุ่ม (เฉพาะที่ติ๊ก)" % (wname, g), gr.loc[g, "mean_normalized_atr_pct"], row[1], 1e-7)
+            c.check("3 Price and Return (หลาย Ticker)", "%s %s: จำนวนสินทรัพย์ของกลุ่ม (เฉพาะที่ติ๊ก)" % (wname, g), int(gr.loc[g, "tickers"]), row[2])
+        frp = data.future_return_by_group(db_path, start, end, pick)
+        e = c.q("SELECT COUNT(m.future_return_1h) FROM market_hourly_features m WHERE m.ticker IN (%s) AND CAST(strftime('%%s', m.hour_bucket) AS INTEGER) "
+                "BETWEEN ? AND ?" % marks, (start, end))[0][0]
+        c.check("3 Price and Return (หลาย Ticker)", "%s: จำนวนตัวอย่างผลตอบแทน 1h (เฉพาะที่ติ๊ก)" % wname, int(frp[frp.horizon == "1h"].n.sum()), e)
+        multi_px = data.price_series_for(db_path, pick, start, end)
+        e = c.q("SELECT COUNT(*) FROM market_hourly_features WHERE ticker IN (%s) AND CAST(strftime('%%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?" % marks, (start, end))[0][0]
+        c.check("3 Price and Return (หลาย Ticker)", "%s: จำนวนแท่งราคาของที่ติ๊ก" % wname, len(multi_px), e)
         ticks = data.mention_ranking(db_path, start, end)
         groups = ticks.groupby("big_group").mentions.sum()
         exp_g = {r[0]: r[1] for r in c.q(

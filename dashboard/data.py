@@ -293,36 +293,59 @@ def price_series(db_path, ticker, start, end):
     return to_time(df)
 
 
-def group_risk(db_path, start, end):
-    """Which asset class is most volatile?  Mean Normalized ATR (%) and spread of hourly log returns per group."""
+def _only(tickers, column="m.ticker"):
+    """(' AND <column> IN (...)', symbols) for the tickers kept by the filter; ('', ()) = every ticker."""
+    if tickers is None:
+        return "", ()
+    symbols = (tickers,) if isinstance(tickers, str) else tuple(tickers)
+    return " AND %s IN (%s)" % (column, ",".join("?" * len(symbols))), symbols
+
+
+def price_series_for(db_path, tickers, start, end):
+    """Hourly close, volume, returns and indicators of several tickers (long format, a `ticker` column)."""
+    tf, symbols = _only(tickers, "ticker")
+    df = _read(db_path, """
+        SELECT ticker, CAST(strftime('%%s', hour_bucket) AS INTEGER) AS hour_utc, %s FROM market_hourly_features
+        WHERE CAST(strftime('%%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?%s ORDER BY ticker, hour_utc"""
+               % (PRICE_COLUMNS, tf), (start, end, *symbols))
+    return to_time(df)
+
+
+def group_risk(db_path, start, end, tickers=None):
+    """Which asset class is most volatile?  Mean Normalized ATR (%) and spread of hourly log returns per group
+    (only the chosen tickers when `tickers` is given)."""
+    tf, symbols = _only(tickers)
     return _read(db_path, """
-        SELECT k.AssetClass AS big_group, COUNT(*) AS bars, AVG(m.normalized_atr) AS mean_normalized_atr_pct,
-               AVG(ABS(m.log_return)) AS mean_abs_log_return_pct
+        SELECT k.AssetClass AS big_group, COUNT(*) AS bars, COUNT(DISTINCT m.ticker) AS tickers,
+               AVG(m.normalized_atr) AS mean_normalized_atr_pct, AVG(ABS(m.log_return)) AS mean_abs_log_return_pct
         FROM market_hourly_features m JOIN DimTicker k ON k.TickerSymbol = m.ticker
-        WHERE CAST(strftime('%s', m.hour_bucket) AS INTEGER) BETWEEN ? AND ? GROUP BY k.AssetClass
-        ORDER BY mean_normalized_atr_pct DESC""", (start, end))
+        WHERE CAST(strftime('%s', m.hour_bucket) AS INTEGER) BETWEEN ? AND ?""" + tf + """ GROUP BY k.AssetClass
+        ORDER BY mean_normalized_atr_pct DESC""", (start, end, *symbols))
 
 
-def ticker_risk(db_path, start, end):
+def ticker_risk(db_path, start, end, tickers=None):
     """Same per ticker (for the sortable table)."""
+    tf, symbols = _only(tickers)
     return _read(db_path, """
         SELECT m.ticker, k.AssetClass AS big_group, COUNT(*) AS bars, AVG(m.normalized_atr) AS mean_normalized_atr_pct,
                AVG(ABS(m.log_return)) AS mean_abs_log_return_pct
         FROM market_hourly_features m JOIN DimTicker k ON k.TickerSymbol = m.ticker
-        WHERE CAST(strftime('%s', m.hour_bucket) AS INTEGER) BETWEEN ? AND ? GROUP BY m.ticker
-        ORDER BY mean_normalized_atr_pct DESC""", (start, end))
+        WHERE CAST(strftime('%s', m.hour_bucket) AS INTEGER) BETWEEN ? AND ?""" + tf + """ GROUP BY m.ticker
+        ORDER BY mean_normalized_atr_pct DESC""", (start, end, *symbols))
 
 
-def ticker_snapshot(db_path, start, end):
+def ticker_snapshot(db_path, start, end, tickers=None):
     """One row per ticker in the range: asset class, last close and RSI, Current Return (sum), mean Normalized ATR and
-    the mean future return of every horizon.  The page keeps the tickers of the ticked asset classes."""
+    the mean future return of every horizon."""
+    tf, symbols = _only(tickers)
     agg = _read(db_path, """
         SELECT m.ticker, k.AssetClass AS big_group, SUM(m.log_return) AS current_return_pct,
                AVG(m.normalized_atr) AS mean_normalized_atr_pct,
                AVG(m.future_return_1h) AS fr_1h, AVG(m.future_return_2h) AS fr_2h, AVG(m.future_return_3h) AS fr_3h,
                AVG(m.future_return_6h) AS fr_6h, AVG(m.future_return_12h) AS fr_12h
         FROM market_hourly_features m JOIN DimTicker k ON k.TickerSymbol = m.ticker
-        WHERE CAST(strftime('%s', m.hour_bucket) AS INTEGER) BETWEEN ? AND ? GROUP BY m.ticker""", (start, end))
+        WHERE CAST(strftime('%s', m.hour_bucket) AS INTEGER) BETWEEN ? AND ?""" + tf + """ GROUP BY m.ticker""",
+                (start, end, *symbols))
     last = _read(db_path, """
         SELECT m.ticker, m.close AS last_close, m.rsi AS last_rsi
         FROM market_hourly_features m
@@ -333,23 +356,27 @@ def ticker_snapshot(db_path, start, end):
 
 
 def future_return_for_ticker(db_path, ticker, start, end):
-    """Mean future return (%) and share of positive returns of ONE ticker per horizon (long format)."""
+    """Mean future return (%) and share of positive returns per ticker and horizon (long format); `ticker` is one
+    symbol or several."""
+    tf, symbols = _only(ticker, "ticker")
     parts = []
     for h in HORIZONS:
         col = "future_return_" + h
         df = _read(db_path, """
-            SELECT COUNT(%s) AS n, AVG(%s) AS mean_return_pct,
+            SELECT ticker, COUNT(%s) AS n, AVG(%s) AS mean_return_pct,
                    AVG(CASE WHEN %s > 0 THEN 1.0 WHEN %s < 0 THEN 0.0 END) AS share_up
             FROM market_hourly_features
-            WHERE ticker = ? AND CAST(strftime('%%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?"""
-                   % (col, col, col, col), (ticker, start, end))        # '%%s' is the literal %s of strftime after formatting
+            WHERE CAST(strftime('%%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?%s GROUP BY ticker"""
+                   % (col, col, col, col, tf), (start, end, *symbols))       # '%%s' is the literal %s of strftime after formatting
         df["horizon"] = h
         parts.append(df)
     return pd.concat(parts, ignore_index=True)
 
 
-def future_return_by_group(db_path, start, end):
-    """Mean future return (%) and share of positive returns per asset class and horizon (long format)."""
+def future_return_by_group(db_path, start, end, tickers=None):
+    """Mean future return (%) and share of positive returns per asset class and horizon (long format), over the chosen
+    tickers when `tickers` is given."""
+    tf, symbols = _only(tickers)
     parts = []
     for h in HORIZONS:
         col = "future_return_" + h
@@ -357,8 +384,8 @@ def future_return_by_group(db_path, start, end):
             SELECT k.AssetClass AS big_group, COUNT(m.%s) AS n, AVG(m.%s) AS mean_return_pct,
                    AVG(CASE WHEN m.%s > 0 THEN 1.0 WHEN m.%s < 0 THEN 0.0 END) AS share_up
             FROM market_hourly_features m JOIN DimTicker k ON k.TickerSymbol = m.ticker
-            WHERE CAST(strftime('%%s', m.hour_bucket) AS INTEGER) BETWEEN ? AND ? GROUP BY k.AssetClass"""
-                   % (col, col, col, col), (start, end))      # '%%s' is the literal %s of strftime after formatting
+            WHERE CAST(strftime('%%s', m.hour_bucket) AS INTEGER) BETWEEN ? AND ?%s GROUP BY k.AssetClass"""
+                   % (col, col, col, col, tf), (start, end, *symbols))
         df["horizon"] = h
         parts.append(df)
     return pd.concat(parts, ignore_index=True)
