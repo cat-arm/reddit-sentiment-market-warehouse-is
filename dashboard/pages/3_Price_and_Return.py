@@ -29,6 +29,9 @@ how = common.granularity(start, end, "g_price")
 tickers = common.selected_tickers()
 universe = q("tickers")
 names = dict(zip(universe.ticker, universe.name))
+if not tickers:
+    common.nothing_selected(["Current Return (%)", "Volume Z-score", "Normalized Average True Range (%)"],
+                            "ไม่ได้เลือกหลักทรัพย์ จึงไม่มีข้อมูลแสดง")
 one = len(tickers) == 1
 per_ticker = 1 < len(tickers) <= MAX_LINES
 
@@ -51,8 +54,6 @@ common.kpi_cards([
      "ค่าล่าสุดในช่วงที่เลือก = (volume_t − μ24h) ÷ σ24h เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน" + suffix),
     ("Normalized Average True Range (%)", common.money(natr.mean()),
      "อัตราความผันผวนสัมพัทธ์ = (ATR 24 ชั่วโมง ÷ close) × 100 เฉลี่ยในช่วงที่เลือก" + suffix)])
-st.caption("หลักทรัพย์ที่แสดง: %s" % (("%s · %s" % (tickers[0], names.get(tickers[0], ""))) if one else
-                                     "%d ตัว (%s)" % (len(tickers), ", ".join(tickers[:8]) + (" ..." if len(tickers) > 8 else ""))))
 
 # ---- one table per level of detail: every chart is built from the same long frame (ticker, time, measures)
 pieces = []
@@ -101,8 +102,6 @@ if len(tickers) <= MAX_LINES:
     st.caption("ATR = ช่วงความผันผวนเฉลี่ยที่แท้จริง (ดอลลาร์สหรัฐ) เฉลี่ย True Range 24 ชั่วโมง วัดระดับความผันผวนของราคาโดยไม่พิจารณาทิศทาง "
                "ค่าเป็นดอลลาร์ จึงเทียบข้ามสินทรัพย์ไม่ได้ ให้ดู Normalized ATR")
 st.altair_chart(trend("normalized_atr", "Normalized ATR (%)", "#e377c2", "p_natr", y_zero=True), width="stretch")
-st.caption("Normalized ATR = ATR 24 ชั่วโมง ÷ close × 100  \nCurrent Return = ln(close_t / close_t−1) × 100  \n"
-           "ผลตอบแทนล่วงหน้านับจากชั่วโมงที่เกิดข้อมูล เว้นว่างเมื่อไม่มีบาร์ราคาครบตามกรอบเวลา (เช่น ตลาดปิด)")
 
 # ---- the measures of every ticked ticker
 st.subheader("รายละเอียดค่าวัดของหลักทรัพย์ที่เลือก")

@@ -136,11 +136,30 @@ class FilterTests(unittest.TestCase):
             at.button(key="f_tk_none").click().run()
             self.assertFalse(any(at.sidebar.checkbox(key=k).value for k in GROUP_KEYS), page)
             self.assertFalse(any(at.sidebar.checkbox(key="f_tk_" + s).value for s in TICKERS), page)
-            self.assertEqual(len(at.exception), 0, page)          # nothing ticked = everything is shown
+            self.assertEqual(len(at.exception), 0, page)
+            self.assertTrue(at.metric and all(m.value == "0" for m in at.metric), "%s shows 0 when nothing is ticked" % page)
             at.button(key="f_tk_all").click().run()
             self.assertTrue(all(at.sidebar.checkbox(key=k).value for k in GROUP_KEYS), page)
             self.assertTrue(all(at.sidebar.checkbox(key="f_tk_" + s).value for s in TICKERS), page)
             self.assertEqual(len(at.exception), 0, page)
+
+    def test_source_filter_cleared_shows_nothing(self):
+        for page in SOURCE_PAGES:
+            at = self.run_page(page)
+            for key in SOURCE_KEYS:
+                at.sidebar.checkbox(key=key).set_value(False)
+            at = at.run()
+            self.assertEqual(len(at.exception), 0, page)
+            self.assertTrue(at.metric and all(m.value == "0" for m in at.metric), page)
+
+    def test_no_asset_class_ticked_never_breaks_a_page(self):
+        """Clearing the classes on every page: pages with a ticker list show 0, the others an empty result, none fails."""
+        for page in PAGES:
+            at = self.run_page(page)
+            for key in GROUP_KEYS:
+                at.sidebar.checkbox(key=key).set_value(False)
+            at = at.run()
+            self.assertEqual(len(at.exception), 0, "%s: %s" % (page, [e.value for e in at.exception]))
 
     def test_price_page_follows_the_ticked_tickers(self):
         """One ticker, a few (one line each) and many (their average) all render, and the numbers follow the ticks."""

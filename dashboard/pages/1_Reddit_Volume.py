@@ -25,6 +25,9 @@ how = common.granularity(start, end)
 src_ids = common.selected_sources()
 tickers = common.selected_tickers()
 restricted = common.tickers_restricted()
+if not src_ids or not tickers:
+    common.nothing_selected(["Reddit Volume รวม", "เฉลี่ยต่อชั่วโมง", "ชั่วโมงที่คึกคักสุด", "Reddit Volume Z-score สูงสุด",
+                             "ชั่วโมงที่ Z-score > 1.5"])
 
 everything = q("total_volume_series", start, end, src_ids)      # all texts of the chosen sources (also the base of the rate)
 if everything.empty:

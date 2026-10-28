@@ -25,6 +25,9 @@ _, start, end, groups = common.sidebar(sources=True, multi=True)
 how = common.granularity(start, end)
 src_ids = common.selected_sources()
 tickers = common.selected_tickers()
+if not src_ids or not tickers:
+    common.nothing_selected(["Ticker Mention Count รวม (ครั้ง)", "Ticker Mention Rate (%)", "Reddit Volume Z-score สูงสุด",
+                             "ชั่วโมงที่ Z-score > 1.5"])
 many = len(tickers) > 1
 label = tickers[0] if not many else "%d ตัวรวมกัน" % len(tickers)
 
@@ -78,10 +81,6 @@ common.table(rank[["ticker", "กลุ่ม", "mentions", "mention_rate_pct", 
     "mentions": "Ticker Mention Count", "mention_rate_pct": "Ticker Mention Rate (%)",
     "texts_about": "ข้อความที่พูดถึง", "peak_hour_texts": "สูงสุดใน 1 ชั่วโมง"}).round(3),
     hide_index=True, width="stretch", height=360)
-st.caption("Ticker Mention Rate (%) = Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดในช่วงเดียวกัน × 100  \n"
-           "ข้อความเดียวที่พูดถึงหลายตัวนับให้ทุกตัว จึงห้ามรวมคอลัมน์ข้าม ticker" + (
-               "" if rank.texts_about.notna().any() else
-               "  \nช่อง \"ข้อความที่พูดถึง\" ว่างเมื่อเลือกแหล่งข้อมูลบางส่วน เพราะไม่ได้เก็บจำนวนข้อความต่อแหล่งข้อมูล"))
 
 # ================================================================================================ trend: three charts, one under the other
 st.subheader("แนวโน้มการถูกพูดถึง")

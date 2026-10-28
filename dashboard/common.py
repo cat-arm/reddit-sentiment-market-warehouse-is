@@ -99,11 +99,11 @@ def source_keys():
 
 
 def selected_sources():
-    """DimSource ids kept by the sidebar source filter (communities x Post / Comment); nothing ticked = everything."""
+    """DimSource ids kept by the sidebar source filter (communities x Post / Comment); nothing ticked = nothing."""
     src = q("sources")
     all_communities = list(dict.fromkeys(src.subreddit))
-    communities = [c for c in all_communities if st.session_state.get(_community_key(c), True)] or all_communities
-    types = [kind for kind in ("Post", "Comment") if st.session_state.get("f_type_" + kind, True)] or ["Post", "Comment"]
+    communities = [c for c in all_communities if st.session_state.get(_community_key(c), True)]
+    types = [kind for kind in ("Post", "Comment") if st.session_state.get("f_type_" + kind, True)]
     keep = src[src.subreddit.isin(communities) & src.content_type.isin(types)]
     return tuple(int(i) for i in keep.source_id)
 
@@ -118,13 +118,12 @@ def ticker_keys():
 
 
 def selected_tickers():
-    """Tickers kept by the asset filter of pages 1-2: the ticked asset classes, then the ticked tickers inside them
-    (everything is ticked at first; nothing ticked = every ticker of the ticked classes)."""
+    """Tickers kept by the asset filter of pages 1-3: the ticked tickers inside the ticked asset classes (no class ticked:
+    the ticked tickers among all of them).  Everything is ticked at first; nothing ticked = nothing."""
     universe = q("tickers")
-    groups = [g for g in GROUP_LABELS if st.session_state.get("f_group_" + g, True)] or list(GROUP_LABELS)
-    pool = list(universe[universe.big_group.isin(groups)].ticker)
-    chosen = [s for s in pool if st.session_state.get(_ticker_key(s), True)]
-    return tuple(chosen or pool)
+    groups = [g for g in GROUP_LABELS if st.session_state.get("f_group_" + g, True)]
+    pool = list(universe[universe.big_group.isin(groups)].ticker) if groups else list(universe.ticker)
+    return tuple(s for s in pool if st.session_state.get(_ticker_key(s), True))
 
 
 def tickers_restricted():
@@ -145,9 +144,6 @@ def _source_filter():
     st.sidebar.caption("ประเภทเนื้อหา")
     st.sidebar.checkbox("โพสต์ (Post)", key="f_type_Post")
     st.sidebar.checkbox("ความคิดเห็น (Comment)", key="f_type_Comment")
-    if not any(st.session_state[_community_key(c)] for c in dict.fromkeys(src.subreddit)) or not (
-            st.session_state["f_type_Post"] or st.session_state["f_type_Comment"]):
-        st.sidebar.caption("ไม่ได้ติ๊กชุมชนหรือประเภทเลย จึงแสดงทั้งหมด")
 
 
 def _time_filter(info):
@@ -219,10 +215,8 @@ def _asset_filter(universe, multi, need_ticker):
     groups = [key for key in GROUP_LABELS
               if st.sidebar.checkbox(GROUP_DOTS[key] + " " + GROUP_LABELS[key], value=True, key="f_group_" + key,
                                      on_change=_group_toggled, args=(key,))]
-    if not groups:                                          # nothing ticked would empty every page: use all
-        st.sidebar.caption("ไม่ได้ติ๊กกลุ่มใดเลย จึงแสดงทุกกลุ่ม")
-        groups = list(GROUP_LABELS)
-    pool = universe[universe.big_group.isin(groups)]
+    # nothing ticked = nothing shown; the ticker list then offers every ticker, so a choice can be built one by one
+    pool = universe[universe.big_group.isin(groups)] if groups else universe
     options = list(pool.ticker)                             # already ordered stocks/ETF, futures, crypto
     kind_of = dict(zip(universe.ticker, universe.big_group))
     name = dict(zip(universe.ticker, universe.name))
@@ -273,6 +267,13 @@ def sidebar(need_ticker=True, assets=True, sources=False, multi=False):
         st.sidebar.divider()
         ticker, groups = _asset_filter(universe, multi, need_ticker)
     return ticker, epoch(start_day), epoch(end_day, end_of_day=True), groups
+
+
+def nothing_selected(labels, message="ไม่ได้เลือกแหล่งข้อมูลหรือหลักทรัพย์ จึงไม่มีข้อมูลแสดง"):
+    """Cards at 0 and a short note, then stop the page: used when a filter has nothing ticked."""
+    kpi_cards([(label, "0", None) for label in labels])
+    st.info(message)
+    st.stop()
 
 
 def kpi_cards(items):

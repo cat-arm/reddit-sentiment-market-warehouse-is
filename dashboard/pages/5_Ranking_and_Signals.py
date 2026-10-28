@@ -72,7 +72,7 @@ else:
 
 # ---- ranking ------------------------------------------------------------------------------------------------
 st.subheader("จัดอันดับสินทรัพย์ (Horizon %s)" % horizon)
-count = found.groupby("ticker").size().rename("signals") if not found.empty else pd.Series(dtype=int, name="signals")
+count = found.groupby("ticker").size().rename("signals") if not found.empty else pd.Series(dtype=int, name="signals", index=pd.Index([], name="ticker"))
 rank = (universe.merge(stats, on="ticker", how="left").merge(period, on="ticker", how="left")
         .merge(count, on="ticker", how="left"))
 rank = rank[rank.big_group.isin(groups)].copy()
