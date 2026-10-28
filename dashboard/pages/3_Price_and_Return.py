@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import altair as alt  # noqa: E402
+import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from dashboard import common  # noqa: E402
@@ -24,12 +25,15 @@ price = q("price_series", ticker, start, end)
 if price.empty:
     st.info("ไม่มีข้อมูลราคาของ %s ในช่วงนี้ (ตลาดอาจปิด)" % ticker)
 else:
-    # KPI cards first: exactly the three KPIs of table 8 (close, volume, RSI and ATR are measures, shown as charts)
+    # KPI cards first: exactly the three KPIs of table 8 (close, volume, RSI and ATR are measures, shown below)
     common.kpi_cards([
-        ("Current Return รวม (%)", common.money(price.log_return.sum()), "ln(close_t / close_t−1) × 100 รวมทุกชั่วโมงในช่วงที่เลือก"),
-        ("Normalized ATR เฉลี่ย (%)", common.money(price.normalized_atr.mean()), "ATR 24 ชั่วโมง ÷ close × 100"),
-        ("Volume Z-score ล่าสุด", common.money(price.volume_zscore_24.dropna().iloc[-1]
-                                               if price.volume_zscore_24.notna().any() else float("nan")), None)])
+        ("Current Return (%)", common.money(price.log_return.sum()),
+         "ผลตอบแทนช่วงเวลาปัจจุบัน = ln(close_t / close_t−1) × 100 รวมทุกชั่วโมงในช่วงที่เลือก"),
+        ("Volume Z-score", common.money(price.volume_zscore_24.dropna().iloc[-1]
+                                        if price.volume_zscore_24.notna().any() else float("nan")),
+         "ค่าล่าสุดในช่วงที่เลือก = (volume_t − μ24h) ÷ σ24h เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน"),
+        ("Normalized Average True Range (%)", common.money(price.normalized_atr.mean()),
+         "อัตราความผันผวนสัมพัทธ์ = (ATR 24 ชั่วโมง ÷ close) × 100 เฉลี่ยในช่วงที่เลือก")])
     st.subheader("%s: ราคาปิดและปริมาณการซื้อขาย" % ticker)
     # log_return (DB column) = Current Return (proposal name) - same formula
     shown = common.resample(price, {"close": "last", "volume": "sum", "rsi": "last", "atr": "last",
@@ -41,8 +45,24 @@ else:
                     .encode(y="y:Q"), width="stretch")
     st.altair_chart(common.line(shown, "time", "atr", "ATR (USD) ความผันผวนเฉลี่ยที่แท้จริง 24 ชั่วโมง", "#8c564b", 220,
                                 bar=common.kind(st, "p_atr")), width="stretch")
-    st.caption("Current Return = ln(close_t / close_t−1) × 100  \nNormalized ATR = ATR 24 ชั่วโมง ÷ close × 100  \n"
+    st.caption("RSI = ดัชนีความแข็งแกร่งสัมพัทธ์ 0–100 (Wilder 14 แท่ง) วัดความเร็วและการเปลี่ยนแปลงของการเคลื่อนไหวของราคา "
+               "เส้นประที่ 30 และ 70 คือระดับที่นิยมใช้อ่านว่าขายมากเกินไป / ซื้อมากเกินไป  \n"
+               "ATR = ช่วงความผันผวนเฉลี่ยที่แท้จริง (ดอลลาร์สหรัฐ) เฉลี่ย True Range 24 ชั่วโมง วัดระดับความผันผวนของราคาโดยไม่พิจารณาทิศทาง  \n"
+               "Current Return = ln(close_t / close_t−1) × 100  \nNormalized ATR = ATR 24 ชั่วโมง ÷ close × 100  \n"
                "ผลตอบแทนล่วงหน้านับจากชั่วโมงที่เกิดข้อมูล เว้นว่างเมื่อไม่มีบาร์ราคาครบตามกรอบเวลา (เช่น ตลาดปิด)")
+
+    st.subheader("รายละเอียดค่าวัดของ %s" % ticker)
+    detail = pd.DataFrame([
+        ("close ราคาปิด (USD)", price.close), ("volume ปริมาณซื้อขาย (หน่วย)", price.volume),
+        ("RSI (0–100)", price.rsi), ("ATR (USD)", price.atr), ("Normalized ATR (%)", price.normalized_atr),
+        ("Current Return (%)", price.log_return)], columns=["ค่าวัด", "ข้อมูล"])
+    detail = pd.DataFrame([{"ค่าวัด": name, "ล่าสุด": s.dropna().iloc[-1] if s.notna().any() else float("nan"),
+                            "เฉลี่ย": s.mean(), "ต่ำสุด": s.min(), "สูงสุด": s.max(), "จำนวนชั่วโมงที่มีค่า": int(s.notna().sum())}
+                           for name, s in zip(detail["ค่าวัด"], detail["ข้อมูล"])])
+    common.table(detail.round(4), hide_index=True, width="stretch")
+    rsi = price.rsi.dropna()
+    st.caption("RSI > 70 (ซื้อมากเกินไป) %s ของชั่วโมงที่มีค่า · RSI < 30 (ขายมากเกินไป) %s" % (
+        "n/a" if rsi.empty else "{:.1%}".format((rsi > 70).mean()), "n/a" if rsi.empty else "{:.1%}".format((rsi < 30).mean())))
 
     st.subheader("ผลตอบแทนล่วงหน้า 5 ช่วงเวลาของ %s" % ticker)
     own = q("future_return_for_ticker", ticker, start, end)

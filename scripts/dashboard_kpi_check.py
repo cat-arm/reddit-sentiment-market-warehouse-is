@@ -88,6 +88,12 @@ def run(db_path):
                         "AND CAST(strftime('%%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?" % (h, h), (tk, start, end))[0]
                 c.check("3 Price and Return", "%s %s: Future Return %s ของ Ticker (จำนวนตัวอย่าง)" % (wname, tk, h), int(own.loc[h, "n"]), e[0])
                 c.check("3 Price and Return", "%s %s: Future Return %s ของ Ticker (เฉลี่ย)" % (wname, tk, h), own.loc[h, "mean_return_pct"], e[1], 1e-7)
+            e_rsi = c.q("SELECT AVG(rsi > 70), AVG(rsi < 30), MAX(atr), MIN(rsi) FROM market_hourly_features WHERE ticker = ? "
+                        "AND rsi IS NOT NULL AND CAST(strftime('%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?", (tk, start, end))[0]
+            rs = px.rsi.dropna()
+            c.check("3 Price and Return", "%s %s: สัดส่วน RSI > 70" % (wname, tk), (rs > 70).mean() if len(rs) else None, e_rsi[0], 1e-9)
+            c.check("3 Price and Return", "%s %s: สัดส่วน RSI < 30" % (wname, tk), (rs < 30).mean() if len(rs) else None, e_rsi[1], 1e-9)
+            c.check("3 Price and Return", "%s %s: RSI ต่ำสุด" % (wname, tk), rs.min() if len(rs) else None, e_rsi[3], 1e-9)
             c.check("3 Price and Return", "%s %s: ATR เฉลี่ย (กราฟ ATR)" % (wname, tk), px.atr.mean(),
                     c.q("SELECT AVG(atr) FROM market_hourly_features WHERE ticker = ? AND CAST(strftime('%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?",
                         (tk, start, end))[0][0], 1e-7)
