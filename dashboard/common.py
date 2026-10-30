@@ -45,6 +45,18 @@ EVENT_KEYS = ["h_z", "h_s", "h_n"]                              # the same idea 
 SENTIMENT_MODELS = ("VADER+FinBERT", "VADER", "FinBERT")         # DimSentimentSource.ModelUsed; the first is the proposal's
 DEFAULT_RANGE_DAYS = 365
 
+# ---- one chart design for every dashboard: one height, one colour per measure, one grid / axis style, one tooltip behaviour
+CHART_HEIGHT = 280
+C_PRICE = "#1f77b4"            # close price, Current Return          (blue)
+C_VOLUME = "#2ca02c"           # market trading volume                (green)
+C_REDDIT = "#ff7f0e"           # Reddit volume, comments, mentions    (orange)
+C_REDDIT_LIGHT = "#ffbb78"     # posts (a small share of the Reddit texts)
+C_Z = "#d62728"                # Reddit Volume Z-score                (red: unusual)
+C_SENT = "#17becf"             # Sentiment Score                      (teal: a neutral colour, not a verdict)
+C_RATE = "#9467bd"             # Ticker Mention Rate, RSI             (purple)
+C_ATR = "#8c564b"              # ATR                                  (brown)
+C_NATR = "#e377c2"             # Normalized ATR                       (pink)
+
 
 def group_name(key):
     """Short Thai name of a Big_Group key (unknown keys are returned unchanged)."""
@@ -421,6 +433,32 @@ TIME_UNIT = {"Hourly": "utcyearmonthdatehours", "Daily": "utcyearmonthdate", "We
              "Monthly": "utcyearmonth", "Yearly": "utcyear"}     # gives every bar its own full-width slot (UTC)
 
 
+def style(chart):
+    """The look shared by every chart of the dashboards: light grid, grey axes, no frame, legend on top, one default height."""
+    if getattr(chart, "height", alt.Undefined) is alt.Undefined:
+        chart = chart.properties(height=CHART_HEIGHT)
+    chart = chart.configure_axis(grid=True, gridColor="#e8e8e8", domainColor="#bbbbbb", tickColor="#bbbbbb", labelColor="#555555",
+                                 titleColor="#555555", labelFontSize=11, titleFontSize=12, titleFontWeight="normal")
+    chart = chart.configure_view(stroke=None)
+    return chart.configure_legend(orient="top", labelFontSize=11, titleFontSize=11, symbolType="square")
+
+
+def show(chart, **kwargs):
+    """Draw a chart with the shared design (`style`), full width."""
+    kwargs.setdefault("width", "stretch")
+    return st.altair_chart(style(chart), **kwargs)
+
+
+def zero_rule():
+    """The solid grey line at 0 shared by the charts of returns, correlations and Z-scores."""
+    return alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
+
+
+def ref_rule(*levels):
+    """Dashed grey reference lines at the given levels (a threshold such as Z = 1.5, RSI 30 / 70, AUC 0.5)."""
+    return alt.Chart(alt.Data(values=[{"y": v} for v in levels])).mark_rule(strokeDash=[4, 4], color="gray").encode(y="y:Q")
+
+
 def series_chart(df, x, y, title, color, height, tooltip=None, fmt=None, peak=None, dots=False, y_zero=False, bar=False,
                  y_domain=None):
     """One time series as a line or as bars (`bar`, chosen with `kind`), x axis labelled for the chosen time level.
@@ -446,15 +484,10 @@ def series_chart(df, x, y, title, color, height, tooltip=None, fmt=None, peak=No
     else:
         enc_x = alt.X(x + ":T", title=None, axis=axis)
         enc_y = alt.Y(y + ":Q", title=title, axis=axis_y, scale=y_scale)
-        layers = [alt.Chart(df).mark_line(color=color).encode(x=enc_x, y=enc_y, tooltip=tooltip)]
-        if dots:                                           # dots carry the tooltip with the peak
-            hover = alt.selection_point(nearest=True, on="mouseover", empty=False, clear="mouseout", fields=[x])
-            layers.append(alt.Chart(df).mark_circle(color=color).encode(
-                x=enc_x, y=enc_y, tooltip=tooltip,
-                size=alt.condition(hover, alt.value(150), alt.value(22)),            # the hovered point swells
-                stroke=alt.condition(hover, alt.value("white"), alt.value(None)),
-                strokeWidth=alt.value(2)).add_params(hover))
-    return alt.layer(*layers).properties(height=height).interactive()
+        layers = [alt.Chart(df).mark_line(color=color).encode(x=enc_x, y=enc_y)]
+        # the tooltip hangs on an invisible, larger circle over every point: point at any spot of the line and the values appear
+        layers.append(alt.Chart(df).mark_circle(color=color, size=150, opacity=0).encode(x=enc_x, y=enc_y, tooltip=tooltip))
+    return alt.layer(*layers).properties(height=CHART_HEIGHT)          # `height` is kept for old callers: every chart has one height
 
 
 def daily_peak(hourly, col):
@@ -503,7 +536,7 @@ def count_caption(how):
     return text + "  \nชี้เมาส์เพื่อดูค่าและวันที่"
 
 
-def line(df, x, y, title, color="#1f77b4", height=260, fmt=None, y_zero=False, dots=False, label=None, bar=False, y_domain=None):
+def line(df, x, y, title, color=C_PRICE, height=CHART_HEIGHT, fmt=None, y_zero=False, dots=False, label=None, bar=False, y_domain=None):
     """One series as a line or bars (`bar`, chosen with `kind`) at the chosen time level.  `fmt` overrides the x label format."""
     tip = None
     if label:                                               # Thai tooltip: the period, then the value
@@ -512,13 +545,14 @@ def line(df, x, y, title, color="#1f77b4", height=260, fmt=None, y_zero=False, d
     return series_chart(df, x, y, title, color, height, tooltip=tip, fmt=fmt, y_zero=y_zero, dots=dots, bar=bar, y_domain=y_domain)
 
 
-def multi_series_chart(df, x, y, series, title, height=300, bar=False, fmt=None, log=False, y_domain=None):
+def multi_series_chart(df, x, y, series, title, height=CHART_HEIGHT, bar=False, fmt=None, log=False, y_domain=None):
     """Several series (one per value of column `series`) over time: lines, or stacked bars when `bar`.  `log` = logarithmic
     y axis (series of very different size), `y_domain` = fixed y range."""
     how = granularity()
     ticks = {"tickCount": TICK_STEP[how]} if how in TICK_STEP else {}
     axis = alt.Axis(format=fmt or DATE_FORMAT[how], labelOverlap=True, **ticks)
-    tip = [alt.Tooltip(x + ":T"), alt.Tooltip(series + ":N", title="หลักทรัพย์"), alt.Tooltip(y + ":Q", format=",.0f")]
+    tip = [alt.Tooltip(x + ":T", title=PERIOD_LABEL[how], format=DATE_TIP[how]), alt.Tooltip(series + ":N", title="หลักทรัพย์"),
+           alt.Tooltip(y + ":Q", title=title, format=",.2f")]
     color = alt.Color(series + ":N", title="หลักทรัพย์")
     y_scale = alt.Scale(domain=y_domain) if y_domain else alt.Scale(type="log") if log else alt.Undefined
     if bar:
@@ -526,13 +560,14 @@ def multi_series_chart(df, x, y, series, title, height=300, bar=False, fmt=None,
             x=alt.X(x + ":T", title=None, timeUnit=TIME_UNIT[how], axis=axis),
             y=alt.Y(y + ":Q", title=title, stack=True, axis=alt.Axis(minExtent=55)), color=color, tooltip=tip)
     else:
-        chart = alt.Chart(df).mark_line().encode(x=alt.X(x + ":T", title=None, axis=axis),
-                                                 y=alt.Y(y + ":Q", title=title, axis=alt.Axis(minExtent=55), scale=y_scale),
-                                                 color=color, tooltip=tip)
-    return chart.properties(height=height).interactive()
+        enc = dict(x=alt.X(x + ":T", title=None, axis=axis), y=alt.Y(y + ":Q", title=title, axis=alt.Axis(minExtent=55), scale=y_scale),
+                   color=color)
+        chart = alt.layer(alt.Chart(df).mark_line().encode(**enc),
+                          alt.Chart(df).mark_circle(size=150, opacity=0).encode(tooltip=tip, **enc))
+    return chart.properties(height=CHART_HEIGHT)
 
 
-def dual_axis(df, x, left, right, left_title, right_title, height=300, left_color="#1f77b4", right_color="#d62728",
+def dual_axis(df, x, left, right, left_title, right_title, height=CHART_HEIGHT, left_color=C_PRICE, right_color=C_SENT,
               left_fmt=",.4g", right_fmt="+.3f"):
     """Two series with independent y axes (e.g. close price vs sentiment_mean); each axis is coloured like its line.  Pointing at
     any point of either line shows that period with BOTH values; the helper layers draw no axis of their own."""
@@ -542,13 +577,14 @@ def dual_axis(df, x, left, right, left_title, right_title, height=300, left_colo
     scale = alt.Scale(zero=False)
     a = base.mark_line(color=left_color).encode(y=alt.Y(left + ":Q", axis=left_axis, scale=scale))
     b = base.mark_line(color=right_color, opacity=0.8).encode(y=alt.Y(right + ":Q", axis=right_axis, scale=scale))
-    tip = [alt.Tooltip(x + ":T", title="เวลา"), alt.Tooltip(left + ":Q", title=left_title, format=left_fmt),
+    tip = [alt.Tooltip(x + ":T", title=PERIOD_LABEL[granularity()], format=DATE_TIP[granularity()]),
+           alt.Tooltip(left + ":Q", title=left_title, format=left_fmt),
            alt.Tooltip(right + ":Q", title=right_title, format=right_fmt)]
     # every data point of each line carries an invisible, larger circle with the tooltip: point at any spot of either line and the
     # values of that period (both lines) appear.  No "nearest point" logic, so the tooltip always belongs to the point under the mouse.
     hit_a = base.mark_circle(size=150, opacity=0).encode(y=alt.Y(left + ":Q", axis=None, scale=scale), tooltip=tip)
     hit_b = base.mark_circle(size=150, opacity=0).encode(y=alt.Y(right + ":Q", axis=None, scale=scale), tooltip=tip)
-    return alt.layer(a, b, hit_a, hit_b).resolve_scale(y="independent").properties(height=height)
+    return alt.layer(a, b, hit_a, hit_b).resolve_scale(y="independent").properties(height=CHART_HEIGHT)
 
 
 def table(df, **kwargs):

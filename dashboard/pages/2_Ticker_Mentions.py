@@ -76,7 +76,7 @@ chart = (alt.Chart(top).mark_bar().encode(
     color=alt.Color("กลุ่ม:N", title="กลุ่ม", scale=common.group_scale()),
     tooltip=["ticker", "กลุ่ม", alt.Tooltip("mentions:Q", format=","), alt.Tooltip("mention_rate_pct:Q", format=".3f")])
     .properties(height=380))
-st.altair_chart(chart, width="stretch")
+common.show(chart, width="stretch")
 common.table(rank[["ticker", "กลุ่ม", "mentions", "mention_rate_pct", "texts_about", "peak_hour_texts"]].rename(columns={
     "mentions": "Ticker Mention Count", "mention_rate_pct": "Ticker Mention Rate (%)",
     "texts_about": "ข้อความที่พูดถึง", "peak_hour_texts": "สูงสุดใน 1 ชั่วโมง"}).round(3),
@@ -89,14 +89,14 @@ if many and len(tickers) <= MAX_LINES:                      # one line (or stack
     wide = per.pivot_table(index="time", columns="ticker", values="mentions", aggfunc="sum").reindex(full.time).fillna(0)
     wide = common.resample(wide.rename_axis("time").reset_index(), {c: "sum" for c in wide.columns}, how)
     long = wide.melt(id_vars="time", var_name="ticker", value_name="mentions")
-    st.altair_chart(common.multi_series_chart(long, "time", "mentions", "ticker", "Ticker Mention Count", bar=common.kind(st, "m_count")),
+    common.show(common.multi_series_chart(long, "time", "mentions", "ticker", "Ticker Mention Count", bar=common.kind(st, "m_count")),
                     width="stretch")
 else:
-    st.altair_chart(common.line(shown, "time", "mentions", "Ticker Mention Count" + (" (รวม %d ตัว)" % len(tickers) if many else ""),
-                                "#2ca02c", fmt=common.DATE_FORMAT[how], bar=common.kind(st, "m_count")), width="stretch")
-st.altair_chart(common.line(shown, "time", "rate", "Ticker Mention Rate (%)", "#9467bd", 240, fmt=common.DATE_FORMAT[how],
+    common.show(common.line(shown, "time", "mentions", "Ticker Mention Count" + (" (รวม %d ตัว)" % len(tickers) if many else ""),
+                                common.C_REDDIT, fmt=common.DATE_FORMAT[how], bar=common.kind(st, "m_count")), width="stretch")
+common.show(common.line(shown, "time", "rate", "Ticker Mention Rate (%)", common.C_RATE, fmt=common.DATE_FORMAT[how],
                             bar=common.kind(st, "m_rate")), width="stretch")
-st.altair_chart(common.line(shown, "time", "zscore", "Volume Z-score ของ %s" % label, "#d62728", 240,
+common.show(common.line(shown, "time", "zscore", "Volume Z-score ของ %s" % label, common.C_Z,
                             fmt=common.DATE_FORMAT[how], bar=common.kind(st, "m_z")), width="stretch")
 
 st.subheader("พูดถึงที่ไหน (ชุมชน × ประเภทเนื้อหา)")

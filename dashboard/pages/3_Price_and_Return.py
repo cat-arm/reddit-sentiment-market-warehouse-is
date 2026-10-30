@@ -76,7 +76,7 @@ else:
     shown = long
 
 
-def trend(col, title, color, key, height=220, log=False, **kw):
+def trend(col, title, color, key, height=common.CHART_HEIGHT, log=False, **kw):
     """One trend chart: the single series, one line per ticker, or the average of many."""
     if one or len(tickers) > MAX_LINES:
         label = title + ("" if one else " (เฉลี่ยของที่เลือก)")
@@ -85,23 +85,23 @@ def trend(col, title, color, key, height=220, log=False, **kw):
 
 
 price_title = "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)"
-st.altair_chart(trend("close" if one else "price_index", price_title, "#1f77b4", "p_close", 300), width="stretch")
+common.show(trend("close" if one else "price_index", price_title, common.C_PRICE, "p_close"), width="stretch")
 if not one:
     st.caption("เลือกหลายตัวจึงปรับราคาแต่ละตัวให้ค่าแรกของช่วง = 100 เพื่อเทียบกันได้ (ราคาจริงต่างขนาดกันมาก เช่น SPY หลักร้อย BTC หลักแสน)")
-st.altair_chart(trend("volume" if one else "volume_index", "ปริมาณซื้อขาย (หน่วย)" if one else "ปริมาณซื้อขาย ดัชนี (ค่าเฉลี่ย = 100)",
-                      "#2ca02c", "p_volume"), width="stretch")
-st.altair_chart(trend("rsi", "RSI", "#9467bd", "p_rsi", y_domain=[0, 100])
+common.show(trend("volume" if one else "volume_index", "ปริมาณซื้อขาย (หน่วย)" if one else "ปริมาณซื้อขาย ดัชนี (ค่าเฉลี่ย = 100)",
+                      common.C_VOLUME, "p_volume"), width="stretch")
+common.show(trend("rsi", "RSI", common.C_RATE, "p_rsi", y_domain=[0, 100])
                 + alt.Chart(alt.Data(values=[{"y": 30}, {"y": 70}])).mark_rule(strokeDash=[4, 4], color="gray")
                 .encode(y="y:Q"), width="stretch")
 st.caption("RSI = ดัชนีความแข็งแกร่งสัมพัทธ์ 0–100 (Wilder 14 แท่ง) วัดความเร็วและการเปลี่ยนแปลงของการเคลื่อนไหวของราคา "
            "เส้นประที่ 30 และ 70 คือระดับที่นิยมใช้อ่านว่าขายมากเกินไป / ซื้อมากเกินไป")
 if len(tickers) <= MAX_LINES:
-    st.altair_chart(trend("atr", "ATR (USD)" if one else "ATR (USD) แกนลอการิทึม", "#8c564b", "p_atr", log=True, y_zero=one)
-                    if not one else common.line(shown, "time", "atr", "ATR (USD)", "#8c564b", 220, y_zero=True,
+    common.show(trend("atr", "ATR (USD)" if one else "ATR (USD) แกนลอการิทึม", common.C_ATR, "p_atr", log=True, y_zero=one)
+                    if not one else common.line(shown, "time", "atr", "ATR (USD)", common.C_ATR, 220, y_zero=True,
                                                 bar=common.kind(st, "p_atr")), width="stretch")
     st.caption("ATR = ช่วงความผันผวนเฉลี่ยที่แท้จริง (ดอลลาร์สหรัฐ) เฉลี่ย True Range 24 ชั่วโมง วัดระดับความผันผวนของราคาโดยไม่พิจารณาทิศทาง "
                "ค่าเป็นดอลลาร์ จึงเทียบข้ามสินทรัพย์ไม่ได้ ให้ดู Normalized ATR")
-st.altair_chart(trend("normalized_atr", "Normalized ATR (%)", "#e377c2", "p_natr", y_zero=True), width="stretch")
+common.show(trend("normalized_atr", "Normalized ATR (%)", common.C_NATR, "p_natr", y_zero=True), width="stretch")
 
 # ---- the measures of every ticked ticker
 st.subheader("รายละเอียดค่าวัดของหลักทรัพย์ที่เลือก")
@@ -130,8 +130,8 @@ else:
         y=alt.Y("mean_return_pct:Q", title="ผลตอบแทนเฉลี่ย (%)"), xOffset="กลุ่ม:N",
         color=alt.Color("กลุ่ม:N", scale=common.group_scale()),
         tooltip=["กลุ่ม", "horizon", alt.Tooltip("mean_return_pct:Q", format=".4f"),
-                 alt.Tooltip("share_up:Q", format=".1%"), alt.Tooltip("n:Q", format=",")]).properties(height=280))
-    st.altair_chart(chart, width="stretch")
+                 alt.Tooltip("share_up:Q", format=".1%"), alt.Tooltip("n:Q", format=",")]).properties(height=common.CHART_HEIGHT))
+    common.show(chart, width="stretch")
     common.table(fr[["กลุ่ม", "horizon", "n", "mean_return_pct", "share_up"]].rename(columns={
         "n": "จำนวนตัวอย่าง", "mean_return_pct": "ผลตอบแทนเฉลี่ย (%)", "share_up": "สัดส่วนที่เป็นบวก"}),
         hide_index=True, width="stretch")

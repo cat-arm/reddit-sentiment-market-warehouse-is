@@ -61,7 +61,7 @@ else:
         color=alt.Color("signal_level:N", sort=["low", "medium", "high"], title="ระดับ",
                         scale=alt.Scale(domain=["low", "medium", "high"], range=["#9ecae1", "#fdae6b", "#d62728"])),
         tooltip=["signal_type", "signal_level", "n"]).properties(height=200))
-    st.altair_chart(chart, width="stretch")
+    common.show(chart, width="stretch")
     by_group = found.groupby("big_group").agg(สัญญาณ=("ticker", "size"), สินทรัพย์=("ticker", "nunique")).reset_index()
     by_group["big_group"] = by_group.big_group.map(GROUP_LABELS)
     st.dataframe(by_group.rename(columns={"big_group": "กลุ่ม"}), hide_index=True, width="stretch")

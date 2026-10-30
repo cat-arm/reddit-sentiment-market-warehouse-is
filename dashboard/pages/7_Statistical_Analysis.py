@@ -81,7 +81,7 @@ cm = corr[corr.method == method]
 if cm.rho.notna().sum() == 0:
     st.info("ไม่มีผลวิเคราะห์ของหลักทรัพย์ที่เลือก (ข้อมูลไม่พอ)")
 else:
-    st.altair_chart(heatmap(cm, "rho", "p_value", "ρ (%s)" % method, [-0.1, 0.1], "redblue", "+.3f"), width="stretch")
+    common.show(heatmap(cm, "rho", "p_value", "ρ (%s)" % method, [-0.1, 0.1], "redblue", "+.3f"), width="stretch")
     st.caption("สี = ค่าสหสัมพันธ์ ρ (แดง ลบ, น้ำเงิน บวก; ช่วงสี ±0.1)  ★ = p-value < 0.05 (ก่อนปรับ)  ช่องว่าง = ข้อมูลน้อยกว่า 30 คู่  "
                "Current Return = ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) ส่วน 1h–12h = ผลตอบแทนล่วงหน้า")
     pick = st.radio("ดูตารางของ", HORIZON_ORDER, index=1, horizontal=True, key="a_horizon", label_visibility="collapsed")
@@ -105,7 +105,7 @@ st.subheader("A2 Historical Win Rate และ p-value")
 if win.winrate.notna().sum() == 0:
     st.info("ไม่มีผล Win Rate ของหลักทรัพย์ที่เลือก")
 else:
-    st.altair_chart(heatmap(win, "winrate", "p_value", "Win Rate (%)", [40, 60], "redblue", ".1f"), width="stretch")
+    common.show(heatmap(win, "winrate", "p_value", "Win Rate (%)", [40, 60], "redblue", ".1f"), width="stretch")
     st.caption("Win Rate = สัดส่วนชั่วโมงที่ทิศทางผลตอบแทนอนาคตตรงกับเครื่องหมายของความรู้สึก (50% = เดา)  ★ = Binomial p-value < 0.05")
     wp = st.radio("ดูตารางของ ", HORIZON_ORDER[1:], horizontal=True, key="a_win_horizon", label_visibility="collapsed")
     wt = win[win.ช่วง == wp].copy()
@@ -137,8 +137,8 @@ else:
                                   color=alt.Color("ชุดข้อมูล:N", scale=alt.Scale(range=["#1f77b4", "#9e9e9e"]), legend=alt.Legend(orient="top", title=None)),
                                   tooltip=["ชุดข้อมูล", "ช่วง", alt.Tooltip("auc:Q", format=".4f"), alt.Tooltip("auc_std:Q", title="ส่วนเบี่ยงเบนข้ามส่วน", format=".4f")])
     err = base.mark_rule(color="#222222").encode(y="lo:Q", y2="hi:Q")
-    line = alt.Chart(alt.Data(values=[{"y": 0.5}])).mark_rule(strokeDash=[4, 4], color="gray").encode(y="y:Q")
-    st.altair_chart(bars + err + line, width="stretch")
+    line = common.ref_rule(0.5)
+    common.show(bars + err + line, width="stretch")
     st.caption("เส้นประ = AUC 0.5 (ทำนายไม่ได้ดีกว่าการเดา)  เส้นดำ = ± ส่วนเบี่ยงเบนมาตรฐานของ AUC ข้าม 5 ส่วน  "
                "AUC ใกล้ 0.5 หรือไม่ต่างจากแท่งเทา แปลว่าตัวแปรความรู้สึกไม่ช่วยทำนาย")
     levels = lg[(lg.metric == "auc") & (lg.panel == "panel_Ticker")].copy()
@@ -160,14 +160,14 @@ else:
             y=alt.Y("ตัวแปร:N", sort="-x", title=None), x=alt.X("value:Q", title="สัมประสิทธิ์มาตรฐาน (เฉลี่ยข้าม 5 ส่วน)"),
             color=alt.condition(alt.datum.value > 0, alt.value("#2ca02c"), alt.value("#d62728")),
             tooltip=["ตัวแปร", alt.Tooltip("value:Q", title="สัมประสิทธิ์", format="+.4f")]).properties(height=330)
-        st.altair_chart(cb, width="stretch")
+        common.show(cb, width="stretch")
         st.caption("สัมประสิทธิ์บวก = ตัวแปรสูงขึ้นแล้วโอกาสที่ราคาขึ้นสูงขึ้น (เขียว) ลบ = ตรงข้าม (แดง) ค่าที่ใกล้ 0 มากแปลว่าไม่มีอิทธิพล  "
                    "ขนาดเทียบกันได้เพราะปรับตัวแปรเป็นหน่วยมาตรฐานแล้ว (StandardScaler ใช้เฉพาะชุดฝึก)")
     if not imp.empty:
-        ib = alt.Chart(imp).mark_bar(color="#1f77b4").encode(
+        ib = alt.Chart(imp).mark_bar(color=common.C_PRICE).encode(
             y=alt.Y("กลุ่มตัวแปร:N", sort="-x", title=None), x=alt.X("value:Q", title="ความสำคัญของกลุ่ม (ผลรวม |สัมประสิทธิ์|)"),
             tooltip=["กลุ่มตัวแปร", alt.Tooltip("value:Q", title="ความสำคัญ", format=".4f")]).properties(height=200)
-        st.altair_chart(ib, width="stretch")
+        common.show(ib, width="stretch")
         st.caption("กลุ่มตัวแปร: Level, Direction, Vote, Volume, Lag, Momentum ตามที่ proposal กำหนด  กลุ่มที่แท่งยาวกว่ามีอิทธิพลต่อโมเดลมากกว่า "
                    "แต่ถ้า AUC ใกล้ 0.5 ก็คือโมเดลโดยรวมยังทำนายไม่ได้")
 
@@ -199,8 +199,8 @@ else:
         tooltip=["ช่วงเวลา", alt.Tooltip("rho:Q", title="Spearman ρ", format="+.3f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","),
                  alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format="+.3f"), alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format="+.3f")])
     errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
-    zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
-    st.altair_chart(bars + errors + zero, width="stretch")
+    zero = common.zero_rule()
+    common.show(bars + errors + zero, width="stretch")
     st.caption("วิธีอ่าน: แต่ละแท่งคือความสัมพันธ์ระหว่าง Sentiment Score ของชั่วโมงที่มีข้อความ กับผลตอบแทนรายชั่วโมงที่ห่างไปกี่ชั่วโมง "
                "ถ้าราคาขยับก่อนแล้วคนค่อยโพสต์ แท่งสีแดง (ฝั่งซ้าย) จะสูงกว่าสีน้ำเงิน ถ้าความรู้สึกนำราคา แท่งสีน้ำเงิน (ฝั่งขวา) จะสูงกว่า "
                "เส้นดำ = ช่วงเชื่อมั่น 95% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีความสัมพันธ์ไม่ได้")
@@ -219,14 +219,14 @@ else:
     rb["ป้าย"] = rb.apply(lambda r: "%s (%+.2f%% ถึง %+.2f%%)" % (r["ระดับราคา"], r.lo, r.hi), axis=1)
     base = alt.Chart(rb).encode(x=alt.X("ป้าย:N", sort=list(rb["ป้าย"]), axis=alt.Axis(labelAngle=0, labelLimit=200),
                                         title="ผลตอบแทนก่อนชั่วโมงที่มีข้อความ (แบ่ง 5 กลุ่มเท่าๆ กัน จากตกแรงสุดไปขึ้นแรงสุด)"))
-    bars = base.mark_bar(color="#1f77b4").encode(
+    bars = base.mark_bar(color=common.C_SENT).encode(
         y=alt.Y("mean:Q", title="Sentiment Score เฉลี่ย"),
         tooltip=["ระดับราคา", alt.Tooltip("mean_return:Q", title="ผลตอบแทนก่อนหน้าเฉลี่ย (%)", format="+.3f"),
                  alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","), alt.Tooltip("mean:Q", title="Sentiment Score เฉลี่ย", format="+.4f"),
                  alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format="+.4f"), alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format="+.4f")])
     errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
-    zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
-    st.altair_chart(bars + errors + zero, width="stretch")
+    zero = common.zero_rule()
+    common.show(bars + errors + zero, width="stretch")
     st.caption("วิธีอ่าน: แบ่ง ticker-ชั่วโมงที่มีข้อความเป็น 5 กลุ่มเท่าๆ กันตามผลตอบแทนของราคาก่อนชั่วโมงนั้น แล้วดู Sentiment Score เฉลี่ยของแต่ละกลุ่ม "
                "ถ้า \"ราคาตก คนก็กลัว\" แท่งซ้าย (ตกแรงสุด) ควรต่ำกว่าแท่งขวา (ขึ้นแรงสุด) เส้นดำ = ช่วงเชื่อมั่น 95%")
 
@@ -247,13 +247,13 @@ else:
     rs["ป้าย"] = ["%s (n=%s)" % (g, "{:,}".format(n)) for g, n in zip(rs["กลุ่ม"], rs.n)]
     base = alt.Chart(rs).encode(x=alt.X("ป้าย:N", sort=list(rs["ป้าย"]), axis=alt.Axis(labelAngle=0, labelLimit=240),
                                         title="ชนิดของชั่วโมง (n = จำนวน ticker-ชั่วโมงที่มีผลตอบแทน %s)" % horizon))
-    bars = base.mark_bar(color="#1f77b4").encode(
+    bars = base.mark_bar(color=common.C_PRICE).encode(
         y=alt.Y("mean:Q", title="ผลตอบแทนล่วงหน้า %s เฉลี่ย (%%)" % horizon),
         tooltip=["กลุ่ม", alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","), alt.Tooltip("mean:Q", title="ผลตอบแทนเฉลี่ย (%)", format="+.4f"),
                  alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format="+.4f"), alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format="+.4f")])
     errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
-    zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
-    st.altair_chart(bars + errors + zero, width="stretch")
+    zero = common.zero_rule()
+    common.show(bars + errors + zero, width="stretch")
     st.caption("พบ %s ticker-ชั่วโมงที่ Reddit คึกคักผิดปกติ (Z-score เกินเกณฑ์) และความรู้สึกชัดเจน (|Sentiment Score| ถึงเกณฑ์)  \n"
                "เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีการขยับไม่ได้ เทียบกับแท่งขวาสุดที่เป็นค่าเฉลี่ยของทุกชั่วโมง"
                % "{:,}".format(len(hit)))

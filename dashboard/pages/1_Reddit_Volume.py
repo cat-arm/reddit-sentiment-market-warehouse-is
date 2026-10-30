@@ -76,16 +76,16 @@ if restricted:
 daily = common.resample(total, {"posts": "sum", "comments": "sum", "texts": "sum"}, "Daily")
 daily[["posts", "comments"]] = daily[["posts", "comments"]].where(daily.texts > 0)
 hourly = total
-st.altair_chart(common.count_chart(daily, hourly, "comments", "ความคิดเห็น" if not restricted else "พูดถึงในความคิดเห็น", "#1f77b4", how, bar=common.kind(st, "v_comments")), width="stretch")
-st.altair_chart(common.count_chart(daily, hourly, "posts", "โพสต์" if not restricted else "พูดถึงในโพสต์", "#ff7f0e", how, 160, bar=common.kind(st, "v_posts")), width="stretch")
+common.show(common.count_chart(daily, hourly, "comments", "ความคิดเห็น" if not restricted else "พูดถึงในความคิดเห็น", common.C_REDDIT, how, bar=common.kind(st, "v_comments")), width="stretch")
+common.show(common.count_chart(daily, hourly, "posts", "โพสต์" if not restricted else "พูดถึงในโพสต์", common.C_REDDIT_LIGHT, how, bar=common.kind(st, "v_posts")), width="stretch")
 st.caption(common.count_caption(how))
 
 # Z-score of the hourly volume; for day / week / month / year each point is the HIGHEST hourly Z-score of that period
 z = common.line(shown, "time", "zscore", "Volume Z-score" + ("" if not restricted else " ของที่เลือก") + ("" if how == "Hourly" else " (สูงสุดของ%s)" % common.PERIOD_LABEL[how]),
-                "#d62728", 200, dots=how != "Hourly", label="Z-score สูงสุด", bar=common.kind(st, "v_z"))
-zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")       # Z = 0: normal volume
-rule = alt.Chart(alt.Data(values=[{"y": 1.5}])).mark_rule(strokeDash=[4, 4], color="gray").encode(y="y:Q")
-st.altair_chart(z + zero + rule, width="stretch")
+                common.C_Z, dots=how != "Hourly", label="Z-score สูงสุด", bar=common.kind(st, "v_z"))
+zero = common.zero_rule()       # Z = 0: normal volume
+rule = common.ref_rule(1.5)
+common.show(z + zero + rule, width="stretch")
 st.caption("เส้นแดง = Z-score ของปริมาณ เทียบกับ 24 ชั่วโมงก่อนหน้า" + ("" if how == "Hourly" else "  \nค่าของแต่ละจุด = ชั่วโมงที่สูงที่สุดในช่วงนั้น") + "  \n"
            "เส้นทึบเทา = ระดับ 0 (ปริมาณปกติ)  \n"
            "เส้นประ = ระดับ 1.5 ถ้าเส้นแดงอยู่เหนือเส้นนี้ ถือว่าคึกคักผิดปกติ (spike)")

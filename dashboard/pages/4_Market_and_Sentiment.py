@@ -102,25 +102,24 @@ st.subheader("%s: ราคาปิดเทียบค่าความร�
 price_col = "close"
 if shown.sentiment_mean.notna().sum() == 0:
     st.info("ไม่มีข้อความที่พูดถึง %s ในช่วงนี้ จึงแสดงเฉพาะราคา" % label)
-    st.altair_chart(common.line(shown, "time", price_col, "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)",
+    common.show(common.line(shown, "time", price_col, "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)",
                                 bar=common.kind(st, "s_close")), width="stretch")
 else:
     price_title = "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)"
-    st.altair_chart(common.dual_axis(shown, "time", price_col, "sentiment_mean", price_title, "Sentiment Score"), width="stretch")
-    st.caption("เส้นน้ำเงิน = ราคาปิด  \nเส้นแดง = Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น) "
-               "ช่วงที่เส้นแดงขาด = ไม่มีข้อความ ไม่ใช่ค่ากลาง")
+    common.show(common.dual_axis(shown, "time", price_col, "sentiment_mean", price_title, "Sentiment Score"), width="stretch")
+    st.caption("เส้นน้ำเงิน = ราคาปิด  \nเส้นเขียวอมฟ้า = Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น) "
+               "ช่วงที่เส้นเขียวอมฟ้าขาด = ไม่มีข้อความ ไม่ใช่ค่ากลาง")
 
-    ORANGE = "#ff7f0e"
     st.subheader("%s: Reddit Volume Z-score เทียบค่าความรู้สึกเฉลี่ย" % label)
-    st.altair_chart(common.dual_axis(shown, "time", "zscore", "sentiment_mean", "Reddit Volume Z-score", "Sentiment Score",
-                                     left_color=ORANGE, left_fmt=".2f"), width="stretch")
-    st.caption("เส้นส้ม = Reddit Volume Z-score (ปริมาณข้อความเทียบ 24 ชั่วโมงก่อนหน้า)  \nเส้นแดง = Sentiment Score  "
+    common.show(common.dual_axis(shown, "time", "zscore", "sentiment_mean", "Reddit Volume Z-score", "Sentiment Score",
+                                 left_color=common.C_Z, left_fmt=".2f"))
+    st.caption("เส้นแดง = Reddit Volume Z-score (ปริมาณข้อความเทียบ 24 ชั่วโมงก่อนหน้า)  \nเส้นเขียวอมฟ้า = Sentiment Score  "
                "ถ้าคนพูดถึงมากผิดปกติแล้วความรู้สึกเปลี่ยน เส้นสองเส้นจะขยับไปด้วยกันหรือสวนกัน")
 
     st.subheader("%s: ราคาปิดเทียบ Reddit Volume Z-score" % label)
-    st.altair_chart(common.dual_axis(shown, "time", price_col, "zscore", price_title, "Reddit Volume Z-score",
-                                     right_color=ORANGE, right_fmt=".2f"), width="stretch")
-    st.caption("เส้นน้ำเงิน = ราคาปิด  \nเส้นส้ม = Reddit Volume Z-score  ช่วงที่ปริมาณพุ่ง (เส้นส้มสูง) ราคาขยับตามหรือไม่")
+    common.show(common.dual_axis(shown, "time", price_col, "zscore", price_title, "Reddit Volume Z-score",
+                                 right_color=common.C_Z, right_fmt=".2f"))
+    st.caption("เส้นน้ำเงิน = ราคาปิด  \nเส้นแดง = Reddit Volume Z-score  ช่วงที่ปริมาณพุ่ง (เส้นแดงสูง) ราคาขยับตามหรือไม่")
 
 # ---- does higher sentiment go with a higher return?  every ticked ticker-hour with text is one sample
 st.subheader("ความรู้สึกยิ่งสูง ผลตอบแทนยิ่งสูงไหม")
@@ -142,14 +141,14 @@ else:
     buckets["ป้าย"] = ["%s (%s)" % levels[int(b)] for b in buckets.bucket]
     order = list(buckets["ป้าย"])
     base = alt.Chart(buckets).encode(x=alt.X("ป้าย:N", sort=order, axis=alt.Axis(labelAngle=0, labelLimit=200), title="ระดับความรู้สึก (ช่วง Sentiment Score ของแต่ละกลุ่ม)"))
-    bars = base.mark_bar(color="#1f77b4").encode(
+    bars = base.mark_bar(color=common.C_PRICE).encode(
         y=alt.Y("mean:Q", title="ผลตอบแทนเฉลี่ย (%)"),
         tooltip=["ระดับความรู้สึก", "ช่วงความรู้สึก", alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","),
                  alt.Tooltip("sent_mean:Q", title="Sentiment Score เฉลี่ย", format="+.3f"), alt.Tooltip("mean:Q", title="ผลตอบแทนเฉลี่ย (%)", format=".4f"), alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format=".4f"),
                  alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format=".4f")])
     errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
-    zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
-    st.altair_chart(bars + errors + zero, width="stretch")
+    zero = common.zero_rule()
+    common.show(bars + errors + zero, width="stretch")
     paired = samples[["sentiment_mean", column]].dropna()
     st.caption("วิธีอ่าน: เอาทุก ticker-ชั่วโมงที่มีข้อความ มาใส่ 5 ระดับตาม Sentiment Score ของชั่วโมงนั้น โดยใช้เกณฑ์ตายตัวของ proposal: ±0.05 = ขอบเป็นกลาง, ±0.30 = เกณฑ์ความรู้สึกชัดเจน  \n"
                "แท่ง = ผลตอบแทนเฉลี่ยของระดับนั้น (ระดับที่ไม่มีข้อมูลจะไม่มีแท่ง) เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าเส้นคลุมศูนย์ แปลว่าแยกจากศูนย์ไม่ได้  \n"
@@ -177,6 +176,6 @@ if not ratios.empty:
     area = (alt.Chart(ratios).mark_area().encode(
         x=alt.X("time:T", title=None), y=alt.Y("สัดส่วน:Q", stack="normalize", axis=alt.Axis(format="%")),
         color=alt.Color("ประเภท:N", scale=COLORS), tooltip=["time:T", "ประเภท", alt.Tooltip("สัดส่วน:Q", format=".1%")])
-        .properties(height=240))
-    st.altair_chart(area, width="stretch")
+        .properties(height=common.CHART_HEIGHT))
+    common.show(area, width="stretch")
     st.caption(caption)

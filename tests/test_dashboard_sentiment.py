@@ -6,7 +6,9 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from dashboard import data
+import altair as alt
+
+from dashboard import common, data
 
 H = 3600 * 1000
 COLUMNS = ["ticker", "hour_utc", "texts", "sentiment_sum", "pos_n", "neg_n", "neu_n"]
@@ -179,6 +181,30 @@ class SignalTests(unittest.TestCase):
         r = data.return_by_signal(self.frame(), "ret", 9.0, 0.30).set_index("group")
         self.assertEqual(r.loc["signal_positive", "n"], 0)
         self.assertTrue(np.isnan(r.loc["signal_positive", "mean"]))
+
+
+class ChartDesignTests(unittest.TestCase):
+    """One chart design for every dashboard."""
+
+    def test_every_chart_gets_the_same_height_unless_it_sets_its_own(self):
+        df = pd.DataFrame({"x": [1, 2], "y": [1, 2]})
+        plain = common.style(alt.Chart(df).mark_line().encode(x="x:Q", y="y:Q")).to_dict()
+        self.assertEqual(plain["height"], common.CHART_HEIGHT)
+        own = common.style(alt.Chart(df).mark_bar().encode(x="x:Q", y="y:Q").properties(height=500)).to_dict()
+        self.assertEqual(own["height"], 500)                              # horizontal bar charts size themselves
+
+    def test_the_shared_axis_and_legend_style(self):
+        cfg = common.style(alt.Chart(pd.DataFrame({"x": [1]})).mark_point().encode(x="x:Q")).to_dict()["config"]
+        self.assertEqual(cfg["axis"]["gridColor"], "#e8e8e8")
+        self.assertEqual(cfg["legend"]["orient"], "top")
+
+    def test_reference_rules(self):
+        self.assertEqual(common.zero_rule().to_dict()["data"]["values"], [{"y": 0}])
+        self.assertEqual(common.ref_rule(30, 70).to_dict()["data"]["values"], [{"y": 30}, {"y": 70}])
+
+    def test_each_measure_has_its_own_colour(self):
+        colours = [common.C_PRICE, common.C_VOLUME, common.C_REDDIT, common.C_Z, common.C_SENT, common.C_RATE, common.C_ATR, common.C_NATR]
+        self.assertEqual(len(set(colours)), len(colours))
 
 
 class SignificantShareTests(unittest.TestCase):
