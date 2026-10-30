@@ -14,8 +14,8 @@ SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # sy
 SENTIMENT_PAGE = "pages/4_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
 ANALYSIS_PAGE = "pages/7_Statistical_Analysis.py"                              # 7.5-3: deeper analysis (extension)
 DETECTION_PAGES = {"pages/5_Ranking_and_Signals.py": ["s_z", "s_s", "s_h"], "pages/6_Hot_Events.py": ["h_z", "h_s", "h_n"],
-                   ANALYSIS_PAGE: ["s_z", "s_s", "s_h"]}
-MAJORITY_PAGES = {SENTIMENT_PAGE, *DETECTION_PAGES}
+                   SENTIMENT_PAGE: ["s_z", "s_s", "s_h"]}
+MAJORITY_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE, *DETECTION_PAGES}
 SENTIMENT_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE}
 COUNT_PAGES = SOURCE_PAGES | {"pages/3_Price_and_Return.py"}                  # first card = a count that follows the ticks
 TIME_KEYS = ["f_range", "f_gran"]
@@ -188,8 +188,6 @@ class FilterTests(unittest.TestCase):
             for value in values:
                 at.radio(key=key).set_value(value).run()
                 self.assertEqual(len(at.exception), 0, "%s=%s: %s" % (key, value, [e.value for e in at.exception]))
-        at.sidebar.slider(key="s_z").set_value(3.0).run()                        # a stricter threshold: fewer signal hours, no error
-        self.assertEqual(len(at.exception), 0)
         at = tick_only(at, ["SPY"])
         self.assertEqual(len(at.exception), 0)
         self.assertNotEqual([m.value for m in at.metric], full)                 # the cards follow the tickers
@@ -215,6 +213,13 @@ class FilterTests(unittest.TestCase):
         self.assertNotEqual(at.metric[0].value, full[0], "hours with a neutral majority lose their sentiment")
         self.assertEqual([m.label for m in at.metric], ["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"])
         at.sidebar.checkbox(key="f_maj_neutral").set_value(True)
+        for z in (3.0, 0.5):                                                        # DimDetectionConfig: the signal hours follow the thresholds
+            at.sidebar.slider(key="s_z").set_value(z).run()
+            self.assertEqual(len(at.exception), 0, z)
+        at.sidebar.radio(key="s_h").set_value("12h").run()
+        self.assertEqual(len(at.exception), 0)
+        at.sidebar.slider(key="s_z").set_value(1.5)
+        at.sidebar.radio(key="s_h").set_value("1h")
         for key in ("s_price_sent", "s_z_sent", "s_price_z"):                      # the dual charts: hide one line, then both
             at.checkbox(key="dl_" + key).set_value(False).run()
             self.assertEqual(len(at.exception), 0, key)

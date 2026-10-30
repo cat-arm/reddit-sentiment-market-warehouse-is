@@ -7,7 +7,6 @@ only, not the time / community / majority filters):
   * A3 Logistic Regression: AUC with the spread over the 5 time-ordered folds, coefficients, importance of the variable groups
 Live part (follows every filter of the sidebar, computed from the texts of the chosen communities and model):
   * who moves first (Spearman between the Sentiment Score and the return k hours away), sentiment by prior return,
-  * DimDetectionConfig drill-down: the hours that meet the Z-score / Sentiment thresholds and what the price did next.
 Descriptive only: hourly data are autocorrelated and the horizons overlap, so p-values are not exact; no investment advice.
 """
 
@@ -25,7 +24,7 @@ from dashboard import common, data  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
 common.setup("Statistical Analysis: วิเคราะห์เชิงลึก", "🔬")
-_, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="signals", majority=True)
+_, start, end, _ = common.sidebar(multi=True, sentiment=True, majority=True)
 tickers = common.selected_tickers()
 communities = common.selected_communities()
 statuses = common.selected_statuses()
@@ -229,39 +228,3 @@ else:
     common.show(bars + errors + zero, width="stretch")
     st.caption("วิธีอ่าน: แบ่ง ticker-ชั่วโมงที่มีข้อความเป็น 5 กลุ่มเท่าๆ กันตามผลตอบแทนของราคาก่อนชั่วโมงนั้น แล้วดู Sentiment Score เฉลี่ยของแต่ละกลุ่ม "
                "ถ้า \"ราคาตก คนก็กลัว\" แท่งซ้าย (ตกแรงสุด) ควรต่ำกว่าแท่งขวา (ขึ้นแรงสุด) เส้นดำ = ช่วงเชื่อมั่น 95%")
-
-# ---- DimDetectionConfig drill-down: the hours that meet the thresholds of the sidebar, and what the price did next
-z_th = st.session_state.get("s_z", 1.5)
-s_th = st.session_state.get("s_s", 0.30)
-horizon = st.session_state.get("s_h", common.data.HORIZONS[0])
-st.subheader("ชั่วโมงที่เข้าเงื่อนไขตรวจจับ (Z-score > %.1f และ |Sentiment| ≥ %.2f) ราคาเป็นอย่างไรต่อ %s" % (z_th, s_th, horizon))
-hours = per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "texts", "sentiment_mean", "zscore", "majority"]]
-hours = hours[hours.majority.isin(statuses)].merge(prices[["ticker", "hour_utc", "future_return_" + horizon]], on=["ticker", "hour_utc"])
-col = "future_return_" + horizon
-hit = data.signal_hours(hours, z_th, s_th)
-if hit.empty:
-    st.info("ไม่พบชั่วโมงที่เข้าเงื่อนไขในช่วงที่เลือก ลองลดเกณฑ์ Z-score หรือ Sentiment Threshold ที่แถบด้านซ้าย")
-else:
-    rs = data.return_by_signal(hours, col, z_th, s_th)
-    rs["กลุ่ม"] = rs.group.map({"signal_positive": "สัญญาณบวก", "signal_negative": "สัญญาณลบ", "all_hours": "ทุกชั่วโมงที่มีข้อความ (เทียบ)"})
-    rs["ป้าย"] = ["%s (n=%s)" % (g, "{:,}".format(n)) for g, n in zip(rs["กลุ่ม"], rs.n)]
-    base = alt.Chart(rs).encode(x=alt.X("ป้าย:N", sort=list(rs["ป้าย"]), axis=alt.Axis(labelAngle=0, labelLimit=240),
-                                        title="ชนิดของชั่วโมง (n = จำนวน ticker-ชั่วโมงที่มีผลตอบแทน %s)" % horizon))
-    bars = base.mark_bar(color=common.C_PRICE).encode(
-        y=alt.Y("mean:Q", title="ผลตอบแทนล่วงหน้า %s เฉลี่ย (%%)" % horizon),
-        tooltip=["กลุ่ม", alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","), alt.Tooltip("mean:Q", title="ผลตอบแทนเฉลี่ย (%)", format="+.4f"),
-                 alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format="+.4f"), alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format="+.4f")])
-    errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
-    zero = common.zero_rule()
-    common.show(bars + errors + zero, width="stretch")
-    st.caption("พบ %s ticker-ชั่วโมงที่ Reddit คึกคักผิดปกติ (Z-score เกินเกณฑ์) และความรู้สึกชัดเจน (|Sentiment Score| ถึงเกณฑ์)  \n"
-               "เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีการขยับไม่ได้ เทียบกับแท่งขวาสุดที่เป็นค่าเฉลี่ยของทุกชั่วโมง"
-               % "{:,}".format(len(hit)))
-    listing = hit.sort_values("hour_utc", ascending=False).head(300).copy()
-    listing["เวลา (UTC)"] = pd.to_datetime(listing.hour_utc, unit="s", utc=True).dt.strftime("%Y-%m-%d %H:%M")
-    listing["สินทรัพย์"] = listing.ticker.map(lambda s: "%s · %s" % (s, names.get(s, "")))
-    common.table(listing[["เวลา (UTC)", "สินทรัพย์", "direction", "sentiment_mean", "texts", "zscore", col]].rename(
-        columns={"direction": "ทิศทาง", "sentiment_mean": "Sentiment Score", "texts": "ข้อความ", "zscore": "Volume Z-score",
-                 col: "ผลตอบแทนล่วงหน้า %s (%%)" % horizon}).round(3), hide_index=True, width="stretch", height=380)
-    st.caption("รายการล่าสุดไม่เกิน 300 ชั่วโมง ผลตอบแทนว่าง = ไม่มีแท่งราคาที่ครบ %s หลังชั่วโมงนั้น" % horizon)
-
