@@ -133,7 +133,7 @@ else:
     bars = base.mark_bar(color="#1f77b4").encode(
         y=alt.Y("mean:Q", title="ผลตอบแทนเฉลี่ย (%)"),
         tooltip=["ระดับความรู้สึก", "ช่วงความรู้สึก", alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","),
-                 alt.Tooltip("mean:Q", title="ค่าเฉลี่ย (%)", format=".4f"), alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format=".4f"),
+                 alt.Tooltip("sent_mean:Q", title="Sentiment Score เฉลี่ย", format="+.3f"), alt.Tooltip("mean:Q", title="ผลตอบแทนเฉลี่ย (%)", format=".4f"), alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format=".4f"),
                  alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format=".4f")])
     errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
     zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
