@@ -548,6 +548,32 @@ def return_buckets(df, past, sentiment="sentiment_mean", bins=5, min_total=50):
     return g[out_cols]
 
 
+def signal_hours(df, z_min, s_min, z="zscore", sentiment="sentiment_mean"):
+    """DimDetectionConfig on the ticker-hours of the page: the hours whose Reddit Volume Z-score is ABOVE `z_min` and whose
+    Sentiment Score is at least `s_min` away from zero (|s| >= s_min, as in the proposal).  Hours with no text (NULL) never
+    qualify.  Adds the column `direction` ('positive' / 'negative')."""
+    hit = df[(df[z] > z_min) & (df[sentiment].abs() >= s_min)].copy()
+    hit["direction"] = np.where(hit[sentiment] > 0, "positive", "negative")
+    return hit
+
+
+def return_by_signal(df, value, z_min, s_min, z="zscore", sentiment="sentiment_mean"):
+    """Mean `value` (a future return, %) of the positive signal hours, the negative signal hours and, for comparison, of
+    every ticker-hour that has text, each with its 95% interval (mean +- 1.96 standard errors).
+    -> DataFrame(group, n, mean, ci_lo, ci_hi); a group without samples has n = 0 and NaN."""
+    base = df[df[sentiment].notna()]
+    hit = signal_hours(base, z_min, s_min, z, sentiment)
+    parts = [("signal_positive", hit[hit.direction == "positive"][value]), ("signal_negative", hit[hit.direction == "negative"][value]),
+             ("all_hours", base[value])]
+    rows = []
+    for name, s in parts:
+        s = s.dropna()
+        se = s.std() / np.sqrt(len(s)) if len(s) > 1 else np.nan
+        rows.append({"group": name, "n": len(s), "mean": s.mean() if len(s) else np.nan,
+                     "ci_lo": s.mean() - 1.96 * se if len(s) else np.nan, "ci_hi": s.mean() + 1.96 * se if len(s) else np.nan})
+    return pd.DataFrame(rows)
+
+
 def vote_shares(df, rule=None, majority="majority_final_status"):
     """Majority vote of the hours: per period (`rule` = an entry of common.RESAMPLE; None = every hour on its own) the
     number of hours whose majority status is positive / negative / neutral and its share of the hours that have a status.

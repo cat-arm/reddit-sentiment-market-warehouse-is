@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
 SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # system 7.1: DimSource filter
 SENTIMENT_PAGE = "pages/4_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
-DETECTION_PAGES = {"pages/5_Ranking_and_Signals.py": ["s_z", "s_s", "s_h"], "pages/6_Hot_Events.py": ["h_z", "h_s", "h_n"]}
+DETECTION_PAGES = {"pages/5_Ranking_and_Signals.py": ["s_z", "s_s", "s_h"], "pages/6_Hot_Events.py": ["h_z", "h_s", "h_n"],
+                   "pages/4_Market_and_Sentiment.py": ["s_z", "s_s", "s_h"]}
 MAJORITY_PAGES = {SENTIMENT_PAGE, *DETECTION_PAGES}
 COUNT_PAGES = SOURCE_PAGES | {"pages/3_Price_and_Return.py"}                  # first card = a count that follows the ticks
 TIME_KEYS = ["f_range", "f_gran"]

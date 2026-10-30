@@ -149,6 +149,38 @@ class TimingTests(unittest.TestCase):
         self.assertTrue(data.return_buckets(p, "past").empty)
 
 
+class SignalTests(unittest.TestCase):
+    def frame(self):
+        return pd.DataFrame({"zscore": [2.0, 2.0, 1.0, 3.0, np.nan, 2.0], "sentiment_mean": [0.4, -0.5, 0.9, 0.1, 0.9, np.nan],
+                             "ret": [1.0, -1.0, 5.0, 7.0, 9.0, 9.0]})
+
+    def test_both_thresholds_must_be_met(self):
+        hit = data.signal_hours(self.frame(), 1.5, 0.30)
+        self.assertEqual(list(hit.index), [0, 1])                       # row 2: Z too low, 3: |s| too small, 4/5: NULL never qualifies
+        self.assertEqual(list(hit.direction), ["positive", "negative"])
+
+    def test_thresholds_change_the_hours(self):
+        self.assertEqual(len(data.signal_hours(self.frame(), 0.5, 0.05)), 4)
+        self.assertEqual(len(data.signal_hours(self.frame(), 5.0, 0.30)), 0)
+
+    def test_the_threshold_edge_counts_for_sentiment_but_not_for_z(self):
+        edge = pd.DataFrame({"zscore": [1.5, 1.6], "sentiment_mean": [0.30, 0.30]})
+        self.assertEqual(list(data.signal_hours(edge, 1.5, 0.30).index), [1])    # Z must be above, |s| at least
+
+    def test_return_by_signal_compares_with_all_hours(self):
+        r = data.return_by_signal(self.frame(), "ret", 1.5, 0.30).set_index("group")
+        self.assertEqual((r.loc["signal_positive", "n"], r.loc["signal_negative", "n"]), (1, 1))
+        self.assertEqual(r.loc["signal_positive", "mean"], 1.0)
+        self.assertEqual(r.loc["signal_negative", "mean"], -1.0)
+        self.assertEqual(r.loc["all_hours", "n"], 5)                    # the 5 rows that have a Sentiment Score
+        self.assertAlmostEqual(r.loc["all_hours", "mean"], (1 - 1 + 5 + 7 + 9) / 5)
+
+    def test_an_empty_group_has_zero_samples(self):
+        r = data.return_by_signal(self.frame(), "ret", 9.0, 0.30).set_index("group")
+        self.assertEqual(r.loc["signal_positive", "n"], 0)
+        self.assertTrue(np.isnan(r.loc["signal_positive", "mean"]))
+
+
 class VoteSharesTests(unittest.TestCase):
     def frame(self):
         times = pd.date_range("2026-03-01", periods=6, freq="h", tz="UTC")
