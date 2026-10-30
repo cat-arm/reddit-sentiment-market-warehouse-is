@@ -219,33 +219,6 @@ if not ratios.empty:
     st.altair_chart(area, width="stretch")
     st.caption(caption)
 
-st.subheader("ประเภทความรู้สึกส่วนใหญ่ (จำนวนชั่วโมง)")
-maj = series.majority_final_status.value_counts().rename_axis("ประเภท").reset_index(name="ชั่วโมง")
-common.table(maj, hide_index=True, width="stretch")
-
-st.subheader("ประเภทความรู้สึกส่วนใหญ่ สอดคล้องกับทิศทางผลตอบแทนอนาคตหรือไม่")
-# every ticked ticker-hour is one sample: its majority status (chosen communities) against ITS future returns
-samples = prices.merge(per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "majority"]], on=["ticker", "hour_utc"])
-samples = samples[samples.majority.isin(statuses)]
-rows = []
-for h in common.data.HORIZONS:
-    col = "future_return_" + h
-    for status, part in samples.groupby("majority"):
-        moved = part[col].dropna()
-        rows.append({"majority": status, "horizon": h, "n": len(moved),
-                     "share_up": float((moved > 0).sum() / ((moved > 0).sum() + (moved < 0).sum())) if ((moved != 0).sum()) else np.nan})
-mv = pd.DataFrame(rows)
-if mv.empty:
-    st.info("ไม่มีข้อมูลเพียงพอ")
-else:
-    table = mv.pivot(index="majority", columns="horizon", values="share_up").reindex(columns=list(common.data.HORIZONS))
-    counts = mv.pivot(index="majority", columns="horizon", values="n").reindex(columns=list(common.data.HORIZONS))
-    st.write("สัดส่วนชั่วโมงที่ผลตอบแทนอนาคตเป็นบวก (แยกตามประเภทความรู้สึกส่วนใหญ่)")
-    st.dataframe((table * 100).map(lambda v: "n/a" if pd.isna(v) else "%.1f" % v), width="stretch")
-    st.caption("ถ้าความรู้สึกบวกนำราคา แถว positive ควรสูงกว่าแถว negative  \nจำนวนตัวอย่างต่อช่อง: "
-               + ", ".join("%s/%s=%s" % (i, c, "{:,}".format(int(counts.loc[i, c]))) for i in counts.index
-                           for c in counts.columns if pd.notna(counts.loc[i, c]))[:400])
-
 st.subheader("สินทรัพย์ใดมีความรู้สึกเชิงบวก/ลบมากที่สุดในช่วงนี้")
 hours = prices[["ticker", "hour_utc"]]
 by_ticker = per_ticker.rename(columns={"series": "ticker"}).merge(hours, on=["ticker", "hour_utc"])
