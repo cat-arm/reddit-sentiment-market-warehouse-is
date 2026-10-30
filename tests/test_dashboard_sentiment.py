@@ -202,6 +202,15 @@ class ChartDesignTests(unittest.TestCase):
         self.assertEqual(common.zero_rule().to_dict()["data"]["values"], [{"y": 0}])
         self.assertEqual(common.ref_rule(30, 70).to_dict()["data"]["values"], [{"y": 30}, {"y": 70}])
 
+    def test_dual_axis_builds_in_every_mode(self):
+        df = pd.DataFrame({"time": pd.date_range("2026-01-01", periods=4, freq="D", tz="UTC"), "a": [1.0, 2, 3, 4], "b": [0.1, -0.2, 0.0, 0.3]})
+        for bar in (False, True):
+            for left, right in ((True, True), (True, False), (False, True)):
+                spec = common.dual_axis(df, "time", "a", "b", "A", "B", bar=bar, show_left=left, show_right=right).to_dict()
+                marks = [(layer["mark"] if isinstance(layer["mark"], str) else layer["mark"]["type"]) for layer in spec["layer"]]
+                self.assertEqual(len(marks), (left + right) * (1 if bar else 2))     # a hidden series adds no layer at all
+                self.assertEqual(marks[0], "bar" if bar else "line")
+
     def test_each_measure_has_its_own_colour(self):
         colours = [common.C_PRICE, common.C_VOLUME, common.C_REDDIT, common.C_Z, common.C_SENT, common.C_RATE, common.C_ATR, common.C_NATR]
         self.assertEqual(len(set(colours)), len(colours))

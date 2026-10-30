@@ -215,6 +215,16 @@ class FilterTests(unittest.TestCase):
         self.assertNotEqual(at.metric[0].value, full[0], "hours with a neutral majority lose their sentiment")
         self.assertEqual([m.label for m in at.metric], ["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"])
         at.sidebar.checkbox(key="f_maj_neutral").set_value(True)
+        for key in ("s_price_sent", "s_z_sent", "s_price_z"):                      # the dual charts: bars, and one series hidden
+            at.radio(key="ck_" + key).set_value("แท่ง").run()
+            self.assertEqual(len(at.exception), 0, key)
+            at.checkbox(key="dl_" + key).set_value(False).run()
+            self.assertEqual(len(at.exception), 0, key)
+            at.checkbox(key="dr_" + key).set_value(False).run()                    # both hidden: a note instead of a chart
+            self.assertEqual(len(at.exception), 0, key)
+            at.checkbox(key="dl_" + key).set_value(True)
+            at.checkbox(key="dr_" + key).set_value(True)
+            at.radio(key="ck_" + key).set_value("เส้น").run()
         for measure in ("Current Return (ชั่วโมงเดียวกัน)", "ผลตอบแทนล่วงหน้า 12h"):                       # sentiment vs return bars
             at.radio(key="s_bar_measure").set_value(measure).run()
             self.assertEqual(len(at.exception), 0, measure)

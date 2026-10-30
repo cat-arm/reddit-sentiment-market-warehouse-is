@@ -106,20 +106,20 @@ if shown.sentiment_mean.notna().sum() == 0:
                                 bar=common.kind(st, "s_close")), width="stretch")
 else:
     price_title = "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)"
-    common.show(common.dual_axis(shown, "time", price_col, "sentiment_mean", price_title, "Sentiment Score"), width="stretch")
-    st.caption("เส้นน้ำเงิน = ราคาปิด  \nเส้นเขียวอมฟ้า = Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น) "
-               "ช่วงที่เส้นเขียวอมฟ้าขาด = ไม่มีข้อความ ไม่ใช่ค่ากลาง")
+    common.dual_chart(shown, "time", price_col, "sentiment_mean", price_title, "Sentiment Score", "s_price_sent", "ราคาปิด", "Sentiment Score")
+    st.caption("สีน้ำเงิน = ราคาปิด  \nสีเขียวอมฟ้า = Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น) "
+               "ช่วงที่สีเขียวอมฟ้าขาด = ไม่มีข้อความ ไม่ใช่ค่ากลาง")
 
     st.subheader("%s: Reddit Volume Z-score เทียบค่าความรู้สึกเฉลี่ย" % label)
-    common.show(common.dual_axis(shown, "time", "zscore", "sentiment_mean", "Reddit Volume Z-score", "Sentiment Score",
-                                 left_color=common.C_Z, left_fmt=".2f"))
-    st.caption("เส้นแดง = Reddit Volume Z-score (ปริมาณข้อความเทียบ 24 ชั่วโมงก่อนหน้า)  \nเส้นเขียวอมฟ้า = Sentiment Score  "
-               "ถ้าคนพูดถึงมากผิดปกติแล้วความรู้สึกเปลี่ยน เส้นสองเส้นจะขยับไปด้วยกันหรือสวนกัน")
+    common.dual_chart(shown, "time", "zscore", "sentiment_mean", "Reddit Volume Z-score", "Sentiment Score", "s_z_sent",
+                      "Reddit Volume Z-score", "Sentiment Score", left_color=common.C_Z, left_fmt=".2f")
+    st.caption("สีแดง = Reddit Volume Z-score (ปริมาณข้อความเทียบ 24 ชั่วโมงก่อนหน้า)  \nสีเขียวอมฟ้า = Sentiment Score  "
+               "ถ้าคนพูดถึงมากผิดปกติแล้วความรู้สึกเปลี่ยน สองสีจะขยับไปด้วยกันหรือสวนกัน")
 
     st.subheader("%s: ราคาปิดเทียบ Reddit Volume Z-score" % label)
-    common.show(common.dual_axis(shown, "time", price_col, "zscore", price_title, "Reddit Volume Z-score",
-                                 right_color=common.C_Z, right_fmt=".2f"))
-    st.caption("เส้นน้ำเงิน = ราคาปิด  \nเส้นแดง = Reddit Volume Z-score  ช่วงที่ปริมาณพุ่ง (เส้นแดงสูง) ราคาขยับตามหรือไม่")
+    common.dual_chart(shown, "time", price_col, "zscore", price_title, "Reddit Volume Z-score", "s_price_z", "ราคาปิด",
+                      "Reddit Volume Z-score", right_color=common.C_Z, right_fmt=".2f")
+    st.caption("สีน้ำเงิน = ราคาปิด  \nสีแดง = Reddit Volume Z-score  ช่วงที่ปริมาณพุ่ง (สีแดงสูง) ราคาขยับตามหรือไม่")
 
 # ---- does higher sentiment go with a higher return?  every ticked ticker-hour with text is one sample
 st.subheader("ความรู้สึกยิ่งสูง ผลตอบแทนยิ่งสูงไหม")
