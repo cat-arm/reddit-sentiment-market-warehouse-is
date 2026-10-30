@@ -208,14 +208,12 @@ def logistic_view():
                    "แต่เมื่อ AUC ใกล้ 0.5 โมเดลโดยรวมก็ยังทำนายไม่ได้")
 
 
-# ---- one tab per kind of text (lazy: only the open tab is computed); inside it the texts of the market or of the asset itself ----------------
+# ---- one tab per kind of text; ALL of them are computed with the page (cached, so a second visit and every tab switch is instant) --------------
 variants = list(data.PANEL_VARIANTS)
 names_tabs = [data.PANEL_VARIANTS[v] for v in variants]
-tabs = st.tabs(names_tabs, key="p5_tabs", on_change="rerun")
+tabs = st.tabs(names_tabs)
 for tab, variant in zip(tabs, variants):
     with tab:
-        if not tab.open:
-            continue
         if variant == "baseline":
             family = "global"
             st.info("**Baseline ทิศทางสุ่ม คืออะไร:** กลุ่มควบคุมไว้เทียบ  ระบบเอาความรู้สึกจริงออก แล้วสุ่มทิศทางบวก/ลบ (เหมือนโยนเหรียญ) ใส่แทนในชั่วโมงเดียวกับ panel Global "
