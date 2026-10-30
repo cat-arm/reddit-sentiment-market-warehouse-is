@@ -214,11 +214,9 @@ else:
     errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
     zero = common.zero_rule()
     common.show(bars + errors + zero, width="stretch")
-    st.caption("เกณฑ์ตอนนี้: %s  
-"
+    st.caption("เกณฑ์ตอนนี้: %s  \n"
                "แท่ง \"สัญญาณบวก\" / \"สัญญาณลบ\" = ผลตอบแทนล่วงหน้าเฉลี่ยของชั่วโมงที่ผ่านเกณฑ์ และ Sentiment Score เป็นบวก / ลบ  "
-               "แท่งขวาสุด = ค่าเฉลี่ยของทุกชั่วโมงที่มีข้อความ (ไว้เทียบ)  
-"
+               "แท่งขวาสุด = ค่าเฉลี่ยของทุกชั่วโมงที่มีข้อความ (ไว้เทียบ)  \n"
                "เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีการขยับไม่ได้  จำนวนชั่วโมงที่ผ่านเกณฑ์ = %s"
                % (rule_text, "{:,}".format(len(hit))))
     listing = hit.sort_values("hour_utc", ascending=False).head(300).copy()
