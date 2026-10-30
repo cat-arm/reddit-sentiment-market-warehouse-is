@@ -45,6 +45,7 @@ EVENT_KEYS = ["h_z", "h_s", "h_n"]                              # the same idea 
 OVERVIEW_KEYS = ["d_z", "d_s"]                                  # Market and Sentiment: thresholds FILTER the whole page (0 = no filter)
 SENTIMENT_MODELS = ("VADER+FinBERT", "VADER", "FinBERT")         # DimSentimentSource.ModelUsed; the first is the proposal's
 DEFAULT_RANGE_DAYS = 365
+TIME_KEYS = ["f_range", "f_gran"]                              # DimTime: the date range and the chart level
 
 # ---- one chart design for every dashboard: one height, one colour per measure, one grid / axis style, one tooltip behaviour
 CHART_HEIGHT = 280
@@ -94,9 +95,13 @@ def epoch(day, end_of_day=False):
 
 
 def _restore(keys):
-    """Bring back values that a page without those widgets had dropped (see `_keep`)."""
+    """Bring back values that a page without those widgets had dropped (see `_keep`).  A value that is still there is
+    assigned to itself: Streamlit then treats it as set by the app, so a widget that the new page draws anew (a different
+    page = a new widget id) starts with that value instead of its default."""
     for key in keys:
-        if key not in st.session_state and ("_keep_" + key) in st.session_state:
+        if key in st.session_state:
+            st.session_state[key] = st.session_state[key]
+        elif ("_keep_" + key) in st.session_state:
             st.session_state[key] = st.session_state["_keep_" + key]
 
 
@@ -342,7 +347,8 @@ def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=
     group_keys = ["f_group_" + k for k in GROUP_LABELS]
     t_keys = ticker_keys()
     ss_keys = sentiment_source_keys()
-    _restore(t_keys + group_keys + s_keys + ss_keys + MAJORITY_KEYS + SIGNAL_KEYS + EVENT_KEYS + OVERVIEW_KEYS)
+    central = TIME_KEYS + t_keys + group_keys + s_keys + ss_keys + MAJORITY_KEYS + SIGNAL_KEYS + EVENT_KEYS + OVERVIEW_KEYS
+    _restore(central)
     if not sources:
         _keep(s_keys)
     if not sentiment:
@@ -376,6 +382,7 @@ def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=
     if majority:
         st.sidebar.divider()
         _majority_filter()
+    _keep(central)          # back up every central value after drawing: a page change can drop even the widgets the next page draws too
     return ticker, epoch(start_day), epoch(end_day, end_of_day=True), groups
 
 

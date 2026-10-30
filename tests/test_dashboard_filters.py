@@ -97,6 +97,33 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(tuple(at.sidebar.date_input(key="f_range").value),
                              (dt.date(2026, 8, 3), dt.date(2026, 8, 9)), page)
 
+    def test_a_choice_survives_pages_that_do_not_have_that_filter(self):
+        """Leave a page and come back: every filter is as it was, also those the pages in between do not draw (they work with
+        everything ticked in the background, the saved choice returns with the page that has the filter)."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=180).run()
+        at = at.switch_page(SENTIMENT_PAGE).run()
+        at.sidebar.slider(key="d_z").set_value(2.0)
+        at.sidebar.checkbox(key="f_ss_r/wallstreetbets").set_value(False)
+        at.sidebar.checkbox(key="f_maj_positive").set_value(False)
+        at.sidebar.radio(key="f_ss_model").set_value("VADER")
+        at.sidebar.checkbox(key="f_tk_SPY").set_value(False)
+        at.sidebar.radio(key="f_gran").set_value("รายเดือน").run()
+        for other in ("pages/3_Price_and_Return.py", "pages/5_Ranking_and_Signals.py", "pages/1_Reddit_Volume.py", ANALYSIS_PAGE):
+            at = at.switch_page(other).run()
+            self.assertEqual(len(at.exception), 0, "%s raised %s" % (other, [e.value for e in at.exception]))
+            self.assertFalse(at.sidebar.checkbox(key="f_tk_SPY").value, other)           # a filter shared by the pages stays
+            self.assertEqual(at.sidebar.radio(key="f_gran").value, "รายเดือน", other)    # also a radio, also when the next page draws it too
+        at = at.switch_page(SENTIMENT_PAGE).run()
+        self.assertEqual(at.sidebar.slider(key="d_z").value, 2.0)
+        self.assertFalse(at.sidebar.checkbox(key="f_ss_r/wallstreetbets").value)
+        self.assertFalse(at.sidebar.checkbox(key="f_maj_positive").value)
+        self.assertEqual(at.sidebar.radio(key="f_ss_model").value, "VADER")
+        self.assertFalse(at.sidebar.checkbox(key="f_tk_SPY").value)
+        self.assertEqual(at.sidebar.radio(key="f_gran").value, "รายเดือน")
+        at = at.switch_page(ANALYSIS_PAGE).run()                                         # two pages that both draw the model radio
+        self.assertEqual(at.sidebar.radio(key="f_ss_model").value, "VADER")
+
     def test_every_source_box_starts_ticked_and_changes_the_numbers(self):
         for page in SOURCE_PAGES:
             at = self.run_page(page)
