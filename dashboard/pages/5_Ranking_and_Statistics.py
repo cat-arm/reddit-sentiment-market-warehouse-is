@@ -72,13 +72,13 @@ def panel_stat(family, variant):
     return data.stat_table(samples) if not samples.empty else pd.DataFrame(columns=data.STAT_COLUMNS)
 
 
-# ---- cards: the panel of the texts that mention each chosen asset (every text), future horizons only ---------------------------------
-stat_all = panel_stat("Ticker", "all")
+# ---- cards: the default panel (every text of the market), future horizons only ---------------------------------
+stat_all = panel_stat("global", "all")
 base = stat_all[stat_all.target != "log_return"]
 hits, wins = base.win_hits.sum(), base.win_n.sum()
 win_p = stats.binomtest(int(hits), int(wins), 0.5).pvalue if wins else np.nan
 logi = q("logistic_results")
-logi_ok = logi[(logi.status == "ok") & (logi.panel == "panel_Ticker") & (logi.metric == "auc")]
+logi_ok = logi[(logi.status == "ok") & (logi.panel == "panel_global") & (logi.metric == "auc")]
 auc = logi_ok[(logi_ok.level == "all")] if len(groups_chosen) > 1 else logi_ok[(logi_ok.level == "big_group") & (logi_ok.big_group == groups_chosen[0])]
 
 
@@ -97,7 +97,7 @@ common.kpi_cards([
     p_card("spearman_p", "Spearman p-value"), p_card("pearson_p", "Pearson p-value"),
     ("Logistic AUC", "n/a" if auc.empty else "{:.3f}".format(auc.value.mean()),
      "AUC เฉลี่ยทุก Horizon ของ Logistic Regression (ผลเต็มช่วงข้อมูลของระบบ 7.4 ของกลุ่มสินทรัพย์ที่เลือก ไม่เปลี่ยนตามเวลา) 0.5 = เดา")])
-st.caption("การ์ดคิดจาก panel Ticker ทุกข้อความ (ข้อความที่พูดถึงสินทรัพย์นั้น) ของชั่วโมงที่ผ่านตัวกรองทุกอัน  ค่า p-value เป็นเชิงพรรณนา "
+st.caption("การ์ดคิดจาก panel Global ทุกข้อความ (ความรู้สึกรวมของทั้งตลาด เทียบกับผลตอบแทนของแต่ละสินทรัพย์ที่เลือก) ของชั่วโมงที่ผ่านตัวกรองทุกอัน  ค่า p-value เป็นเชิงพรรณนา "
            "เพราะข้อมูลรายชั่วโมงเกี่ยวเนื่องกันและกรอบเวลาซ้อนทับกัน")
 
 
@@ -174,7 +174,7 @@ for tab, variant in zip(tabs, variants):
                        "ถ้า panel จริงไม่ต่างจากแท็บนี้ แปลว่าไม่มีสัญญาณ")
         else:
             family = st.radio("ข้อความที่ใช้", list(data.PANEL_FAMILIES), format_func=data.PANEL_FAMILIES.get, horizontal=True, key="p5_family_" + variant)
-        panel_view(stat_all if (variant, family) == ("all", "Ticker") else panel_stat(family, variant), variant)
+        panel_view(stat_all if (variant, family) == ("all", "global") else panel_stat(family, variant), variant)
 
 # ---- regression: the stored Logistic Regression of the proposal ------------------------------------------------------------
 st.subheader("Logistic Regression: ความรู้สึกทำนายทิศทางราคา (ขึ้น/ลง) ได้ไหม")
@@ -204,7 +204,7 @@ else:
     common.show((rect + text).properties(height=34 * auc_grid.panel.nunique() + 30))
     st.caption("AUC ของแต่ละ panel และ Horizon (เหมือนรูป a3_auc)  แดง = สูงกว่า 0.5 น้ำเงิน = ต่ำกว่า 0.5  ค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 คือทำนายไม่ได้ดีกว่าเดา")
     horizon_pick = st.radio("Horizon ที่ดูสัมประสิทธิ์", list(TARGET_LABEL)[1:], horizontal=True, key="p5_log_h", label_visibility="collapsed")
-    one = lg[(lg.panel == "panel_Ticker") & (lg.horizon == horizon_pick)]
+    one = lg[(lg.panel == "panel_global") & (lg.horizon == horizon_pick)]
     coefs = one[one.metric.str.startswith("coef:")].assign(ตัวแปร=lambda d: d.metric.str[5:])
     imp = one[one.metric.str.startswith("group_importance:")].assign(กลุ่มตัวแปร=lambda d: d.metric.str[17:])
     if not coefs.empty:
@@ -212,7 +212,7 @@ else:
             y=alt.Y("ตัวแปร:N", sort="-x", title=None), x=alt.X("value:Q", title="สัมประสิทธิ์มาตรฐาน (เฉลี่ยข้าม 5 ส่วน)"),
             color=alt.condition(alt.datum.value > 0, alt.value("#2ca02c"), alt.value("#d62728")),
             tooltip=["ตัวแปร", alt.Tooltip("value:Q", title="สัมประสิทธิ์", format="+.4f")]).properties(height=330))
-        st.caption("สัมประสิทธิ์ของ panel Ticker ที่ Horizon %s: บวก = ตัวแปรสูงขึ้นแล้วโอกาสที่ราคาขึ้นสูงขึ้น (เขียว) ลบ = ตรงข้าม (แดง) ค่าที่ใกล้ 0 = ไม่มีอิทธิพล" % horizon_pick)
+        st.caption("สัมประสิทธิ์ของ panel Global ที่ Horizon %s: บวก = ตัวแปรสูงขึ้นแล้วโอกาสที่ราคาขึ้นสูงขึ้น (เขียว) ลบ = ตรงข้าม (แดง) ค่าที่ใกล้ 0 = ไม่มีอิทธิพล" % horizon_pick)
     if not imp.empty:
         common.show(alt.Chart(imp).mark_bar(color=common.C_PRICE).encode(
             y=alt.Y("กลุ่มตัวแปร:N", sort="-x", title=None), x=alt.X("value:Q", title="ความสำคัญของกลุ่ม (ผลรวม |สัมประสิทธิ์|)"),

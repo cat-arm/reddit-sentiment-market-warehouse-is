@@ -214,9 +214,10 @@ class FilterTests(unittest.TestCase):
         for measure in ("Pearson", "Win Rate", "Spearman"):
             at.radio(key="p5_measure_all").set_value(measure).run()
             self.assertEqual(len(at.exception), 0, "%s: %s" % (measure, [e.value for e in at.exception]))
-        at.radio(key="p5_family_all").set_value("global").run()
+        self.assertEqual(at.radio(key="p5_family_all").value, "global")                    # the default: the sentiment of the whole market
+        at.radio(key="p5_family_all").set_value("Ticker").run()
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
-        at.radio(key="p5_family_all").set_value("Ticker")
+        at.radio(key="p5_family_all").set_value("global")
         for scope in at.radio(key="p5_scope").options:
             at.radio(key="p5_scope").set_value(scope).run()
             self.assertEqual(len(at.exception), 0, scope)
