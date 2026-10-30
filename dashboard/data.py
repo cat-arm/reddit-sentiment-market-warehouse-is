@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 from etl.common import NEUTRAL_BAND
 from etl.reddit_features import volume_features
@@ -641,39 +642,115 @@ def ticker_period_stats(db_path, start, end, horizon):
 HORIZON_LABELS = {"log_return": "Current Return", "1h": "1h", "2h": "2h", "3h": "3h", "6h": "6h", "12h": "12h"}
 
 
-def correlation_results(db_path):
-    """A1: Pearson and Spearman correlation of the ticker's own Sentiment Score (panel_Ticker) with the Current Return
-    ('log_return') and the future returns, per ticker.  p_value = raw, p_bh = Benjamini-Hochberg (EXTENSION).  NULL = not
-    enough data (n < 30).  Full-sample results: they do not follow the time filter."""
-    return _read(db_path, """
-        SELECT ticker, big_group, horizon, metric_name AS method, metric_value AS rho, p_value, p_value_bh AS p_bh,
-               n_samples AS n, status
-        FROM analysis_results WHERE analysis = 'correlation' AND panel_name = 'panel_Ticker' AND level = 'ticker'
-          AND predictor = 'sentiment_mean' AND metric_name IN ('pearson', 'spearman')""")
+STAT_TARGETS = ("log_return", "1h", "2h", "3h", "6h", "12h")      # Current Return, then the future returns of the proposal
+STAT_COLUMN = {"log_return": "log_return", **{h: "future_return_" + h for h in HORIZONS}}
+STAT_COLUMNS = ["ticker", "target", "n", "spearman_rho", "spearman_p", "spearman_bh", "pearson_rho", "pearson_p", "pearson_bh",
+                "win_n", "win_hits", "winrate", "win_p", "win_bh"]
+PANEL_SUBSETS = {"all": "ทุกข้อความที่พูดถึงสินทรัพย์", "strong": "ความรู้สึกชัดเจน (|s| ≥ 0.05)",
+                 "quality": "ความรู้สึกคุณภาพ (|s| ≥ 0.30)", "spike": "ปริมาณพุ่ง (Z-score > 1.5)"}
+STORED_PANELS = {"panel_Ticker": "Ticker: ข้อความที่พูดถึงสินทรัพย์นั้น", "panel_Ticker_strong": "Ticker strong (|s| ≥ 0.05)",
+                 "panel_Ticker_quality": "Ticker quality (|s| ≥ 0.30)", "panel_Ticker_spike": "Ticker spike (Z > 1.5)",
+                 "panel_global": "Global: ความรู้สึกทั้งตลาด", "panel_global_strong": "Global strong",
+                 "panel_global_quality": "Global quality", "panel_global_spike": "Global spike",
+                 "panel_baseline": "Baseline: ทิศทางสุ่ม (ไว้เทียบ)"}
 
 
-def winrate_results(db_path):
-    """A2: Historical Win Rate (%) of the sign of the sentiment against the direction of the future return, the baseline
-    (always-up rate, %), the Binomial p-value and the number of hours, per ticker and horizon (panel_Ticker)."""
-    df = _read(db_path, """
-        SELECT ticker, big_group, horizon, metric_name, metric_value * 100.0 AS value, p_value, n_samples AS n
-        FROM analysis_results WHERE analysis = 'winrate' AND panel_name = 'panel_Ticker' AND level = 'ticker'
-          AND predictor = 'sign(sentiment_mean)' AND metric_name IN ('winrate', 'baseline_winrate')""")
-    win = df[df.metric_name == "winrate"].rename(columns={"value": "winrate"}).drop(columns="metric_name")
-    base = df[df.metric_name == "baseline_winrate"][["ticker", "horizon", "value"]].rename(columns={"value": "baseline"})
-    return win.merge(base, on=["ticker", "horizon"], how="left")
+def bh_adjust(p):
+    """Benjamini-Hochberg adjusted p-values of an array (NaN stays NaN and is not counted as a test)."""
+    p = np.asarray(p, dtype=float)
+    out = np.full(p.shape, np.nan)
+    ok = np.where(~np.isnan(p))[0]
+    if len(ok) == 0:
+        return out
+    order = ok[np.argsort(p[ok])]
+    scaled = p[order] * len(ok) / np.arange(1, len(ok) + 1)
+    out[order] = np.minimum(np.minimum.accumulate(scaled[::-1])[::-1], 1.0)
+    return out
+
+
+def panel_subset(samples, name, z="zscore", sentiment="sentiment_mean"):
+    """The hours of one live panel: 'all' = every hour with text, 'strong' = |Sentiment Score| >= 0.05,
+    'quality' = |Sentiment Score| >= 0.30, 'spike' = Reddit Volume Z-score > 1.5 (the fixed values of the proposal)."""
+    if name == "strong":
+        return samples[samples[sentiment].abs() >= 0.05]
+    if name == "quality":
+        return samples[samples[sentiment].abs() >= 0.30]
+    if name == "spike":
+        return samples[samples[z] > 1.5]
+    return samples
+
+
+def stat_table(samples, min_n=30, sentiment="sentiment_mean"):
+    """A1 / A2 computed live on the ticker-hours of the page: per ticker and target (the Current Return and the future returns
+    1h .. 12h) the Spearman and Pearson correlation of the Sentiment Score with the return and the Historical Win Rate (share of
+    hours in which the sign of the sentiment equals the direction of the return), each with its p-value (Binomial against 50%
+    for the win rate) and the Benjamini-Hochberg p-value over the tickers.  Pairs with a NULL are dropped (never 0); a return of
+    exactly 0 or a sentiment of exactly 0 is not a direction; fewer than `min_n` pairs -> NaN.
+    `samples` has `ticker`, the sentiment column and `log_return`, `future_return_1h` .. `future_return_12h`.
+    -> DataFrame(STAT_COLUMNS), one row per ticker and target (target = a key of STAT_TARGETS)."""
+    rows = []
+    for ticker, part in samples.groupby("ticker"):
+        for target in STAT_TARGETS:
+            pair = part[[sentiment, STAT_COLUMN[target]]].dropna()
+            pair.columns = ["s", "r"]
+            row = dict.fromkeys(STAT_COLUMNS[3:], np.nan)
+            row.update(ticker=ticker, target=target, n=len(pair))
+            if len(pair) >= min_n and pair.s.nunique() > 1 and pair.r.nunique() > 1:
+                sp = stats.spearmanr(pair.s, pair.r)
+                pe = stats.pearsonr(pair.s, pair.r)
+                row.update(spearman_rho=float(sp.statistic), spearman_p=float(sp.pvalue),
+                           pearson_rho=float(pe.statistic), pearson_p=float(pe.pvalue))
+            if target != "log_return":                          # a win rate needs a FUTURE return
+                directional = pair[(pair.s != 0) & (pair.r != 0)]
+                if len(directional) >= min_n:
+                    hits = int((np.sign(directional.s) == np.sign(directional.r)).sum())
+                    row.update(win_n=len(directional), win_hits=hits, winrate=100.0 * hits / len(directional),
+                               win_p=float(stats.binomtest(hits, len(directional), 0.5).pvalue))
+            rows.append(row)
+    out = pd.DataFrame(rows, columns=STAT_COLUMNS[:2] + STAT_COLUMNS[2:])
+    if out.empty:
+        return out
+    for method, p_col, bh_col in (("spearman", "spearman_p", "spearman_bh"), ("pearson", "pearson_p", "pearson_bh"), ("win", "win_p", "win_bh")):
+        out[bh_col] = out.groupby("target")[p_col].transform(lambda s: pd.Series(bh_adjust(s.to_numpy()), index=s.index))
+    return out
+
+
+def stored_stat_table(db_path, panel="panel_Ticker"):
+    """A1 / A2 of the proposal's system 7.4 for one of its nine panels, as stored in `analysis_results` (the whole data set,
+    so the time / community / majority filters do not change it), in the same shape as `stat_table`.  NULL = not enough
+    data (n < 30)."""
+    predictor, win_predictor = ("random_direction",) * 2 if panel == "panel_baseline" else ("sentiment_mean", "sign(sentiment_mean)")
+    cor = _read(db_path, """
+        SELECT ticker, horizon AS target, metric_name AS method, metric_value AS rho, p_value AS p, p_value_bh AS bh, n_samples AS n
+        FROM analysis_results WHERE analysis = 'correlation' AND panel_name = ? AND level = 'ticker' AND predictor = ?
+          AND metric_name IN ('pearson', 'spearman')""", (panel, predictor))
+    win = _read(db_path, """
+        SELECT ticker, horizon AS target, metric_value * 100.0 AS winrate, p_value AS win_p, p_value_bh AS win_bh, n_samples AS win_n
+        FROM analysis_results WHERE analysis = 'winrate' AND panel_name = ? AND level = 'ticker' AND predictor = ?
+          AND metric_name = 'winrate'""", (panel, win_predictor))
+    out = None
+    for method in ("spearman", "pearson"):
+        part = cor[cor.method == method].rename(columns={"rho": method + "_rho", "p": method + "_p", "bh": method + "_bh"}).drop(columns="method")
+        part = part.rename(columns={"n": "n_" + method})
+        out = part if out is None else out.merge(part, on=["ticker", "target"], how="outer")
+    out["n"] = out[["n_spearman", "n_pearson"]].max(axis=1)
+    out = out.drop(columns=["n_spearman", "n_pearson"]).merge(win, on=["ticker", "target"], how="outer")
+    out["win_hits"] = np.round(out.winrate / 100.0 * out.win_n)
+    for col in STAT_COLUMNS:
+        if col not in out:
+            out[col] = np.nan
+    out["n"] = out.n.fillna(out.win_n)
+    return out[STAT_COLUMNS]
 
 
 def logistic_results(db_path):
-    """A3: Logistic Regression (TimeSeriesSplit 5 folds, gap 12) of the up/down of the future return: AUC, its spread over
-    the folds, standardized coefficients and the importance of each variable group, for all tickers pooled ('all') and
-    per asset class ('big_group'); panel_baseline = the random-direction yardstick.
-    -> DataFrame(panel, level, big_group, horizon, metric, value, n, status)."""
+    """A3: Logistic Regression (TimeSeriesSplit 5 folds, gap 12) of the up/down of the future return, for the nine panels: AUC,
+    its spread over the folds, standardized coefficients and the importance of each variable group, for all tickers pooled
+    ('all') and per asset class ('big_group').  -> DataFrame(panel, level, big_group, horizon, metric, value, n, status)."""
     return _read(db_path, """
         SELECT panel_name AS panel, level, big_group, horizon, metric_name AS metric, metric_value AS value,
                n_samples AS n, status
-        FROM analysis_results WHERE analysis = 'logistic' AND panel_name IN ('panel_Ticker', 'panel_baseline')
-          AND level IN ('all', 'big_group')""")
+        FROM analysis_results WHERE analysis = 'logistic' AND level IN ('all', 'big_group')""")
 
 
 def significant_share(df, p="p_value", alpha=0.05):

@@ -29,6 +29,10 @@ from etl.common import DEFAULT_DB, connect
 
 WINDOW = 24
 MIN_PRIOR = 6
+# A window whose counts are all equal has a standard deviation of exactly 0, but pandas' rolling std keeps running sums and can
+# leave a residue of about 1e-6 there; dividing by it gave Z-scores of millions (256 ticker-hours of the first build).  The
+# counts are integers, so a real std is never below 0.19 (one text among 24 hours): anything below the floor is a numerical zero.
+STD_FLOOR = 1e-3
 LAGS = (1, 2, 3, 6, 12)
 HOUR = 3600
 FEATURES = (["reddit_volume_zscore_24", "reddit_volume_lag_1h"]
@@ -40,7 +44,7 @@ def volume_features(volume):
     prior = volume.shift(1)
     roll = prior.rolling(WINDOW, min_periods=MIN_PRIOR)
     mean, std = roll.mean(), roll.std(ddof=0)
-    zscore = (volume - mean) / std.where(std > 0)
+    zscore = (volume - mean) / std.where(std > STD_FLOOR)
     return zscore, prior
 
 

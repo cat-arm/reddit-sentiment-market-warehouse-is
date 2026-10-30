@@ -21,6 +21,38 @@ def get(out, variant, ticker, i):
 
 
 class FeatureTests(unittest.TestCase):
+    def test_a_numerically_zero_std_is_not_a_spike(self):
+        """Equal counts in the window: the Z-score is undefined (NaN), even when the rolling std keeps a residue of 1e-7."""
+        from etl.reddit_features import STD_FLOOR, volume_features
+        volume = pd.DataFrame({"A": [1.0] * 30 + [5.0]})
+        self.assertTrue(np.isnan(volume_features(volume)[0].iloc[-1, 0]))
+        residue = pd.DataFrame({"A": [3.0] * 40 + [9.0]})
+        original = pd.DataFrame.rolling
+
+        class Fake:
+            """A rolling window whose std is wrong by 1e-7, like pandas' running sums on long series."""
+            def __init__(self, inner):
+                self.inner = inner
+
+            def mean(self):
+                return self.inner.mean()
+
+            def std(self, ddof=0):
+                return self.inner.std(ddof=ddof) + 1e-7
+
+        try:
+            pd.DataFrame.rolling = lambda self, *a, **k: Fake(original(self, *a, **k))
+            z = volume_features(residue)[0].iloc[-1, 0]
+        finally:
+            pd.DataFrame.rolling = original
+        self.assertTrue(np.isnan(z), "a residue below the floor must not give a Z-score of %s" % z)
+        self.assertLess(1e-7, STD_FLOOR)
+
+    def test_a_real_small_std_still_gives_a_zscore(self):
+        volume = pd.DataFrame({"A": [0.0] * 23 + [1.0] + [4.0]})        # one text among the 24 hours before: std 0.2
+        z = __import__("etl.reddit_features", fromlist=["x"]).volume_features(volume)[0].iloc[-1, 0]
+        self.assertGreater(z, 10)
+
     def test_zscore_excludes_current_hour_and_zero_fills_gaps(self):
         # hours 0..9 volume = 10 except hour 3 missing (=0 texts); hour 10 spikes to 40
         spec = {i: (10, 0.1) for i in range(10) if i != 3}

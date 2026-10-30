@@ -26,7 +26,7 @@ reddit-sentiment-market-warehouse/
   db/                         ✅  schema.sql (รูปที่ 2–4), indexes.sql
   etl/                        ✅  T1–T5, S1–S5, M1, P1–P4, Fact loaders (ดูตารางข้อ 3)
   analysis/                   ✅  correlation, winrate, logistic, evaluate, signals, results_store, figure_style (สี/คำอธิบายของ heatmap)
-  dashboard/                  ✅  Streamlit หน้าแรก + 7 หน้า (หน้า 6 Hot Events = ส่วนขยาย; data.py = ชั้น query อ่านอย่างเดียว)
+  dashboard/                  ✅  Streamlit หน้าแรก + 7 หน้า (หน้า 5 Ranking and Statistics, หน้า 7 Lead and Lag) (หน้า 6 Hot Events = ส่วนขยาย; data.py = ชั้น query อ่านอย่างเดียว)
   steps/                      ✅  ตัวเรียกที่มีเลขลำดับ 00–33 (เริ่มที่ 01) ดู steps/README.md
   scripts/                    ✅  ตรวจ/ทดสอบ/สรุปผล: system_tests, dashboard_kpi_check, rule_validation(+extras), neutral_band, super_signal, make_book_tables, build_final_reports ฯลฯ
   reports/                    —   (ใช้ scripts/make_book_tables.py แทน → output/tables, output/figures/book_*)
@@ -59,7 +59,8 @@ reddit-sentiment-market-warehouse/
 | 8.4 ทดสอบระบบกับข้อมูลจริง (ตรรกะ + เชื่อมโยง) | Q | `scripts/system_tests.py` | `output/reports/system_tests.md` | ✅ 2026-10-25 |
 | 8.4 ทดสอบ dashboard (ตัวเลขเทียบ SQL ตรง) | Q4 | `scripts/dashboard_kpi_check.py` (step 30), `tests/test_dashboard_smoke.py` | `output/reports/dashboard_kpi_check.md` | ✅ 2026-10-25 |
 | ส่วนขยาย: หน้า Hot Events (ชั่วโมงคึกคัก + ช่วงความเชื่อมั่น) | D6 | `dashboard/pages/6_Hot_Events.py`, `dashboard.data.hot_events` | — | ✅ 2026-10-25 |
-| ส่วนขยาย: หน้า 7 Statistical Analysis (A1 Pearson/Spearman + p-value, A2 Win Rate, A3 Logistic + ใครขยับก่อน + drill-down DimDetectionConfig) | — | `dashboard/pages/7_Statistical_Analysis.py`, `dashboard/data.py` (`correlation_results`, `winrate_results`, `logistic_results`, `lag_correlation`), `tests/test_dashboard_filters.py`, `tests/test_dashboard_sentiment.py` | อ่าน `analysis_results` (ผลเต็มช่วงข้อมูล) + คำนวณสดจาก `reddit_hourly_community` | ✅ 2026-10-30 |
+| 7.5 แดชบอร์ดที่ 2 Ranking and Statistics (Win Rate, p-value Spearman/Pearson, Logistic; heat map แบบรูป a1–a3) | — | `dashboard/pages/5_Ranking_and_Statistics.py`, `dashboard/data.py` (`stat_table`, `stored_stat_table`, `logistic_results`, `bh_adjust`, `panel_subset`), `tests/test_dashboard_filters.py`, `tests/test_dashboard_sentiment.py` | คำนวณสดจาก `reddit_hourly_community` + `market_hourly_features` และอ่าน `analysis_results` (9 panel) | ✅ 2026-10-30 |
+| ส่วนขยาย: หน้า 7 Lead and Lag (ใครขยับก่อน ความรู้สึกหรือราคา) | — | `dashboard/pages/7_Lead_and_Lag.py`, `dashboard/data.py` (`lag_correlation`, `past_return`, `return_buckets`) | คำนวณสดจากชั่วโมงที่ผ่านตัวกรอง | ✅ 2026-10-30 |
 | 7.4 ส่วนขยาย: เกณฑ์ที่เข้มขึ้น super quality / super spike | — | `scripts/super_signal_sensitivity.py` (step 27) | `output/reports/super_signal_sensitivity.md/.csv` | ✅ 2026-10-25 |
 | 7.6 ส่วนขยาย: ความแม่นของเกณฑ์ Z-score × ความรู้สึก (กริด) | — | `scripts/z_sentiment_grid.py` (step 32) | `output/reports/z_sentiment_grid.md/.csv` | ✅ 2026-10-25 |
 | สรุปเล่ม: ส่วนที่ทำเกิน proposal / การทดสอบและสมมติฐาน / สรุปผลสุดท้าย | — | `scripts/build_final_reports.py` (step 28) | `output/reports/final/1_*.md, 2_*.md, 3_*.md` | ✅ 2026-10-25 |

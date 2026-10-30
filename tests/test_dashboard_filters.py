@@ -12,11 +12,12 @@ ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
 SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # system 7.1: DimSource filter
 SENTIMENT_PAGE = "pages/4_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
-ANALYSIS_PAGE = "pages/7_Statistical_Analysis.py"                              # 7.5-3: deeper analysis (extension)
-DETECTION_PAGES = {"pages/5_Ranking_and_Signals.py": ["s_z", "s_s", "s_h"], "pages/6_Hot_Events.py": ["h_z", "h_s", "h_n"],
-                   SENTIMENT_PAGE: ["d_z", "d_s"]}
+RANKING_PAGE = "pages/5_Ranking_and_Statistics.py"                            # 7.5-2: p-values, win rate, regression
+ANALYSIS_PAGE = "pages/7_Lead_and_Lag.py"                                      # extension: who moves first
+DETECTION_PAGES = {"pages/6_Hot_Events.py": ["h_z", "h_s", "h_n"], SENTIMENT_PAGE: ["d_z", "d_s"], RANKING_PAGE: ["d_z", "d_s"],
+                   ANALYSIS_PAGE: ["d_z", "d_s"]}
 MAJORITY_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE, *DETECTION_PAGES}
-SENTIMENT_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE}
+SENTIMENT_PAGES = {SENTIMENT_PAGE, RANKING_PAGE, ANALYSIS_PAGE}
 COUNT_PAGES = SOURCE_PAGES | {"pages/3_Price_and_Return.py"}                  # first card = a count that follows the ticks
 TIME_KEYS = ["f_range", "f_gran"]
 COMMUNITIES = ["r/wallstreetbets", "r/stocks", "r/investing", "r/StockMarket", "r/options", "r/CryptoCurrency"]
@@ -28,7 +29,7 @@ TICKERS = ["AAPL", "AMC", "AMD", "BITO", "BRK-B", "COIN", "GME", "HOOD", "IBIT",
            "MSTR", "NVDA", "PLTR", "QQQ", "SPY", "TSLA", "XOM", "CL=F", "ES=F", "GC=F", "NG=F", "NQ=F", "RTY=F",
            "BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD", "SOL-USD", "XRP-USD"]
 PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
-         "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Signals.py", "pages/6_Hot_Events.py",
+         "pages/4_Market_and_Sentiment.py", RANKING_PAGE, "pages/6_Hot_Events.py",
          ANALYSIS_PAGE]
 MULTI_PAGES = set(PAGES[1:])                                                  # every dashboard takes several tickers
 
@@ -109,7 +110,7 @@ class FilterTests(unittest.TestCase):
         at.sidebar.radio(key="f_ss_model").set_value("VADER")
         at.sidebar.checkbox(key="f_tk_SPY").set_value(False)
         at.sidebar.radio(key="f_gran").set_value("รายเดือน").run()
-        for other in ("pages/3_Price_and_Return.py", "pages/5_Ranking_and_Signals.py", "pages/1_Reddit_Volume.py", ANALYSIS_PAGE):
+        for other in ("pages/3_Price_and_Return.py", RANKING_PAGE, "pages/1_Reddit_Volume.py", ANALYSIS_PAGE):
             at = at.switch_page(other).run()
             self.assertEqual(len(at.exception), 0, "%s raised %s" % (other, [e.value for e in at.exception]))
             self.assertFalse(at.sidebar.checkbox(key="f_tk_SPY").value, other)           # a filter shared by the pages stays
@@ -203,25 +204,50 @@ class FilterTests(unittest.TestCase):
             at = at.run()
             self.assertEqual(len(at.exception), 0, "%s: %s" % (page, [e.value for e in at.exception]))
 
-    def test_statistical_analysis_page(self):
-        """Stored analyses (A1-A3) follow the ticker filter; the live part follows every filter; nothing ticked = cards 0."""
-        at = self.run_page(ANALYSIS_PAGE)
-        self.assertEqual([m.label for m in at.metric], ["Spearman ที่ p < 0.05", "ผ่านการปรับ Benjamini-Hochberg", "Win Rate ที่ p < 0.05",
-                                                         "Logistic AUC เฉลี่ย"])
+    def test_ranking_and_statistics_page(self):
+        """Same filters as Market and Sentiment; the cards and the first tab follow them; two tickers = two tickers; nothing = 0."""
+        at = self.run_page(RANKING_PAGE)
+        self.assertEqual([m.label for m in at.metric], ["Historical Win Rate", "Spearman ที่ p < 0.05", "Logistic AUC เฉลี่ย", "Reddit Volume Z-score สูงสุด"])
         full = [m.value for m in at.metric]
-        self.assertRegex(full[0], r"^\d+ / \d+$")
-        for key, values in (("a_method", ["Pearson (เชิงเส้น)"]), ("a_horizon", ["Current Return", "12h"]), ("a_win_horizon", ["1h", "12h"]),
-                            ("a_log_horizon", ["1h", "12h"]), ("s_past_hours", ["2 ชั่วโมงก่อนหน้า", "12 ชั่วโมงก่อนหน้า"])):
-            for value in values:
-                at.radio(key=key).set_value(value).run()
-                self.assertEqual(len(at.exception), 0, "%s=%s: %s" % (key, value, [e.value for e in at.exception]))
-        at = tick_only(at, ["SPY"])
+        self.assertRegex(full[1], r"^\d+ / \d+$")
+        for measure in ("Pearson", "Win Rate", "Spearman"):
+            at.radio(key="p5_measure_all").set_value(measure).run()
+            self.assertEqual(len(at.exception), 0, "%s: %s" % (measure, [e.value for e in at.exception]))
+        for scope in at.radio(key="p5_scope").options:
+            at.radio(key="p5_scope").set_value(scope).run()
+            self.assertEqual(len(at.exception), 0, scope)
+        for h in ("1h", "12h"):
+            at.radio(key="p5_log_h").set_value(h).run()
+            self.assertEqual(len(at.exception), 0, h)
+        at = tick_only(at, ["SPY", "QQQ"])
         self.assertEqual(len(at.exception), 0)
-        self.assertNotEqual([m.value for m in at.metric], full)                 # the cards follow the tickers
+        self.assertNotEqual([m.value for m in at.metric], full, "the cards follow the tickers")
+        table = [d for d in at.dataframe if "p ต่ำสุด" in list(d.value.columns)]
+        self.assertEqual(len(table), 1)
+        self.assertEqual(sorted(table[0].value["สินทรัพย์"].str.split(" · ").str[0]), ["QQQ", "SPY"])        # two tickers chosen, two shown
+        at.sidebar.slider(key="d_s").set_value(0.6).run()                       # a Sentiment Threshold removes hours: fewer pairs
+        self.assertEqual(len(at.exception), 0)
+        at.sidebar.slider(key="d_s").set_value(0.0)
         for key in TICKERS:
             at.sidebar.checkbox(key="f_tk_" + key).set_value(False)
         at = at.run()
         self.assertEqual([m.value for m in at.metric], ["0"] * 4)
+
+    def test_lead_and_lag_page(self):
+        """The live analysis follows every filter; nothing ticked = cards 0."""
+        at = self.run_page(ANALYSIS_PAGE)
+        self.assertEqual(len(at.metric), 3)
+        full = [m.value for m in at.metric]
+        for hours in ("2 ชั่วโมงก่อนหน้า", "12 ชั่วโมงก่อนหน้า"):
+            at.radio(key="s_past_hours").set_value(hours).run()
+            self.assertEqual(len(at.exception), 0, hours)
+        at = tick_only(at, ["SPY"])
+        self.assertEqual(len(at.exception), 0)
+        self.assertNotEqual([m.value for m in at.metric], full)
+        for key in TICKERS:
+            at.sidebar.checkbox(key="f_tk_" + key).set_value(False)
+        at = at.run()
+        self.assertEqual([m.value for m in at.metric], ["0"] * 3)
 
     def test_system_75_dimension_filters_change_the_numbers(self):
         """DimSentimentSource, DimMajoritySentiment and DimDetectionConfig are real filters, not decoration."""
@@ -270,18 +296,6 @@ class FilterTests(unittest.TestCase):
             at.sidebar.checkbox(key=key).set_value(False)
         at = at.run()
         self.assertTrue(all(m.value == "0" for m in at.metric), "no community ticked = nothing")
-        # ranking and signals: thresholds and majority statuses change the detected signals
-        page = "pages/5_Ranking_and_Signals.py"
-        at = self.run_page(page)
-        base = at.metric[0].value
-        at.sidebar.slider(key="s_z").set_value(3.0).run()
-        self.assertNotEqual(at.metric[0].value, base, "Z-score Threshold changes the signals")
-        at.sidebar.slider(key="s_z").set_value(1.5)
-        at.sidebar.checkbox(key="f_maj_positive").set_value(False).run()
-        self.assertNotEqual(at.metric[0].value, base, "majority status changes the signals")
-        for key in MAJORITY_KEYS:
-            at.sidebar.checkbox(key=key).set_value(False)
-        self.assertTrue(all(m.value == "0" for m in at.run().metric))
         page = "pages/6_Hot_Events.py"
         at = self.run_page(page)
         base = at.metric[0].value
@@ -419,6 +433,23 @@ class DesignTests(unittest.TestCase):
                 inner = [type(c).__name__ for c in column.children.values()]
                 self.assertNotIn("UnknownElement", inner, "%s has a chart inside a column" % page)
                 self.assertNotIn("Dataframe", inner, "%s has a table inside a column" % page)
+
+
+@unittest.skipUnless(DB.exists(), "needs output/reddit.sqlite3")
+class StoredStatTests(unittest.TestCase):
+    def test_every_panel_has_the_shape_of_the_live_table(self):
+        from dashboard import data
+        for panel in data.STORED_PANELS:
+            out = data.stored_stat_table(str(DB), panel)
+            self.assertEqual(list(out.columns), data.STAT_COLUMNS, panel)
+            self.assertEqual(out.ticker.nunique(), 34, panel)
+            self.assertEqual(set(out.target), set(data.STAT_TARGETS), panel)
+
+    def test_the_stored_numbers_match_the_stored_figures(self):
+        from dashboard import data
+        row = data.stored_stat_table(str(DB), "panel_Ticker").set_index(["ticker", "target"])
+        self.assertAlmostEqual(row.loc[("SPY", "log_return"), "spearman_rho"], 0.064, places=3)     # the heat map of A1: SPY, Current Return
+        self.assertAlmostEqual(row.loc[("BITO", "3h"), "winrate"], 54.8, places=1)                    # the heat map of A2: BITO, 3h
 
 
 if __name__ == "__main__":

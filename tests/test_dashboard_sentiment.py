@@ -179,6 +179,63 @@ class MaskThresholdsTests(unittest.TestCase):
         pd.testing.assert_frame_equal(frame, self.frame())
 
 
+class StatTableTests(unittest.TestCase):
+    def samples(self, n=200, seed=0, slope=0.0):
+        rng = np.random.default_rng(seed)
+        s = rng.normal(0, 0.3, n)
+        frame = {"ticker": ["AAA"] * n, "sentiment_mean": s, "zscore": rng.normal(0, 1, n)}
+        for target, col in data.STAT_COLUMN.items():
+            frame[col] = slope * s + rng.normal(0, 1, n)
+        return pd.DataFrame(frame)
+
+    def test_bh_adjust_by_hand(self):
+        p = np.array([0.01, 0.04, 0.03, np.nan, 0.20])
+        adj = data.bh_adjust(p)
+        self.assertTrue(np.isnan(adj[3]))
+        # sorted: 0.01 (rank 1), 0.03 (2), 0.04 (3), 0.20 (4) of 4 tests -> 0.04, 0.06, 0.0533.., 0.20 then monotone from the top
+        self.assertAlmostEqual(adj[0], 0.04)
+        self.assertAlmostEqual(adj[2], 0.16 / 3)
+        self.assertAlmostEqual(adj[1], 0.16 / 3)
+        self.assertAlmostEqual(adj[4], 0.20)
+        self.assertTrue((adj[~np.isnan(adj)] >= p[~np.isnan(p)]).all())
+
+    def test_a_real_relation_is_found_and_noise_is_not(self):
+        real = data.stat_table(self.samples(slope=1.0)).set_index("target")
+        self.assertLess(real.loc["1h", "spearman_p"], 1e-3)
+        self.assertGreater(real.loc["1h", "spearman_rho"], 0.2)
+        self.assertGreater(real.loc["1h", "winrate"], 55)
+        self.assertLess(real.loc["1h", "win_p"], 0.1)
+        noise = data.stat_table(self.samples(slope=0.0, seed=3)).set_index("target")
+        self.assertGreater(noise.loc["1h", "spearman_p"], 0.01)
+
+    def test_one_row_per_ticker_and_target_and_no_win_rate_for_the_current_return(self):
+        out = data.stat_table(pd.concat([self.samples(), self.samples(seed=1).assign(ticker="BBB")]))
+        self.assertEqual(len(out), 2 * len(data.STAT_TARGETS))
+        self.assertEqual(list(out.columns), data.STAT_COLUMNS)
+        current = out[out.target == "log_return"]
+        self.assertTrue(current.winrate.isna().all() and current.spearman_rho.notna().all())
+
+    def test_too_few_pairs_give_nan_not_zero(self):
+        out = data.stat_table(self.samples(n=20))
+        self.assertTrue(out.spearman_rho.isna().all() and out.winrate.isna().all())
+        self.assertTrue((out.n == 20).all())
+
+    def test_a_null_return_is_dropped_and_zero_is_not_a_direction(self):
+        s = self.samples(n=100, slope=1.0)
+        s.loc[:49, "future_return_1h"] = np.nan                    # half the returns are missing
+        s.loc[50:59, "future_return_1h"] = 0.0                      # ten returns of exactly 0
+        row = data.stat_table(s).set_index("target").loc["1h"]
+        self.assertEqual(row.n, 50)                                 # the NaN rows are gone (the zeros stay in the correlation)
+        self.assertEqual(row.win_n, 40)                             # the zeros are not a direction
+
+    def test_the_panel_subsets(self):
+        df = pd.DataFrame({"sentiment_mean": [0.02, 0.1, -0.4, 0.6], "zscore": [2.0, 0.1, 1.6, -1.0]})
+        self.assertEqual(len(data.panel_subset(df, "all")), 4)
+        self.assertEqual(list(data.panel_subset(df, "strong").index), [1, 2, 3])
+        self.assertEqual(list(data.panel_subset(df, "quality").index), [2, 3])
+        self.assertEqual(list(data.panel_subset(df, "spike").index), [0, 2])
+
+
 class SignificantShareTests(unittest.TestCase):
     def test_rows_without_a_p_value_are_not_tests(self):
         df = pd.DataFrame({"p_value": [0.01, 0.2, np.nan, 0.05, 0.049]})
