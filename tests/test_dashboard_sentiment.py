@@ -64,16 +64,30 @@ class SentimentBucketsTests(unittest.TestCase):
         s = np.linspace(-1, 1, 500)
         return pd.DataFrame({"sentiment_mean": s, "ret": slope * s + rng.normal(0, 0.01, 500)})
 
+    def test_levels_follow_the_fixed_cuts(self):
+        edge = [-0.31, -0.30, -0.06, -0.05, -0.049, 0.0, 0.049, 0.05, 0.30, 0.31, np.nan]
+        lvl = data.sentiment_level(edge)
+        self.assertEqual(list(lvl.iloc[:10]), [0, 1, 1, 1, 2, 2, 2, 3, 3, 4])    # -0.05 / +0.05 are not neutral (VADER edges)
+        self.assertTrue(np.isnan(lvl.iloc[10]))
+
     def test_a_rising_relation_gives_rising_bars(self):
         g = data.sentiment_buckets(self.frame(1.0), "ret")
-        self.assertEqual(list(g.n), [100] * 5)                           # five groups of equal size
-        self.assertTrue((g["mean"].diff().dropna() > 0).all())          # the higher the sentiment, the higher the mean
-        self.assertTrue((g.lo.iloc[1:].values >= g.hi.iloc[:-1].values).all())     # groups follow each other without overlap
+        self.assertEqual(list(g.bucket), [0, 1, 2, 3, 4])
+        self.assertEqual(int(g.n.sum()), 500)
+        self.assertTrue((g["mean"].diff().dropna() > 0).all())
+        self.assertTrue((g.sent_mean.diff().dropna() > 0).all())
         self.assertTrue(((g.ci_lo < g["mean"]) & (g["mean"] < g.ci_hi)).all())
 
-    def test_no_relation_gives_bars_near_zero_with_intervals_over_zero(self):
+    def test_no_relation_gives_intervals_over_zero(self):
         g = data.sentiment_buckets(self.frame(0.0), "ret")
         self.assertTrue(((g.ci_lo < 0) & (g.ci_hi > 0)).all())
+
+    def test_an_empty_level_stays_in_with_zero_samples(self):
+        df = self.frame(1.0)
+        df = df[df.sentiment_mean.abs() <= 0.30]                        # no very-negative / very-positive hours
+        g = data.sentiment_buckets(df, "ret").set_index("bucket")
+        self.assertEqual((g.loc[0, "n"], g.loc[4, "n"]), (0, 0))
+        self.assertTrue(np.isnan(g.loc[0, "mean"]))
 
     def test_too_few_samples(self):
         self.assertTrue(data.sentiment_buckets(self.frame(1.0).head(30), "ret").empty)

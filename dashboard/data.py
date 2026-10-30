@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from etl.common import NEUTRAL_BAND
 from etl.reddit_features import volume_features
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -460,19 +461,40 @@ def mask_majority(df, statuses, majority="majority_final_status"):
     return out
 
 
-def sentiment_buckets(df, value, sentiment="sentiment_mean", bins=5, min_per_bin=10):
-    """Does higher sentiment go with a higher `value` (a return)?  The samples (one per ticker-hour with text) are split
-    into `bins` groups of equal size by sentiment, from the lowest to the highest, and the mean of `value` is taken in
-    each group with its 95% interval (mean +- 1.96 standard errors).  -> DataFrame(bucket, lo, hi, sent_mean, n, mean, ci_lo, ci_hi);
-    empty when there are fewer than bins * min_per_bin samples."""
-    out_cols = ["bucket", "lo", "hi", "sent_mean", "n", "mean", "ci_lo", "ci_hi"]
+# Fixed sentiment levels (not quantiles): the neutral band (+-0.05, etl.common.NEUTRAL_BAND) and the quality cut (+-0.30,
+# configs/detection.yaml sentiment_thresholds) of the proposal.  Edges follow status_of: s >= 0.05 is positive and
+# s <= -0.05 is negative, so the neutral band is the open interval (-0.05, 0.05).
+QUALITY_CUT = 0.30
+SENTIMENT_LEVELS = (("ลบมาก", "< -0.30"), ("ลบ", "-0.30 ถึง -0.05"), ("เป็นกลาง", "-0.05 ถึง +0.05 (ไม่รวมขอบ)"),
+                    ("บวก", "+0.05 ถึง +0.30"), ("บวกมาก", "> +0.30"))
+
+
+def sentiment_level(score):
+    """0..4 index into SENTIMENT_LEVELS for a Sentiment Score (NaN stays NaN)."""
+    s = pd.Series(score, dtype=float)
+    lvl = pd.Series(np.nan, index=s.index)
+    lvl[s < -QUALITY_CUT] = 0
+    lvl[(s >= -QUALITY_CUT) & (s <= -NEUTRAL_BAND)] = 1
+    lvl[(s > -NEUTRAL_BAND) & (s < NEUTRAL_BAND)] = 2
+    lvl[(s >= NEUTRAL_BAND) & (s <= QUALITY_CUT)] = 3
+    lvl[s > QUALITY_CUT] = 4
+    return lvl
+
+
+def sentiment_buckets(df, value, sentiment="sentiment_mean", min_total=50):
+    """Does higher sentiment go with a higher `value` (a return)?  The samples (one per ticker-hour with text) are put into
+    the five fixed SENTIMENT_LEVELS and the mean of `value` is taken in each, with its 95% interval (mean +- 1.96 standard
+    errors).  -> DataFrame(bucket 0..4, n, sent_mean, mean, ci_lo, ci_hi), always five rows (n = 0 and NaN when a level is
+    empty); empty frame when there are fewer than `min_total` samples."""
+    out_cols = ["bucket", "n", "sent_mean", "mean", "ci_lo", "ci_hi"]
     d = df[[sentiment, value]].dropna()
-    if len(d) < bins * min_per_bin:
+    if len(d) < min_total:
         return pd.DataFrame(columns=out_cols)
-    d = d.assign(bucket=pd.qcut(d[sentiment], bins, labels=False, duplicates="drop"))
-    g = d.groupby("bucket").agg(lo=(sentiment, "min"), hi=(sentiment, "max"), sent_mean=(sentiment, "mean"), n=(value, "size"), mean=(value, "mean"),
-                                sd=(value, "std")).reset_index()
-    se = g.sd / np.sqrt(g.n)
+    d = d.assign(bucket=sentiment_level(d[sentiment].values).values)
+    g = d.groupby("bucket").agg(n=(value, "size"), sent_mean=(sentiment, "mean"), mean=(value, "mean"), sd=(value, "std"))
+    g = g.reindex([0, 1, 2, 3, 4]).rename_axis("bucket").reset_index()
+    g["n"] = g.n.fillna(0).astype(int)
+    se = g.sd / np.sqrt(g.n.where(g.n > 0))
     g["ci_lo"], g["ci_hi"] = g["mean"] - 1.96 * se, g["mean"] + 1.96 * se
     return g[out_cols]
 
