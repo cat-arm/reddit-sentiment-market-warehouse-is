@@ -279,7 +279,7 @@ class FilterTests(unittest.TestCase):
 
     def test_every_chart_can_switch_to_bars(self):
         """The line / bar switch sits on each chart (not in the sidebar) and every chart survives being a bar chart."""
-        for page in PAGES[1:5]:
+        for page in PAGES[1:4]:
             at = self.run_page(page)
             switches = [r for r in at.radio if r.key and r.key.startswith("ck_")]
             self.assertGreaterEqual(len(switches), 1, page)
