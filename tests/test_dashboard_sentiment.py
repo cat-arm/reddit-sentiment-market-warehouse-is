@@ -272,6 +272,68 @@ class StatTableTests(unittest.TestCase):
         self.assertEqual(row.win_n, 40)                             # the zeros are not a direction
 
 
+class ZScoreInTextsTests(unittest.TestCase):
+    def test_a_z_score_threshold_is_mean_plus_z_standard_deviations(self):
+        baseline = pd.DataFrame({"ticker": "A", "hour_utc": [0, 1], "mean24": [10.0, 20.0], "std24": [2.0, 4.0]})
+        self.assertEqual(data.texts_needed(baseline, 1.5), (20, 17, 23))                  # needs 13 and 26: median 19.5 -> 20, quartiles 16.25 -> 17 and 22.75 -> 23 (rounded up)
+        self.assertEqual(data.texts_needed(baseline, 0.0)[0], 15)                        # Z = 0 is the plain mean
+        self.assertGreater(data.texts_needed(baseline, 3.0)[0], data.texts_needed(baseline, 1.5)[0])
+        self.assertIsNone(data.texts_needed(baseline.iloc[0:0], 1.5))
+
+    def test_the_baseline_is_the_24_hours_before_without_the_current_hour(self):
+        rows = [("A", 3600 * h, 1 if h < 24 else 11) for h in range(30)]                  # 1 text for 24 hours, then 11
+        import sqlite3
+        import tempfile
+        from contextlib import closing
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "t.sqlite3")
+            with closing(sqlite3.connect(path)) as db:
+                db.execute("CREATE TABLE reddit_hourly (variant TEXT, ticker TEXT, hour_utc INTEGER, reddit_volume INTEGER)")
+                db.executemany("INSERT INTO reddit_hourly VALUES ('all', ?, ?, ?)", rows)
+                db.commit()
+            base = data.volume_baseline(path, ("A",), 3600 * 24, 3600 * 29)
+        # at hour 24 the 24 hours before are all 1: the standard deviation is zero, so there is no Z-score there
+        self.assertNotIn(3600 * 24, set(base.hour_utc))
+        row = base[base.hour_utc == 3600 * 25].iloc[0]                                    # 23 ones and one 11 before it
+        self.assertAlmostEqual(row.mean24, (23 * 1 + 11) / 24)
+        self.assertGreater(row.std24, 0)
+
+
+class ExtensionFilterTests(unittest.TestCase):
+    """The EXTENSION: the variable that is measured (the sentiment, its momentum, its lag or the Z-score)."""
+
+    def panel(self, predictor, **kw):
+        hours = [i * 3600 for i in range(5)]
+        base = pd.DataFrame({"series": "AAA", "hour_utc": hours, "zscore": [0.5, 1.0, 2.0, np.nan, 0.0], "majority": "positive",
+                             "sentiment_mean": [0.1, 0.3, -0.2, 0.4, np.nan], "texts": [4, 6, 2, 8, 0], "momentum": [np.nan, 0.2, -0.5, 0.6, np.nan]})
+        returns = pd.DataFrame({"ticker": "AAA", "hour_utc": hours, "log_return": np.arange(5.0)})
+        return data.panel_samples(base, None, returns, "Ticker", "all", ("positive",), 0.0, 0.0, predictor=predictor, **kw)
+
+    def test_the_measured_variable_is_a_column_of_the_hour(self):
+        self.assertEqual(list(self.panel("sentiment_mean").predictor), [0.1, 0.3, -0.2, 0.4])
+        momentum = self.panel("momentum")
+        self.assertEqual(list(momentum.hour_utc), [3600, 7200, 10800])                                  # the hour without a momentum is not a sample
+        self.assertEqual(list(momentum.predictor), [0.2, -0.5, 0.6])
+        lag = self.panel("lag1")                                                                       # the sentiment of the hour before = this hour - the change
+        self.assertEqual(list(lag.hour_utc), [3600, 7200, 10800])
+        for got, want in zip(lag.predictor, [0.1, 0.3, -0.2]):
+            self.assertAlmostEqual(got, want)
+        z = self.panel("zscore")
+        self.assertEqual(list(z.predictor), [0.5, 1.0, 2.0])                                           # an hour without a Z-score is not a sample
+
+    def test_a_variable_without_direction_has_no_win_rate(self):
+        samples = self.panel("zscore").assign(zscore_pred=lambda d: d.predictor)
+        samples = pd.concat([samples] * 20, ignore_index=True)
+        samples["future_return_1h"] = 1.0
+        for col in ("future_return_2h", "future_return_3h", "future_return_6h", "future_return_12h"):
+            samples[col] = 1.0
+        samples["log_return"] = np.arange(len(samples), dtype=float) % 7 - 3
+        out = data.stat_table(samples, sentiment="predictor", directional=False)
+        self.assertTrue(out.winrate.isna().all() and out.win_p.isna().all())
+        self.assertTrue(out[out.target == "log_return"].spearman_rho.notna().all())                    # the correlation is still measured
+
+
 class PanelSamplesTests(unittest.TestCase):
     H = 3600
 

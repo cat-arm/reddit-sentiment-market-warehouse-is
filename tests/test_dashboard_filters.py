@@ -14,7 +14,7 @@ SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # sy
 SENTIMENT_PAGE = "pages/4_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
 RANKING_PAGE = "pages/5_Statistical_Analysis.py"                              # 7.5-2: p-values, win rate, regression
 ANALYSIS_PAGE = "pages/6_Lead_and_Lag.py"                                      # extension: who moves first
-DETECTION_PAGES = {"pages/7_Hot_Events.py": ["h_z", "h_s", "h_n"], SENTIMENT_PAGE: ["d_z", "d_s"], RANKING_PAGE: ["d_z", "d_s"],
+DETECTION_PAGES = {"pages/7_Hot_Events.py": ["h_z", "h_s"], SENTIMENT_PAGE: ["d_z", "d_s"], RANKING_PAGE: ["d_z", "d_s"],
                    ANALYSIS_PAGE: ["d_z", "d_s"]}
 MAJORITY_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE, *DETECTION_PAGES}
 SENTIMENT_PAGES = {SENTIMENT_PAGE, RANKING_PAGE, ANALYSIS_PAGE}
@@ -22,7 +22,7 @@ COUNT_PAGES = SOURCE_PAGES | {"pages/3_Price_and_Return.py"}                  # 
 TIME_KEYS = ["f_range", "f_gran"]
 COMMUNITIES = ["r/wallstreetbets", "r/stocks", "r/investing", "r/StockMarket", "r/options", "r/CryptoCurrency"]
 SOURCE_KEYS = ["f_src_" + c for c in COMMUNITIES] + ["f_type_Post", "f_type_Comment"]
-SENTIMENT_KEYS = ["f_ss_" + c for c in COMMUNITIES] + ["f_ss_model"]
+SENTIMENT_KEYS = ["f_ss_" + c for c in COMMUNITIES] + ["f_type_Post", "f_type_Comment", "f_ss_model"]
 MAJORITY_KEYS = ["f_maj_positive", "f_maj_negative", "f_maj_neutral"]
 GROUP_KEYS = ["f_group_stock_etf", "f_group_futures", "f_group_crypto"]
 TICKERS = ["AAPL", "AMC", "AMD", "BITO", "BRK-B", "COIN", "GME", "HOOD", "IBIT", "IWM", "JNJ", "JPM", "KO", "MARA", "MSFT",
@@ -223,6 +223,16 @@ class FilterTests(unittest.TestCase):
             at.selectbox(key="p5_log_panel").select_index(i).run()
             self.assertEqual(len(at.exception), 0, i)
         at.selectbox(key="p5_log_panel").select_index(0)
+        for option in at.radio(key="p5_predictor").options:                                  # EXTENSION: the variable that is measured
+            at.radio(key="p5_predictor").set_value(option).run()
+            self.assertEqual(len(at.exception), 0, "%s: %s" % (option, [e.value for e in at.exception]))
+        at.radio(key="p5_predictor").set_value(at.radio(key="p5_predictor").options[0]).run()
+        self.assertTrue(at.radio(key="p5_predictor").value.endswith("(sentiment_mean)"))
+        at.sidebar.slider(key="d_z").set_value(2.0).run()                                     # the Z-score narrows every panel and says what it means in texts
+        self.assertEqual(len(at.exception), 0)
+        self.assertNotEqual([m.value for m in at.metric][:3], full[:3])
+        self.assertTrue(any("Z-score เกิน" in c.value and "ข้อความต่อชั่วโมง" in c.value for c in at.sidebar.caption), "the sidebar tells the texts per hour of the Z-score")
+        at.sidebar.slider(key="d_z").set_value(0.0)
         self.assertEqual(at.radio(key="p5_family_all").value, "global")                    # the default: the sentiment of the whole market
         at.radio(key="p5_family_all").set_value("Ticker").run()
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
@@ -287,6 +297,26 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(len(at.exception), 0, z)
             self.assertNotEqual(at.metric[0].value, full[0], "Z-score Threshold %s removes hours, so the Sentiment Score changes" % z)
         at.sidebar.slider(key="d_z").set_value(0.0)
+        at.run()
+        self.assertFalse(any("Z-score เกิน" in c.value for c in at.sidebar.caption))              # 0 = off: no hint (nothing to say)
+        at.sidebar.slider(key="d_z").set_value(2.0).run()                          # a Z-score is told in texts per hour and follows the slider
+        hint = [c.value for c in at.sidebar.caption if "Z-score เกิน" in c.value]
+        self.assertEqual(len(hint), 1)
+        self.assertRegex(hint[0], r"Z-score เกิน 2\.0 = ปริมาณ \*\*มากกว่า [\d,]+ ข้อความต่อชั่วโมง\*\*")
+        at.sidebar.slider(key="d_z").set_value(3.5).run()
+        harder = [c.value for c in at.sidebar.caption if "Z-score เกิน" in c.value][0]
+        self.assertRegex(harder, r"Z-score เกิน 3\.5")
+        first = int(hint[0].split("มากกว่า ")[1].split(" ")[0].replace(",", ""))
+        second = int(harder.split("มากกว่า ")[1].split(" ")[0].replace(",", ""))
+        self.assertGreater(second, first, "a higher Z-score asks for more texts")
+        at.sidebar.slider(key="d_z").set_value(0.0)
+        at.sidebar.checkbox(key="f_type_Comment").set_value(False).run()           # only the posts of the community are counted
+        self.assertEqual(len(at.exception), 0)
+        self.assertNotEqual([m.value for m in at.metric], full, "the content type is a filter")
+        at.sidebar.checkbox(key="f_type_Post").set_value(False).run()               # no content type ticked = nothing
+        self.assertEqual([m.value for m in at.metric], ["0"] * 3)
+        at.sidebar.checkbox(key="f_type_Comment").set_value(True)
+        at.sidebar.checkbox(key="f_type_Post").set_value(True)
         at.sidebar.slider(key="d_s").set_value(0.5).run()
         self.assertNotEqual(at.metric[0].value, full[0], "Sentiment Threshold changes the Sentiment Score")
         at.sidebar.slider(key="d_s").set_value(0.0)

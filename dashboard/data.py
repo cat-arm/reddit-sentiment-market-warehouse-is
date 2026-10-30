@@ -18,7 +18,7 @@ import pandas as pd
 from scipy import stats
 
 from etl.common import NEUTRAL_BAND
-from etl.reddit_features import volume_features
+from etl.reddit_features import MIN_PRIOR, STD_FLOOR, WINDOW, volume_features
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB = ROOT / "output" / "reddit.sqlite3"
@@ -405,31 +405,36 @@ def overview_series(db_path, ticker, start, end):
     return to_time(df)
 
 
-def sentiment_hourly(db_path, tickers, start, end, communities, model="VADER+FinBERT", variant="all"):
+CONTENT_TYPES = ("Post", "Comment")                                   # DimSource.ContentType
+
+
+def sentiment_hourly(db_path, tickers, start, end, communities, model="VADER+FinBERT", variant="all", content_types=CONTENT_TYPES):
     """Per ticker-hour sums of the texts of the chosen communities (reddit_hourly_community) scored by `model`
     ('VADER+FinBERT' = the final sentiment, 'VADER' or 'FinBERT'), from 24 hours before `start` (the Z-score needs
     them).  `variant` = which texts enter the hour ('all', 'strong' = |score| >= 0.05, 'quality' = |score| >= 0.30; filtered per
-    text).  Recombine with `sentiment_frame`."""
+    text); `content_types` = the types of text that count (Post, Comment).  Recombine with `sentiment_frame`."""
     tf, symbols = _only(tickers, "ticker")
     marks = ",".join("?" * len(communities))
+    types = ",".join("?" * len(content_types))
     return _read(db_path, """
         SELECT ticker, hour_utc, SUM(texts) AS texts, SUM(sentiment_sum) AS sentiment_sum, SUM(pos_n) AS pos_n,
                SUM(neg_n) AS neg_n, SUM(neu_n) AS neu_n
         FROM reddit_hourly_community
-        WHERE model = ? AND variant = ? AND hour_utc BETWEEN ? AND ? AND subreddit IN (%s)%s GROUP BY ticker, hour_utc"""
-                 % (marks, tf), (model, variant, start - 86400, end, *communities, *symbols))
+        WHERE model = ? AND variant = ? AND hour_utc BETWEEN ? AND ? AND subreddit IN (%s) AND content_type IN (%s)%s GROUP BY ticker, hour_utc"""
+                 % (marks, types, tf), (model, variant, start - 86400, end, *communities, *content_types, *symbols))
 
 
-def global_hourly(db_path, start, end, communities, model="VADER+FinBERT", variant="all"):
+def global_hourly(db_path, start, end, communities, model="VADER+FinBERT", variant="all", content_types=CONTENT_TYPES):
     """The same sums for EVERY text of the market (not only those that mention a ticker), from 24 hours before `start`, as one
     series with the ticker name 'ALL' (reddit_hourly_global).  Recombine with `sentiment_frame`."""
     marks = ",".join("?" * len(communities))
+    types = ",".join("?" * len(content_types))
     return _read(db_path, """
         SELECT 'ALL' AS ticker, hour_utc, SUM(texts) AS texts, SUM(sentiment_sum) AS sentiment_sum, SUM(pos_n) AS pos_n,
                SUM(neg_n) AS neg_n, SUM(neu_n) AS neu_n
         FROM reddit_hourly_global
-        WHERE model = ? AND variant = ? AND hour_utc BETWEEN ? AND ? AND subreddit IN (%s) GROUP BY hour_utc"""
-                 % marks, (model, variant, start - 86400, end, *communities))
+        WHERE model = ? AND variant = ? AND hour_utc BETWEEN ? AND ? AND subreddit IN (%s) AND content_type IN (%s) GROUP BY hour_utc"""
+                 % (marks, types), (model, variant, start - 86400, end, *communities, *content_types))
 
 
 def sentiment_frame(sent, start, end, combined=False):
@@ -727,7 +732,11 @@ def bh_adjust(p):
     return out
 
 
-def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, seed=42, spike_z=1.5):
+PREDICTORS = {"sentiment_mean": "ค่าความรู้สึกเฉลี่ย (sentiment_mean)", "momentum": "การเปลี่ยนแปลงของความรู้สึก (momentum)",
+              "lag1": "ความรู้สึกชั่วโมงก่อนหน้า (lag 1h)", "zscore": "Reddit Volume Z-score"}      # EXTENSION: the variable that is measured
+
+
+def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, seed=42, spike_z=1.5, predictor="sentiment_mean"):
     """The ticker-hours of ONE panel of the proposal (table 12), live, after every filter of the dashboard.
     `base` = `sentiment_frame` of ALL the texts of the family (series = the tickers for the family 'Ticker', the one series 'ALL'
     for 'global'); `own` = the same for the texts of the variant ('strong' / 'quality'), else None; `returns` = DataFrame(ticker,
@@ -737,12 +746,21 @@ def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, s
     `threshold_mask` (Z-score above `z_min`, |predictor| at least `s_min`; 0 = off) and has a predictor; the variant 'spike' also
     needs a Z-score above `spike_z` (that ticker's own volume, or the volume of the whole market for 'global').  'global' uses the
     same market-wide hour for every ticker.  'baseline' = the rows of the global panel with a random direction (+1 / -1, fixed seed)
-    instead of the sentiment: the 'no signal' yardstick.  -> DataFrame(ticker, hour_utc, sentiment_mean, zscore, returns...)."""
-    b = base[["series", "hour_utc", "zscore", "majority", "sentiment_mean"]].rename(columns={"series": "ticker"})
+    instead of the sentiment: the 'no signal' yardstick.
+    EXTENSION: `predictor` = the variable that is measured against the returns (a key of PREDICTORS): the Sentiment Score (the proposal's), its momentum (this hour
+    minus the one before), the Sentiment Score of the hour before (lag 1h) or the Reddit Volume Z-score; the thresholds and the majority
+    status always judge the Sentiment Score and the Z-score of the hour.
+    -> DataFrame(ticker, hour_utc, sentiment_mean, predictor, zscore, returns...)."""
+    cols = ["series", "hour_utc", "zscore", "majority", "sentiment_mean", "texts", "momentum"]
+    b = base[[c for c in cols if c in base]].rename(columns={"series": "ticker"})
+    for missing in ("texts", "momentum"):
+        if missing not in b:
+            b[missing] = np.inf if missing == "texts" else np.nan
     if own is not None and variant in ("strong", "quality"):
-        v = own[["series", "hour_utc", "sentiment_mean"]].rename(columns={"series": "ticker", "sentiment_mean": "predictor"})
-        b = b.drop(columns="sentiment_mean").merge(v, on=["ticker", "hour_utc"], how="left").rename(columns={"predictor": "sentiment_mean"})
-    keep = b.majority.isin(statuses) & threshold_mask(b, z_min, s_min) & b.sentiment_mean.notna()
+        v = own[[c for c in cols if c in own and c in ("series", "hour_utc", "sentiment_mean", "texts", "momentum")]].rename(columns={"series": "ticker"})
+        b = b.drop(columns=[c for c in ("sentiment_mean", "texts", "momentum") if c in v]).merge(v, on=["ticker", "hour_utc"], how="left")
+    b["predictor"] = {"sentiment_mean": b.sentiment_mean, "momentum": b.momentum, "lag1": b.sentiment_mean - b.momentum, "zscore": b.zscore}[predictor]
+    keep = (b.majority.isin(statuses) & threshold_mask(b, z_min, s_min) & b.sentiment_mean.notna() & b.predictor.notna())
     if variant == "spike":
         keep &= b.zscore > spike_z
     b = b[keep]
@@ -753,6 +771,7 @@ def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, s
     if variant == "baseline":
         samples = samples.sort_values(["ticker", "hour_utc"]).reset_index(drop=True)
         samples["sentiment_mean"] = np.random.default_rng(seed).choice([-1.0, 1.0], size=len(samples))
+        samples["predictor"] = samples["sentiment_mean"]
     return samples
 
 
@@ -762,7 +781,7 @@ STAT_COLUMNS = ["ticker", "target", "n", "spearman_rho", "spearman_p", "spearman
                 "win_n", "win_hits", "winrate", "win_p", "win_bh"]
 
 
-def stat_table(samples, min_n=30, sentiment="sentiment_mean"):
+def stat_table(samples, min_n=30, sentiment="sentiment_mean", directional=True):
     """A1 / A2 computed live on the ticker-hours of a panel: per ticker and target (the Current Return and the future returns
     1h .. 12h) the Spearman and Pearson correlation of the predictor with the return and the Historical Win Rate (share of hours in
     which the sign of the predictor equals the direction of the return; for the Current Return that is the same-hour co-movement), each with its p-value (Binomial against 50% for the win
@@ -782,11 +801,11 @@ def stat_table(samples, min_n=30, sentiment="sentiment_mean"):
                 pe = stats.pearsonr(pair.s, pair.r)
                 row.update(spearman_rho=float(sp.statistic), spearman_p=float(sp.pvalue),
                            pearson_rho=float(pe.statistic), pearson_p=float(pe.pvalue))
-            directional = pair[(pair.s != 0) & (pair.r != 0)]      # for the Current Return it is the same-hour co-movement, not a prediction
-            if len(directional) >= min_n:
-                hits = int((np.sign(directional.s) == np.sign(directional.r)).sum())
-                row.update(win_n=len(directional), win_hits=hits, winrate=100.0 * hits / len(directional),
-                           win_p=float(stats.binomtest(hits, len(directional), 0.5).pvalue))
+            moved = pair[(pair.s != 0) & (pair.r != 0)]            # for the Current Return it is the same-hour co-movement, not a prediction
+            if directional and len(moved) >= min_n:                # a variable without a + / - meaning (the Z-score) has no win rate
+                hits = int((np.sign(moved.s) == np.sign(moved.r)).sum())
+                row.update(win_n=len(moved), win_hits=hits, winrate=100.0 * hits / len(moved),
+                           win_p=float(stats.binomtest(hits, len(moved), 0.5).pvalue))
             rows.append(row)
     out = pd.DataFrame(rows, columns=STAT_COLUMNS)
     if out.empty:
@@ -854,7 +873,38 @@ def signal_counts(db_path):
 
 
 # ------------------------------------------------------------------------------------------------ D6: hot events (EXTENSION)
-def hot_events(db_path, start, end, z_min, s_min, min_texts):
+def volume_baseline(db_path, tickers, start, end):
+    """The normal volume behind the Reddit Volume Z-score: for every ticker-hour of the range the mean and the standard deviation of the
+    texts per hour over the 24 hours BEFORE it (current hour excluded, empty hours are 0: the rule of the proposal).  An hour whose
+    standard deviation is zero has no Z-score and is left out.  -> DataFrame(ticker, hour_utc, mean24, std24)."""
+    columns = ["ticker", "hour_utc", "mean24", "std24"]
+    if not tickers:
+        return pd.DataFrame(columns=columns)
+    tf, symbols = _only(tickers, "ticker")
+    df = _read(db_path, "SELECT ticker, hour_utc, reddit_volume FROM reddit_hourly WHERE variant = 'all' AND hour_utc BETWEEN ? AND ?" + tf,
+               (start - 86400, end, *symbols))
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+    grid = pd.Index(range(int((start - 86400) // 3600 * 3600), int(end // 3600 * 3600) + 3600, 3600), name="hour_utc")
+    wide = df.pivot_table(index="hour_utc", columns="ticker", values="reddit_volume", aggfunc="sum").reindex(grid).fillna(0)
+    roll = wide.shift(1).rolling(WINDOW, min_periods=MIN_PRIOR)
+    mean, std = roll.mean(), roll.std(ddof=0)
+    out = pd.concat([mean.stack().rename("mean24"), std.stack().rename("std24")], axis=1).reset_index()      # the index is (hour, ticker)
+    out.columns = ["hour_utc", "ticker", "mean24", "std24"]
+    return out[(out.hour_utc >= start) & (out.std24 > STD_FLOOR)][columns].reset_index(drop=True)
+
+
+def texts_needed(baseline, z):
+    """What a Z-score threshold asks for in texts per hour: an hour passes when its texts exceed mean24 + z x std24 of the hours before
+    it.  -> (median, 25th and 75th percentile over the ticker-hours of `baseline`, in whole texts rounded up), or None when empty."""
+    if baseline.empty:
+        return None
+    need = baseline.mean24 + float(z) * baseline.std24
+    low, mid, high = (int(np.ceil(v)) for v in (need.quantile(0.25), need.median(), need.quantile(0.75)))
+    return mid, low, high
+
+
+def hot_events(db_path, start, end, z_min, s_min, min_texts=1):
     """EXTENSION (not in the proposal): ticker-hours in which Reddit was unusually busy (Volume Z-score > z_min) AND the
     sentiment was clearly directional (|sentiment_mean| >= s_min, at least min_texts texts), with the forward returns
     that followed and the Current Return (`log_return`) of the same hour.  Descriptive history only; hours without a computable return

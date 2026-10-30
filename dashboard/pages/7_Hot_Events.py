@@ -1,4 +1,4 @@
-"""Dashboard extension 6  Hot Events: ชั่วโมงที่ Reddit คึกคักมาก แล้วราคาเป็นอย่างไรต่อ (EXTENSION, not in the proposal).
+"""Dashboard extension 7  Hot Events: ชั่วโมงที่ Reddit คึกคักมาก แล้วราคาเป็นอย่างไรต่อ (EXTENSION, not in the proposal).
 
 Lists ticker-hours in which the Reddit Volume Z-score was above a threshold AND the sentiment was clearly directional,
 with the win rate of the sentiment direction against the forward return, its 95% Wilson interval and the mean return.
@@ -12,10 +12,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import altair as alt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
+from analysis import signals  # noqa: E402
 from dashboard import common  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
@@ -33,9 +35,50 @@ if not tickers or not statuses:
 
 z_min = st.session_state.get("h_z", 2.0)
 s_min = st.session_state.get("h_s", 0.50)
-min_texts = st.session_state.get("h_n", 3)
-events = q("hot_events", start, end, float(z_min), float(s_min), int(min_texts))
+events = q("hot_events", start, end, float(z_min), float(s_min))
 events = events[events.ticker.isin(tickers) & events.majority_final_status.isin(statuses)].copy()
+
+def signal_section():
+    """The data-driven signals of system 7.6 (proposal tables 18 and 16): the detected signal list with the historical statistics of the
+    asset, and the summary of how many signals of which type were found.  Uses the thresholds of the sidebar (Z-score, Sentiment); the
+    signal engine has its own rule for the least texts of a sentiment spike (configs/detection.yaml)."""
+    st.subheader("สัญญาณเชิงข้อมูลของระบบ 7.6 (Detected Signal List)")
+    found = signals.detect(q("signal_panel"), float(z_min), float(s_min))
+    found = found[(found.hour_utc >= start) & (found.hour_utc <= end) & found.ticker.isin(tickers) & found.majority_final_status.isin(statuses)]
+    st.caption("ระบบตรวจจับสัญญาณใช้เกณฑ์ Reddit Volume Z-score > %.1f และ |Sentiment Score| ≥ %.2f จากแถบด้านซ้าย  ชนิดสัญญาณ: volume_spike (ปริมาณพุ่ง) "
+               "positive/negative_sentiment_spike (ความรู้สึกชัด) combined_signal (ทั้งสองอย่าง)  ระดับ low / medium / high ตามความแรง  "
+               "เป็นรายการประกอบการวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน" % (z_min, s_min))
+    if found.empty:
+        st.info("ไม่พบสัญญาณตามเกณฑ์นี้ในช่วงที่เลือก ลองลดเกณฑ์หรือขยายช่วงเวลา")
+        return
+    by_type = found.groupby(["signal_type", "signal_level"]).size().reset_index(name="n")
+    common.show(alt.Chart(by_type).mark_bar().encode(
+        x=alt.X("n:Q", title="จำนวนสัญญาณ"), y=alt.Y("signal_type:N", title=None),
+        color=alt.Color("signal_level:N", sort=["low", "medium", "high"], title="ระดับ",
+                        scale=alt.Scale(domain=["low", "medium", "high"], range=["#9ecae1", "#fdae6b", "#d62728"])),
+        tooltip=["signal_type", "signal_level", "n"]).properties(height=200))
+    st.write("จำนวนสัญญาณ แยกตามกลุ่มสินทรัพย์และประเภทสัญญาณ")
+    summary = pd.crosstab(found.big_group.map(GROUP_LABELS).rename("กลุ่ม"), found.signal_type, margins=True, margins_name="รวม").reset_index()
+    common.table(summary, hide_index=True, width="stretch")
+    st.write("จำนวนสัญญาณ แยกตามเดือน")
+    months = pd.to_datetime(found.hour_utc, unit="s", utc=True).dt.strftime("%Y-%m").rename("เดือน")
+    monthly = pd.crosstab(months, found.signal_type).reset_index()
+    common.table(monthly, hide_index=True, width="stretch")
+    st.write("รายการสัญญาณที่ตรวจพบ (ล่าสุด 300 รายการ) พร้อมสถิติย้อนหลังของสินทรัพย์นั้น")
+    st.session_state.setdefault("hs_h", HORIZONS[0])
+    horizon = st.radio("Horizon ของสถิติย้อนหลัง (Win Rate, ความสัมพันธ์)", list(HORIZONS), horizontal=True, key="hs_h")
+    stats = q("ranking_table")
+    stats = stats[stats.horizon == horizon][["ticker", "winrate", "correlation"]]
+    listing = found.merge(stats, on="ticker", how="left").sort_values("hour_utc", ascending=False).head(300).copy()
+    listing["timestamp"] = pd.to_datetime(listing.hour_utc, unit="s", utc=True).dt.strftime("%Y-%m-%d %H:%M")
+    listing["horizon"] = horizon
+    common.table(listing[["timestamp", "ticker", "big_group", "signal_type", "signal_level", "sentiment_mean", "reddit_volume",
+                          "reddit_volume_zscore_24", "horizon", "winrate", "correlation"]].rename(
+        columns={"reddit_volume_zscore_24": "reddit_volume_zscore", "correlation": "correlation_value"}).round(3),
+        hide_index=True, width="stretch", height=380)
+    st.caption("winrate / correlation_value = สถิติย้อนหลังเต็มช่วงข้อมูลของสินทรัพย์นั้น ณ Horizon ที่เลือก (ค่าว่าง = ข้อมูลไม่พอ) "
+               "ไม่ถือเป็นการยืนยันผลตอบแทนหรือคำแนะนำการลงทุน")
+
 
 common.kpi_cards([("จำนวนเหตุการณ์ (ชั่วโมง × สินทรัพย์)", "{:,}".format(len(events)), None),
                   ("จำนวนสินทรัพย์ที่เกิดเหตุการณ์", str(events.ticker.nunique()), None),
@@ -44,6 +87,7 @@ st.warning("**ส่วนขยายนอก proposal — ดูเหตุ�
            "ผลทดสอบทั้งโครงการพบว่าความรู้สึกบน Reddit ทำนายทิศทางราคาได้ไม่ดีกว่าการสุ่ม (win rate ≈ 50%) "
            "ค่าที่ดูสูงในบางช่องมักเป็นความบังเอิญ โดยเฉพาะเมื่อจำนวนเหตุการณ์น้อย (ดูช่วงความเชื่อมั่นประกอบเสมอ)")
 if events.empty:
+    signal_section()
     st.info("ไม่พบเหตุการณ์ตามเกณฑ์นี้ในช่วงที่เลือก ลองลดเกณฑ์หรือขยายช่วงเวลา")
     st.stop()
 
@@ -101,3 +145,5 @@ st.caption("ทำไมบางช่องขาด (ไม่ใช่ข้
            "จึงไม่มีแท่งราคาหลังจากนั้น 12 ชั่วโมง (ตลาดปิด) และ 6 ชั่วโมงก็ขาดสำหรับเหตุการณ์ช่วงบ่าย  ฟิวเจอร์สหยุดพักบางช่วงของวัน  คริปโตซื้อขายตลอด 24 ชั่วโมง จึงไม่ขาด  \n"
            "• Current Return ต้องมีแท่งราคาก่อนหน้า 1 ชั่วโมงพอดี  ชั่วโมงแรกของตลาดเปิดจึงไม่มีค่า  \n"
            "• ชั่วโมงท้ายสุดของข้อมูลยังไม่มีราคาล่วงหน้า")
+
+signal_section()

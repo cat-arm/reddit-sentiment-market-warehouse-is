@@ -41,7 +41,7 @@ TYPE_KEYS = ["f_type_Post", "f_type_Comment"]
 STATUSES = ("positive", "negative", "neutral")                  # DimMajoritySentiment
 MAJORITY_KEYS = ["f_maj_" + s for s in STATUSES]
 SIGNAL_KEYS = ["s_z", "s_s", "s_h"]                             # DimDetectionConfig on the Ranking and Signals page
-EVENT_KEYS = ["h_z", "h_s", "h_n"]                              # the same idea on the Hot Events page
+EVENT_KEYS = ["h_z", "h_s"]                                     # the same idea on the Hot Events page
 OVERVIEW_KEYS = ["d_z", "d_s"]                                  # Market and Sentiment: thresholds FILTER the whole page (0 = no filter)
 SENTIMENT_MODELS = ("VADER+FinBERT", "VADER", "FinBERT")         # DimSentimentSource.ModelUsed; the first is the proposal's
 DEFAULT_RANGE_DAYS = 365
@@ -162,6 +162,11 @@ def sentiment_source_keys():
     return [_sentiment_key(c) for c in dict.fromkeys(q("sources").subreddit)] + ["f_ss_model"]
 
 
+def selected_content_types():
+    """Content types kept by the DimSource filter of the pages with a sentiment source ('Post', 'Comment'); nothing ticked = nothing."""
+    return tuple(kind for kind in ("Post", "Comment") if st.session_state.get("f_type_" + kind, True))
+
+
 def selected_model():
     """The model chosen in the DimSentimentSource filter (one of SENTIMENT_MODELS)."""
     model = st.session_state.get("f_ss_model", SENTIMENT_MODELS[0])
@@ -181,11 +186,14 @@ def selected_statuses():
 def _sentiment_source_filter():
     """DimSentimentSource: platform (Reddit) > community > model (pick one: VADER+FinBERT, VADER or FinBERT)."""
     st.sidebar.markdown("**แหล่งข้อมูลความรู้สึก (DimSentimentSource)**")
-    for key in sentiment_source_keys():
+    for key in sentiment_source_keys() + TYPE_KEYS:
         st.session_state.setdefault(key, True if key != "f_ss_model" else SENTIMENT_MODELS[0])
     st.sidebar.caption("แพลตฟอร์ม: Reddit › ชุมชน")
     for community in dict.fromkeys(q("sources").subreddit):
         st.sidebar.checkbox(community, key=_sentiment_key(community))
+    st.sidebar.caption("ประเภทเนื้อหา (DimSource)")
+    st.sidebar.checkbox("โพสต์ (Post)", key="f_type_Post")
+    st.sidebar.checkbox("ความคิดเห็น (Comment)", key="f_type_Comment")
     st.sidebar.caption("แบบจำลองที่ใช้")
     st.sidebar.radio("แบบจำลองที่ใช้", SENTIMENT_MODELS, key="f_ss_model", label_visibility="collapsed")
 
@@ -199,6 +207,28 @@ def _majority_filter():
         st.sidebar.checkbox(status, key="f_maj_" + status)
 
 
+def _z_hint(key):
+    """Under the Z-score slider: what that threshold means in texts per hour, so the user need not think in standard deviations.  An hour
+    passes when its texts exceed the mean + Z x the standard deviation of the 24 hours before it; the line gives that number for the chosen
+    tickers and range (the median, and where the middle half of the tickers lie)."""
+    z = st.session_state.get(key, 0.0)
+    span = st.session_state.get("f_range")
+    days = sorted(span) if isinstance(span, (tuple, list)) and len(span) else []
+    if not z or not days:
+        return
+    tickers = tuple(selected_tickers())
+    need = data.texts_needed(q("volume_baseline", tickers, epoch(days[0]), epoch(days[-1], end_of_day=True)), z)
+    if need is None:
+        st.sidebar.caption("ไม่มีข้อมูลปริมาณของหลักทรัพย์และช่วงเวลาที่เลือก")
+        return
+    mid, low, high = need
+    if len(tickers) == 1 or low == high:
+        st.sidebar.caption("Z-score เกิน %.1f = ปริมาณ **มากกว่า %s ข้อความต่อชั่วโมง**" % (z, "{:,}".format(mid)))
+    else:
+        st.sidebar.caption("Z-score เกิน %.1f = ปริมาณ **มากกว่า %s ข้อความต่อชั่วโมง** (ค่ากลางของสินทรัพย์ที่เลือก; ส่วนใหญ่ %s–%s ตามความดังของแต่ละตัว)"
+                           % (z, "{:,}".format(mid), "{:,}".format(low), "{:,}".format(high)))
+
+
 def _detection_filter(kind):
     """DimDetectionConfig: Z-score Threshold, Sentiment Threshold and Horizon (kind 'signals' = Ranking and Signals, 'overview' =
     Market and Sentiment: two thresholds that filter the whole page, 0 = off; the Horizon is chosen inside the charts that need it), or the thresholds and the minimum number of
@@ -210,8 +240,10 @@ def _detection_filter(kind):
         state.setdefault("d_s", 0.0)
         st.sidebar.caption("Reddit Volume Z-score Threshold (ปริมาณต้องเกิน; 0 = ไม่กรอง)")
         st.sidebar.slider("Reddit Volume Z-score Threshold", 0.0, 4.0, step=0.1, key="d_z", label_visibility="collapsed")
+        _z_hint("d_z")
         st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่; 0 = ไม่กรอง)")
         st.sidebar.slider("Sentiment Threshold", 0.0, 1.0, step=0.05, key="d_s", label_visibility="collapsed")
+
     elif kind == "signals":
         state.setdefault("s_z", 1.5)
         state.setdefault("s_s", 0.30)
@@ -225,13 +257,12 @@ def _detection_filter(kind):
     else:
         state.setdefault("h_z", 2.0)
         state.setdefault("h_s", 0.50)
-        state.setdefault("h_n", 3)
         st.sidebar.caption("Reddit Volume Z-score Threshold (ปริมาณต้องเกิน)")
         st.sidebar.slider("Reddit Volume Z-score Threshold", 1.5, 4.0, step=0.1, key="h_z", label_visibility="collapsed")
+        _z_hint("h_z")
         st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่)")
         st.sidebar.slider("Sentiment Threshold", 0.05, 0.90, step=0.05, key="h_s", label_visibility="collapsed")
-        st.sidebar.caption("ข้อความขั้นต่ำในชั่วโมงนั้น")
-        st.sidebar.slider("ข้อความขั้นต่ำ", 1, 20, key="h_n", label_visibility="collapsed")
+
 
 
 def _source_filter():
@@ -336,7 +367,7 @@ def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=
     is drawn too (read it with `selected_sources()`).  multi=True: several tickers can be chosen (read them with
     `selected_tickers()`; the returned ticker is None).
     System 7.5 pages add: sentiment=True (DimSentimentSource, `selected_communities()`), detection='signals' / 'events'
-    (DimDetectionConfig, values in session state s_z / s_s / s_h or h_z / h_s / h_n) and majority=True
+    (DimDetectionConfig, values in session state s_z / s_s / s_h or h_z / h_s) and majority=True
     (DimMajoritySentiment, `selected_statuses()`).
     Streamlit would forget the values of widgets a page does not draw, so they are kept in shadow keys and restored on
     the next page that draws them."""
@@ -349,8 +380,8 @@ def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=
     ss_keys = sentiment_source_keys()
     central = TIME_KEYS + t_keys + group_keys + s_keys + ss_keys + MAJORITY_KEYS + SIGNAL_KEYS + EVENT_KEYS + OVERVIEW_KEYS
     _restore(central)
-    if not sources:
-        _keep(s_keys)
+    if not sources:                                          # the sentiment-source block draws the Post / Comment boxes itself
+        _keep([k for k in s_keys if not (sentiment and k in TYPE_KEYS)])
     if not sentiment:
         _keep(ss_keys)
     if not majority:

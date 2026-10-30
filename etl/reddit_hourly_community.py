@@ -1,10 +1,10 @@
 """P1b: hourly Reddit sentiment per ticker (and per market) AND per community -> tables `reddit_hourly_community` and
 `reddit_hourly_global` (DimSentimentSource).
 
-    reddit_hourly_community(ticker, hour_utc, subreddit, texts, sentiment_sum, abs_sum, pos_n, neg_n, neu_n, model, variant)
-        PRIMARY KEY (model, variant, ticker, hour_utc, subreddit)       the texts that MENTION the ticker
-    reddit_hourly_global(hour_utc, subreddit, texts, sentiment_sum, abs_sum, pos_n, neg_n, neu_n, model, variant)
-        PRIMARY KEY (model, variant, hour_utc, subreddit)               EVERY text of the market (proposal: scope global)
+    reddit_hourly_community(ticker, hour_utc, subreddit, texts, sentiment_sum, abs_sum, pos_n, neg_n, neu_n, model, variant, content_type)
+        PRIMARY KEY (model, variant, ticker, hour_utc, subreddit, content_type)   the texts that MENTION the ticker
+    reddit_hourly_global(hour_utc, subreddit, texts, sentiment_sum, abs_sum, pos_n, neg_n, neu_n, model, variant, content_type)
+        PRIMARY KEY (model, variant, hour_utc, subreddit, content_type)           EVERY text of the market (proposal: scope global)
 
 Why: the dashboards (proposal 7.5, dimensions DimTime, DimTicker, DimSentimentSource, DimMajoritySentiment) let the user choose the
 communities, and the statistics of dashboard 2 are computed live on the chosen hours.  `reddit_hourly` holds only the pooled value, so
@@ -15,6 +15,7 @@ these tables keep the SUMS per community; any selection of communities is then r
 (vader_score / vader_status only) and 'FinBERT' (finbert_score / finbert_status only; EXTENSION).  `variant` = which texts enter
 the hour, as in `reddit_hourly` (table 12 of the proposal; the filter is applied per TEXT before summing, on the score of the model
 of the row): 'all' = every text, 'strong' = |score| >= 0.05, 'quality' = |score| >= 0.30.
+`content_type` = 'Post' (processed_text 'submission') or 'Comment' (DimSource.ContentType): the filter of the dashboards sums the rows of the types that are ticked.
 `subreddit` is stored like DimSentimentSource.Subreddit ('r/wallstreetbets').  Hours without a text have no row (NULL, never 0).
 Rebuilt on every run.  `check` verifies that summing over the six communities gives exactly the pooled `reddit_hourly` rows
 (model 'VADER+FinBERT', every variant, every ticker and the market 'ALL') and that all models keep the same texts in 'all'.
@@ -34,31 +35,31 @@ VARIANTS = (("all", 0.0), ("strong", 0.05), ("quality", 0.30))
 SCHEMA = """CREATE TABLE reddit_hourly_community (
     ticker TEXT NOT NULL, hour_utc INTEGER NOT NULL, subreddit TEXT NOT NULL, texts INTEGER NOT NULL,
     sentiment_sum REAL NOT NULL, abs_sum REAL NOT NULL, pos_n INTEGER NOT NULL, neg_n INTEGER NOT NULL,
-    neu_n INTEGER NOT NULL, model TEXT NOT NULL, variant TEXT NOT NULL,
-    PRIMARY KEY (model, variant, ticker, hour_utc, subreddit)) WITHOUT ROWID"""
+    neu_n INTEGER NOT NULL, model TEXT NOT NULL, variant TEXT NOT NULL, content_type TEXT NOT NULL,
+    PRIMARY KEY (model, variant, ticker, hour_utc, subreddit, content_type)) WITHOUT ROWID"""
 
 SCHEMA_GLOBAL = """CREATE TABLE reddit_hourly_global (
     hour_utc INTEGER NOT NULL, subreddit TEXT NOT NULL, texts INTEGER NOT NULL,
     sentiment_sum REAL NOT NULL, abs_sum REAL NOT NULL, pos_n INTEGER NOT NULL, neg_n INTEGER NOT NULL,
-    neu_n INTEGER NOT NULL, model TEXT NOT NULL, variant TEXT NOT NULL,
-    PRIMARY KEY (model, variant, hour_utc, subreddit)) WITHOUT ROWID"""
+    neu_n INTEGER NOT NULL, model TEXT NOT NULL, variant TEXT NOT NULL, content_type TEXT NOT NULL,
+    PRIMARY KEY (model, variant, hour_utc, subreddit, content_type)) WITHOUT ROWID"""
 
 SELECT = """
     SELECT m.ticker, p.created_utc / 3600 * 3600 AS hour_utc, 'r/' || p.subreddit, COUNT(*), SUM(s.{score}),
            SUM(ABS(s.{score})), SUM(s.{status} = 'positive'), SUM(s.{status} = 'negative'),
-           SUM(s.{status} = 'neutral'), '{model}', '{variant}'
+           SUM(s.{status} = 'neutral'), '{model}', '{variant}', CASE p.content_type WHEN 'submission' THEN 'Post' ELSE 'Comment' END
     FROM sentiment_item s JOIN ticker_mentions m ON m.src_rowid = s.src_rowid
          JOIN processed_text p ON p.src_rowid = s.src_rowid
     WHERE ABS(s.{score}) >= {floor}
-    GROUP BY 1, 2, 3"""
+    GROUP BY 1, 2, 3, 12"""
 
 SELECT_GLOBAL = """
     SELECT p.created_utc / 3600 * 3600 AS hour_utc, 'r/' || p.subreddit, COUNT(*), SUM(s.{score}),
            SUM(ABS(s.{score})), SUM(s.{status} = 'positive'), SUM(s.{status} = 'negative'),
-           SUM(s.{status} = 'neutral'), '{model}', '{variant}'
+           SUM(s.{status} = 'neutral'), '{model}', '{variant}', CASE p.content_type WHEN 'submission' THEN 'Post' ELSE 'Comment' END
     FROM sentiment_item s JOIN processed_text p ON p.src_rowid = s.src_rowid
     WHERE ABS(s.{score}) >= {floor}
-    GROUP BY 1, 2"""
+    GROUP BY 1, 2, 11"""
 
 
 def aggregate(db, models=MODELS, variants=VARIANTS):
@@ -79,7 +80,7 @@ def build(db_path=DEFAULT_DB):
     db = connect(db_path)
     try:
         total = 0
-        for table, schema, select, marks in (("reddit_hourly_community", SCHEMA, SELECT, 11), ("reddit_hourly_global", SCHEMA_GLOBAL, SELECT_GLOBAL, 10)):
+        for table, schema, select, marks in (("reddit_hourly_community", SCHEMA, SELECT, 12), ("reddit_hourly_global", SCHEMA_GLOBAL, SELECT_GLOBAL, 11)):
             db.execute("DROP TABLE IF EXISTS " + table)
             db.execute(schema)
             for model, score, status in MODELS:
@@ -122,7 +123,7 @@ def check(db_path=DEFAULT_DB):
                     bad += abs(rows - grouped)
             # every model keeps the same texts in 'all'
             other = "ticker, " if key == "ticker" else ""
-            bad += db.execute("""SELECT COUNT(*) FROM %s a JOIN %s b ON b.hour_utc = a.hour_utc AND b.subreddit = a.subreddit %s
+            bad += db.execute("""SELECT COUNT(*) FROM %s a JOIN %s b ON b.hour_utc = a.hour_utc AND b.subreddit = a.subreddit AND b.content_type = a.content_type %s
                                  AND b.variant = 'all' AND b.model != a.model WHERE a.model = 'VADER+FinBERT' AND a.variant = 'all' AND a.texts != b.texts"""
                               % (table, table, "AND b.ticker = a.ticker" if other else "")).fetchone()[0]
         return compared, bad

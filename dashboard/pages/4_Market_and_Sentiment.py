@@ -29,9 +29,10 @@ how = common.granularity(start, end, "g_sent")
 tickers = common.selected_tickers()
 communities = common.selected_communities()
 statuses = common.selected_statuses()
+content_types = common.selected_content_types()
 z_th = st.session_state.get("d_z", 0.0)                 # DimDetectionConfig: filters the hours (0 = no filter)
 s_th = st.session_state.get("d_s", 0.0)
-if not tickers or not communities or not statuses:
+if not tickers or not communities or not statuses or not content_types:
     common.nothing_selected(["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"],
                             "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
 one = len(tickers) == 1
@@ -40,7 +41,7 @@ label = tickers[0] if one else "รวม %d ตัว" % len(tickers)
 
 # ---- prices of the ticked tickers (hours with a valid bar) and the sentiment KPIs recombined from the chosen communities
 prices = q("price_series_for", tickers, start, end)
-sent = q("sentiment_hourly", tickers, start, end, communities, common.selected_model())
+sent = q("sentiment_hourly", tickers, start, end, communities, common.selected_model(), "all", content_types)
 if prices.empty:
     st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
     st.stop()

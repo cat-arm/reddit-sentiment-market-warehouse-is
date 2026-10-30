@@ -31,11 +31,14 @@ _, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overvie
 tickers = common.selected_tickers()
 communities = common.selected_communities()
 statuses = common.selected_statuses()
+content_types = common.selected_content_types()
 CARDS = ["Historical Win Rate", "Spearman p-value", "Pearson p-value", "Logistic AUC"]
-if not tickers or not communities or not statuses:
+if not tickers or not communities or not statuses or not content_types:
     common.nothing_selected(CARDS, "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
 z_th = st.session_state.get("d_z", 0.0)
 s_th = st.session_state.get("d_s", 0.0)
+PREDICTOR_OF = {label: key for key, label in data.PREDICTORS.items()}
+predictor = PREDICTOR_OF.get(st.session_state.get("p5_predictor"), "sentiment_mean")      # EXTENSION: the variable that is measured (the radio is drawn below the cards)
 model = common.selected_model()
 universe = q("tickers")
 group_of = dict(zip(universe.ticker, universe.big_group))
@@ -55,26 +58,29 @@ if prices.empty:
     st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
     st.stop()
 @st.cache_data(show_spinner="กำลังคำนวณ p-value และ Win Rate ...", max_entries=40)
-def panel_stat(family, variant, tickers, start, end, communities, model, statuses, z_th, s_th):
+def panel_stat(family, variant, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, predictor):
     """The live statistics table of one panel after every filter of the sidebar (cached: the same filters are never computed twice)."""
     prices = q("price_series_for", tickers, start, end)
     returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in data.HORIZONS]]]
 
     def frame(fam, var):
         if fam == "global":
-            sent = q("global_hourly", start, end, communities, model, var)
+            sent = q("global_hourly", start, end, communities, model, var, content_types)
         else:
-            sent = q("sentiment_hourly", tickers, start, end, communities, model, var)
+            sent = q("sentiment_hourly", tickers, start, end, communities, model, var, content_types)
         return data.sentiment_frame(sent, start, end)
 
     base = frame("global" if variant == "baseline" else family, "all")
     own = frame(family, variant) if variant in ("strong", "quality") else None
-    samples = data.panel_samples(base, own, returns, family, variant, statuses, z_th, s_th)
-    return data.stat_table(samples) if not samples.empty else pd.DataFrame(columns=data.STAT_COLUMNS)
+    samples = data.panel_samples(base, own, returns, family, variant, statuses, z_th, s_th, predictor=predictor)
+    if samples.empty:
+        return pd.DataFrame(columns=data.STAT_COLUMNS)
+    return data.stat_table(samples, sentiment="predictor", directional=predictor != "zscore")
 
 
 def stat(family, variant):
-    return panel_stat(family, variant, tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_th, s_th)
+    return panel_stat(family, variant, tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_th, s_th,
+                      tuple(content_types), predictor)
 
 
 # ---- cards: the default panel (every text of the market), future horizons only ---------------------------------
@@ -147,6 +153,9 @@ def panel_view(stat, key):
         st.info("ไม่มีข้อมูลเพียงพอสำหรับ panel นี้ตามตัวกรองที่เลือก (ต้องมีอย่างน้อย 30 ชั่วโมงต่อคู่ ลองขยายช่วงเวลาหรือลดเกณฑ์)")
         return
     measure = st.radio("แสดง", VIEWS, horizontal=True, key="p5_measure_" + key, label_visibility="collapsed")
+    if measure == "Win Rate" and predictor == "zscore":
+        st.info("Reddit Volume Z-score ไม่มีทิศทาง บวก/ลบ จึงไม่มี Win Rate (ดูเฉพาะ Spearman และ Pearson)")
+        return
     if stat[stat.ticker.isin(tickers)][BASE[measure][0]].notna().sum() == 0:
         st.info("ไม่มีค่า %s ของสินทรัพย์ที่เลือกใน panel นี้ (ข้อมูลน้อยกว่า 30 ชั่วโมงต่อคู่)" % measure)
         return
@@ -265,6 +274,10 @@ def logistic_view():
         common.show((rect + text).properties(height=34 * imp.กลุ่มตัวแปร.nunique() + 40))
         st.caption("6 กลุ่มตัวแปรตามที่ proposal กำหนด  กลุ่มที่ค่าสูงกว่ามีอิทธิพลต่อโมเดลมากกว่า แต่เมื่อ AUC ใกล้ 0.5 โมเดลโดยรวมก็ยังทำนายไม่ได้")
 
+
+st.radio("ตัวแปรที่วัด (ส่วนขยายนอก proposal: proposal วัดค่าความรู้สึกเฉลี่ย)", list(PREDICTOR_OF), horizontal=True, key="p5_predictor")
+st.caption("ตัวแปรที่วัด = ตัวเลขรายชั่วโมงที่เอามาเทียบกับผลตอบแทน  momentum = ความรู้สึกชั่วโมงนี้ลบชั่วโมงก่อน  lag 1h = ความรู้สึกของชั่วโมงก่อนหน้า  "
+           "Reddit Volume Z-score ไม่มีทิศทาง จึงไม่มี Win Rate  การ์ดและทุกแท็บเปลี่ยนตามตัวแปรที่เลือก")
 
 # ---- one tab per kind of text; ALL of them are computed with the page (cached, so a second visit and every tab switch is instant) --------------
 variants = list(data.PANEL_VARIANTS)

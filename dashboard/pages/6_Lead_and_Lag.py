@@ -26,15 +26,16 @@ _, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overvie
 tickers = common.selected_tickers()
 communities = common.selected_communities()
 statuses = common.selected_statuses()
+content_types = common.selected_content_types()
 CARDS = ["ค่าสหสัมพันธ์ ชั่วโมงเดียวกัน", "ค่าสหสัมพันธ์ เมื่อราคาขยับก่อน (−6..−1 ชม.)", "ค่าสหสัมพันธ์ เมื่อราคาขยับหลัง (+1..+6 ชม.)"]
-if not tickers or not communities or not statuses:
+if not tickers or not communities or not statuses or not content_types:
     common.nothing_selected(CARDS, "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
 z_th = st.session_state.get("d_z", 0.0)                 # DimDetectionConfig: filters the hours (0 = no filter)
 s_th = st.session_state.get("d_s", 0.0)
 names = dict(zip(q("tickers").ticker, q("tickers").name))
 
 prices = q("price_series_for", tickers, start, end)
-sent = q("sentiment_hourly", tickers, start, end, communities, common.selected_model())
+sent = q("sentiment_hourly", tickers, start, end, communities, common.selected_model(), "all", content_types)
 if prices.empty:
     common.kpi_cards([(c, "n/a", None) for c in CARDS])
     st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
