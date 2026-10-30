@@ -31,7 +31,6 @@ communities = common.selected_communities()
 statuses = common.selected_statuses()
 z_th = st.session_state.get("d_z", 0.0)                 # DimDetectionConfig: filters the hours (0 = no filter)
 s_th = st.session_state.get("d_s", 0.0)
-horizon = st.session_state.get("d_h", common.data.HORIZONS[0])
 if not tickers or not communities or not statuses:
     common.nothing_selected(["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"],
                             "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
@@ -131,7 +130,7 @@ else:
 # ---- does higher sentiment go with a higher return?  every ticked ticker-hour with text is one sample
 st.subheader("ความรู้สึกยิ่งสูง ผลตอบแทนยิ่งสูงไหม")
 MEASURES = {"Current Return (ชั่วโมงเดียวกัน)": "log_return", **{"ผลตอบแทนล่วงหน้า %s" % h: "future_return_" + h for h in common.data.HORIZONS}}
-st.session_state.setdefault("s_bar_measure", "ผลตอบแทนล่วงหน้า 1h")
+st.session_state.setdefault("s_bar_measure", "ผลตอบแทนล่วงหน้า " + common.data.HORIZONS[0])
 picked = st.radio("วัดผลตอบแทนแบบ", list(MEASURES), horizontal=True, key="s_bar_measure", label_visibility="collapsed")
 column = MEASURES[picked]
 returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in common.data.HORIZONS]]]
@@ -191,7 +190,10 @@ if not ratios.empty:
 rule_text = ("ทุกชั่วโมงที่มีข้อความ (เกณฑ์ Z-score และ Sentiment เป็น 0 = ไม่กรอง)" if not (z_th or s_th) else
              "Z-score > %.1f และ |Sentiment| ≥ %.2f" % (z_th, s_th) if z_th and s_th else
              "Z-score > %.1f" % z_th if z_th else "|Sentiment| ≥ %.2f" % s_th)
-st.subheader("ชั่วโมงที่เข้าเงื่อนไขตรวจจับ (%s) ราคาเป็นอย่างไรต่อ %s" % (rule_text, horizon))
+# the Horizon belongs to this chart only (the sidebar filters apply to the whole page)
+st.session_state.setdefault("s_drill_h", common.data.HORIZONS[0])
+st.subheader("ชั่วโมงที่เข้าเงื่อนไขตรวจจับ (%s) ราคาเป็นอย่างไรต่อ %s" % (rule_text, st.session_state["s_drill_h"]))
+horizon = st.radio("Horizon (ดูผลตอบแทนล่วงหน้ากี่ชั่วโมง)", list(common.data.HORIZONS), horizontal=True, key="s_drill_h")
 hours = per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "texts", "sentiment_mean", "zscore", "majority"]]
 hours = hours[hours.majority.isin(statuses)].merge(prices[["ticker", "hour_utc", "future_return_" + horizon]], on=["ticker", "hour_utc"])
 col = "future_return_" + horizon

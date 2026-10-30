@@ -42,7 +42,7 @@ STATUSES = ("positive", "negative", "neutral")                  # DimMajoritySen
 MAJORITY_KEYS = ["f_maj_" + s for s in STATUSES]
 SIGNAL_KEYS = ["s_z", "s_s", "s_h"]                             # DimDetectionConfig on the Ranking and Signals page
 EVENT_KEYS = ["h_z", "h_s", "h_n"]                              # the same idea on the Hot Events page
-OVERVIEW_KEYS = ["d_z", "d_s", "d_h"]                           # Market and Sentiment: thresholds FILTER the hours (0 = no filter)
+OVERVIEW_KEYS = ["d_z", "d_s"]                                  # Market and Sentiment: thresholds FILTER the whole page (0 = no filter)
 SENTIMENT_MODELS = ("VADER+FinBERT", "VADER", "FinBERT")         # DimSentimentSource.ModelUsed; the first is the proposal's
 DEFAULT_RANGE_DAYS = 365
 
@@ -196,20 +196,17 @@ def _majority_filter():
 
 def _detection_filter(kind):
     """DimDetectionConfig: Z-score Threshold, Sentiment Threshold and Horizon (kind 'signals' = Ranking and Signals, 'overview' =
-    Market and Sentiment where the thresholds filter the hours and 0 = off), or the thresholds and the minimum number of
+    Market and Sentiment: two thresholds that filter the whole page, 0 = off; the Horizon is chosen inside the charts that need it), or the thresholds and the minimum number of
     texts of the Hot Events page (kind 'events')."""
     state = st.session_state
     st.sidebar.markdown("**เกณฑ์การตรวจจับสัญญาณ (DimDetectionConfig)**")
     if kind == "overview":                                  # filters the hours of the page; 0 = off, so by default nothing is removed
         state.setdefault("d_z", 0.0)
         state.setdefault("d_s", 0.0)
-        state.setdefault("d_h", "1h")
         st.sidebar.caption("Z-score Threshold (ปริมาณต้องเกิน; 0 = ไม่กรอง)")
         st.sidebar.slider("Z-score Threshold", 0.0, 4.0, step=0.1, key="d_z", label_visibility="collapsed")
         st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่; 0 = ไม่กรอง)")
         st.sidebar.slider("Sentiment Threshold", 0.0, 1.0, step=0.05, key="d_s", label_visibility="collapsed")
-        st.sidebar.caption("Horizon (ดูผลตอบแทนล่วงหน้ากี่ชั่วโมง)")
-        st.sidebar.radio("Horizon", list(data.HORIZONS), key="d_h", horizontal=True, label_visibility="collapsed")
     elif kind == "signals":
         state.setdefault("s_z", 1.5)
         state.setdefault("s_s", 0.30)
