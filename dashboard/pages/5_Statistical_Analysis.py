@@ -190,7 +190,7 @@ def logistic_view():
     st.write("สัมประสิทธิ์: เลือก panel และ Horizon")
     by_label = {v: k for k, v in labels.items()}                                          # the dropdown lists Global first, then Ticker
     panel_pick = by_label[st.selectbox("panel", list(by_label), key="p5_log_panel", label_visibility="collapsed")]
-    horizon_pick = st.radio("Horizon ที่ดูสัมประสิทธิ์", list(TARGET_LABEL), index=1, format_func=TARGET_LABEL.get, horizontal=True,
+    horizon_pick = st.radio("Horizon ที่ดูสัมประสิทธิ์", list(TARGET_LABEL), index=0, format_func=TARGET_LABEL.get, horizontal=True,
                             key="p5_log_h", label_visibility="collapsed")
     one = lg[(lg.panel == panel_pick) & (lg.horizon == horizon_pick)]
     coefs = one[one.metric.str.startswith("coef:")].assign(ตัวแปร=lambda d: d.metric.str[5:])
