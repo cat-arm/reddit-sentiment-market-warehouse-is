@@ -13,8 +13,8 @@ DB = ROOT / "output" / "reddit.sqlite3"
 SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # system 7.1: DimSource filter
 SENTIMENT_PAGE = "pages/4_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
 RANKING_PAGE = "pages/5_Statistical_Analysis.py"                              # 7.5-2: p-values, win rate, regression
-ANALYSIS_PAGE = "pages/7_Lead_and_Lag.py"                                      # extension: who moves first
-DETECTION_PAGES = {"pages/6_Hot_Events.py": ["h_z", "h_s", "h_n"], SENTIMENT_PAGE: ["d_z", "d_s"], RANKING_PAGE: ["d_z", "d_s"],
+ANALYSIS_PAGE = "pages/6_Lead_and_Lag.py"                                      # extension: who moves first
+DETECTION_PAGES = {"pages/7_Hot_Events.py": ["h_z", "h_s", "h_n"], SENTIMENT_PAGE: ["d_z", "d_s"], RANKING_PAGE: ["d_z", "d_s"],
                    ANALYSIS_PAGE: ["d_z", "d_s"]}
 MAJORITY_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE, *DETECTION_PAGES}
 SENTIMENT_PAGES = {SENTIMENT_PAGE, RANKING_PAGE, ANALYSIS_PAGE}
@@ -29,8 +29,8 @@ TICKERS = ["AAPL", "AMC", "AMD", "BITO", "BRK-B", "COIN", "GME", "HOOD", "IBIT",
            "MSTR", "NVDA", "PLTR", "QQQ", "SPY", "TSLA", "XOM", "CL=F", "ES=F", "GC=F", "NG=F", "NQ=F", "RTY=F",
            "BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD", "SOL-USD", "XRP-USD"]
 PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
-         "pages/4_Market_and_Sentiment.py", RANKING_PAGE, "pages/6_Hot_Events.py",
-         ANALYSIS_PAGE]
+         "pages/4_Market_and_Sentiment.py", RANKING_PAGE, ANALYSIS_PAGE,
+         "pages/7_Hot_Events.py"]
 MULTI_PAGES = set(PAGES[1:])                                                  # every dashboard takes several tickers
 
 
@@ -310,7 +310,7 @@ class FilterTests(unittest.TestCase):
             at.sidebar.checkbox(key=key).set_value(False)
         at = at.run()
         self.assertTrue(all(m.value == "0" for m in at.metric), "no community ticked = nothing")
-        page = "pages/6_Hot_Events.py"
+        page = "pages/7_Hot_Events.py"
         at = self.run_page(page)
         base = at.metric[0].value
         at.sidebar.slider(key="h_z").set_value(3.5).run()

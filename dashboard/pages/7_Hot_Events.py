@@ -55,19 +55,20 @@ def wilson(wins, n, z=1.96):
     return centre - half, centre + half
 
 
+TARGETS = [("log_return", "Current Return"), *[("future_return_" + h, h) for h in HORIZONS]]
 rows = []
-for h in HORIZONS:
-    ret = events["future_return_" + h]
+for column, name in TARGETS:
+    ret = events[column]
     moved = events[ret.notna() & (ret != 0)]
     n = len(moved)
-    row = {"Horizon": h, "เหตุการณ์ที่มีผลตอบแทน (n)": n}
+    row = {"Horizon": name, "เหตุการณ์ที่มีผลตอบแทน (n)": n}
     if n < MIN_N:
-        row.update({"Win Rate (%)": None, "ช่วงเชื่อมั่น 95% (%)": "ข้อมูลไม่เพียงพอ (n < %d)" % MIN_N, "Future Return เฉลี่ย (%)": None})
+        row.update({"Win Rate (%)": None, "ช่วงเชื่อมั่น 95% (%)": "ข้อมูลไม่เพียงพอ (n < %d)" % MIN_N, "ผลตอบแทนเฉลี่ย (%)": None})
     else:
-        wins = int((np.sign(moved.sentiment_mean) == np.sign(moved["future_return_" + h])).sum())
+        wins = int((np.sign(moved.sentiment_mean) == np.sign(moved[column])).sum())
         lo, hi = wilson(wins, n)
         row.update({"Win Rate (%)": round(100 * wins / n, 1), "ช่วงเชื่อมั่น 95% (%)": "%.1f – %.1f" % (100 * lo, 100 * hi),
-                    "Future Return เฉลี่ย (%)": round(float(moved["future_return_" + h].mean()), 4)})
+                    "ผลตอบแทนเฉลี่ย (%)": round(float(moved[column].mean()), 4)})
     rows.append(row)
 st.subheader("หลังเหตุการณ์ ราคาไปทางเดียวกับความรู้สึกบ่อยแค่ไหน")
 common.table(pd.DataFrame(rows), hide_index=True, width="stretch")
@@ -85,6 +86,18 @@ st.dataframe(top, hide_index=True, width="stretch")
 st.subheader("รายการเหตุการณ์ (ล่าสุด 300 รายการ)")
 view = events.head(300).copy()
 view["timestamp"] = pd.to_datetime(view.hour_utc, unit="s", utc=True).dt.strftime("%Y-%m-%d %H:%M")
-common.table(view[["timestamp", "ticker", "big_group", "sentiment_mean", "reddit_volume", "zscore", "future_return_1h",
-                   "future_return_3h", "future_return_6h"]].round(3), hide_index=True, width="stretch", height=380)
+common.table(view[["timestamp", "ticker", "big_group", "sentiment_mean", "reddit_volume", "zscore", "log_return", "future_return_1h",
+                   "future_return_2h", "future_return_3h", "future_return_6h", "future_return_12h"]].rename(
+    columns={"log_return": "Current Return (%)"}).round(3), hide_index=True, width="stretch", height=380)
 st.caption("ผลตอบแทนว่าง = ไม่มีแท่งราคาที่ห่างพอดีตามกรอบเวลา (เช่น หุ้นช่วงตลาดปิด) ไม่ใช่ 0")
+
+# ---- how complete the returns are, and why they are missing -------------------------------------------------------------------
+st.subheader("ผลตอบแทนที่มีและที่ขาด (ร้อยละของเหตุการณ์ที่มีค่า)")
+have = events.assign(กลุ่ม=events.big_group.map(GROUP_LABELS)).groupby("กลุ่ม").agg(
+    เหตุการณ์=("ticker", "size"), **{name: (column, lambda s: round(100.0 * s.notna().mean(), 1)) for column, name in TARGETS}).reset_index()
+common.table(have, hide_index=True, width="stretch")
+st.caption("ทำไมบางช่องขาด (ไม่ใช่ข้อมูลหาย แต่ตามกติกาของ proposal)  \n"
+           "• ผลตอบแทนล่วงหน้า n ชั่วโมง ต้องมีแท่งราคาที่ห่างพอดี n ชั่วโมง  หุ้น/ETF ซื้อขายเฉพาะเวลาตลาดสหรัฐ (ราว 13:30–20:00 UTC) "
+           "จึงไม่มีแท่งราคาหลังจากนั้น 12 ชั่วโมง (ตลาดปิด) และ 6 ชั่วโมงก็ขาดสำหรับเหตุการณ์ช่วงบ่าย  ฟิวเจอร์สหยุดพักบางช่วงของวัน  คริปโตซื้อขายตลอด 24 ชั่วโมง จึงไม่ขาด  \n"
+           "• Current Return ต้องมีแท่งราคาก่อนหน้า 1 ชั่วโมงพอดี  ชั่วโมงแรกของตลาดเปิดจึงไม่มีค่า  \n"
+           "• ชั่วโมงท้ายสุดของข้อมูลยังไม่มีราคาล่วงหน้า")

@@ -857,10 +857,12 @@ def signal_counts(db_path):
 def hot_events(db_path, start, end, z_min, s_min, min_texts):
     """EXTENSION (not in the proposal): ticker-hours in which Reddit was unusually busy (Volume Z-score > z_min) AND the
     sentiment was clearly directional (|sentiment_mean| >= s_min, at least min_texts texts), with the forward returns
-    that followed.  Descriptive history only; hours without a computable return keep NULL."""
+    that followed and the Current Return (`log_return`) of the same hour.  Descriptive history only; hours without a computable return
+    keep NULL: a future return needs a bar exactly n hours later (a US stock has none 12 hours after its session), the Current Return
+    needs the bar one hour earlier (the first hour of a session has none)."""
     return _read(db_path, """
         SELECT ticker, big_group, hour_utc, sentiment_mean, reddit_volume, reddit_volume_zscore_24 AS zscore,
-               majority_final_status, future_return_1h, future_return_2h, future_return_3h, future_return_6h, future_return_12h
+               majority_final_status, log_return, future_return_1h, future_return_2h, future_return_3h, future_return_6h, future_return_12h
         FROM merged_hourly_panel
         WHERE scope = 'ticker' AND variant = 'all' AND has_reddit_data = 1 AND reddit_volume >= ?
           AND reddit_volume_zscore_24 > ? AND ABS(sentiment_mean) >= ? AND hour_utc BETWEEN ? AND ?
