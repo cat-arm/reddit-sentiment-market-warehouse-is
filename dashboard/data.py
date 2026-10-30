@@ -663,6 +663,30 @@ STORED_PANELS = {"panel_global": "Global", "panel_global_strong": "Global strong
                  "panel_Ticker_quality": "Ticker quality", "panel_Ticker_spike": "Ticker spike", "panel_baseline": "Baseline"}
 
 
+# the variables of the Logistic Regression (proposal table 13 and 7.4: six variable groups): Thai name and group
+VARIABLE_GROUPS = {"Level": "Level (ระดับความรู้สึก)", "Direction": "Direction (ทิศทาง บวก/ลบ)", "Vote": "Vote (โหวตส่วนใหญ่)",
+                   "Volume": "Volume (ปริมาณโพสต์)", "Lag": "Lag (ความรู้สึกย้อนหลัง)", "Momentum": "Momentum (การเปลี่ยนแปลง)",
+                   "Random": "Random (ทิศทางสุ่ม)"}
+VARIABLES = {"sentiment_mean": ("ค่าความรู้สึกเฉลี่ย", "Level"),
+             "sentiment_abs_mean": ("ความแรงของความรู้สึก (ค่าสัมบูรณ์)", "Level"),
+             "pos_ratio": ("สัดส่วนความคิดเห็นเชิงบวก", "Direction"),
+             "neg_ratio": ("สัดส่วนความคิดเห็นเชิงลบ", "Direction"),
+             "majority_final_status_num": ("ประเภทความรู้สึกส่วนใหญ่ บวก +1 กลาง 0 ลบ −1", "Vote"),
+             "voter_agreement_ratio": ("สัดส่วนข้อความที่ตรงกับประเภทส่วนใหญ่", "Vote"),
+             "reddit_volume_zscore_24": ("Reddit Volume Z-score", "Volume"),
+             "sentiment_lag_1h": ("ความรู้สึก 1 ชั่วโมงก่อนหน้า", "Lag"), "sentiment_lag_2h": ("ความรู้สึก 2 ชั่วโมงก่อนหน้า", "Lag"),
+             "sentiment_lag_3h": ("ความรู้สึก 3 ชั่วโมงก่อนหน้า", "Lag"), "sentiment_lag_6h": ("ความรู้สึก 6 ชั่วโมงก่อนหน้า", "Lag"),
+             "sentiment_lag_12h": ("ความรู้สึก 12 ชั่วโมงก่อนหน้า", "Lag"),
+             "sentiment_momentum_1h": ("การเปลี่ยนแปลงของความรู้สึกจากชั่วโมงก่อน", "Momentum"),
+             "random_direction": ("ทิศทางสุ่ม +1/−1", "Random")}
+
+
+def variable_label(column):
+    """Label of a Logistic Regression variable: its column name, the Thai name in brackets and its variable group."""
+    thai, group = VARIABLES.get(column, ("", ""))
+    return "%s (%s) · กลุ่ม %s" % (column, thai, group) if thai else column
+
+
 def panel_name(variant, family="Ticker"):
     """`analysis_results` name of the panel of a variant (a key of PANEL_VARIANTS) and a family ('Ticker' or 'global')."""
     if variant == "baseline":

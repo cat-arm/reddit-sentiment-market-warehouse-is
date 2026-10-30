@@ -188,6 +188,22 @@ class PanelNameTests(unittest.TestCase):
         self.assertEqual(data.panel_name("baseline", "global"), "panel_baseline")
 
 
+class VariableLabelTests(unittest.TestCase):
+    def test_every_variable_of_the_logistic_regression_has_a_thai_name_and_its_group(self):
+        from analysis.logistic import BASELINE_GROUPS, GROUPS
+        for groups in (GROUPS, BASELINE_GROUPS):
+            for group, columns in groups.items():
+                for column in columns:
+                    self.assertIn(column, data.VARIABLES, column)
+                    self.assertEqual(data.VARIABLES[column][1], group, column)                  # the group is the one of analysis.logistic
+                    self.assertIn(group, data.VARIABLE_GROUPS)
+
+    def test_the_label_names_the_column_the_thai_name_and_the_group(self):
+        label = data.variable_label("neg_ratio")
+        self.assertTrue(label.startswith("neg_ratio (") and "สัดส่วนความคิดเห็นเชิงลบ" in label and label.endswith("กลุ่ม Direction"))
+        self.assertEqual(data.variable_label("something_new"), "something_new")                 # an unknown column keeps its name
+
+
 class StatTableTests(unittest.TestCase):
     def samples(self, n=200, seed=0, slope=0.0):
         rng = np.random.default_rng(seed)

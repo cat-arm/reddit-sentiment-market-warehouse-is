@@ -193,24 +193,25 @@ def logistic_view():
     horizon_pick = st.radio("Horizon ที่ดูสัมประสิทธิ์", list(TARGET_LABEL), index=0, format_func=TARGET_LABEL.get, horizontal=True,
                             key="p5_log_h", label_visibility="collapsed")
     one = lg[(lg.panel == panel_pick) & (lg.horizon == horizon_pick)]
-    coefs = one[one.metric.str.startswith("coef:")].assign(ตัวแปร=lambda d: d.metric.str[5:])
-    imp = one[one.metric.str.startswith("group_importance:")].assign(กลุ่มตัวแปร=lambda d: d.metric.str[17:])
+    coefs = one[one.metric.str.startswith("coef:")].assign(ตัวแปร=lambda d: d.metric.str[5:].map(data.variable_label),
+                                                          กลุ่ม=lambda d: d.metric.str[5:].map(lambda c: data.VARIABLE_GROUPS.get(data.VARIABLES.get(c, ("", ""))[1], "")))
+    imp = one[one.metric.str.startswith("group_importance:")].assign(กลุ่มตัวแปร=lambda d: d.metric.str[17:].map(lambda g: data.VARIABLE_GROUPS.get(g, g)))
     if not coefs.empty:
-        st.write("สัมประสิทธิ์ของแต่ละตัวแปร (%s, %s)" % (labels[panel_pick], TARGET_LABEL[horizon_pick]))
+        st.write("สัมประสิทธิ์ของแต่ละตัวแปร พร้อมชื่อไทยและกลุ่มตัวแปร (%s, %s)" % (labels[panel_pick], TARGET_LABEL[horizon_pick]))
         common.show(alt.Chart(coefs).mark_bar().encode(
-            y=alt.Y("ตัวแปร:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320, labelOverlap=False)),
+            y=alt.Y("ตัวแปร:N", sort="-x", title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)),
             x=alt.X("value:Q", title="สัมประสิทธิ์มาตรฐาน (เฉลี่ยข้าม 5 ส่วน)"),
             color=alt.condition(alt.datum.value > 0, alt.value("#2ca02c"), alt.value("#d62728")),
-            tooltip=["ตัวแปร", alt.Tooltip("value:Q", title="สัมประสิทธิ์", format="+.4f")]).properties(height=26 * len(coefs) + 40))
+            tooltip=["ตัวแปร", "กลุ่ม", alt.Tooltip("value:Q", title="สัมประสิทธิ์", format="+.4f")]).properties(height=26 * len(coefs) + 40))
         st.caption("สัมประสิทธิ์ = ถ้าตัวแปรนั้นเพิ่มขึ้น 1 ส่วนเบี่ยงเบนมาตรฐาน โอกาสที่ราคาขึ้น (เทียบกับลง) เปลี่ยนไปเท่าไรในสเกลของโมเดล  "
                    "บวก = โอกาสขึ้นสูงขึ้น (เขียว) ลบ = ต่ำลง (แดง)  ใน panel และ Horizon นี้ ค่าที่ไกล 0 ที่สุดคือ %+.3f (%s) ซึ่งใกล้ 0 มาก "
-                   "คือแต่ละตัวแปรแทบไม่มีอิทธิพล (ถ้า AUC ของ panel นี้ใกล้ 0.5)" % (coefs.value.loc[coefs.value.abs().idxmax()], coefs.ตัวแปร.loc[coefs.value.abs().idxmax()]))
+                   "คือแต่ละตัวแปรแทบไม่มีอิทธิพล (ถ้า AUC ของ panel นี้ใกล้ 0.5)" % (coefs.value.loc[coefs.value.abs().idxmax()], coefs.ตัวแปร.loc[coefs.value.abs().idxmax()].split(" (")[0]))
     if not imp.empty:
         st.write("ความสำคัญของกลุ่มตัวแปร (ผลรวมขนาดสัมประสิทธิ์ของกลุ่ม)")
         common.show(alt.Chart(imp).mark_bar(color=common.C_PRICE).encode(
             y=alt.Y("กลุ่มตัวแปร:N", sort="-x", title=None), x=alt.X("value:Q", title="ความสำคัญของกลุ่ม (ผลรวม |สัมประสิทธิ์|)"),
             tooltip=["กลุ่มตัวแปร", alt.Tooltip("value:Q", title="ความสำคัญ", format=".4f")]).properties(height=200))
-        st.caption("กลุ่มตัวแปร: Level, Direction, Vote, Volume, Lag, Momentum ตามที่ proposal กำหนด  กลุ่มที่แท่งยาวกว่ามีอิทธิพลต่อโมเดลมากกว่า "
+        st.caption("6 กลุ่มตัวแปรตามที่ proposal กำหนด (ชื่อตัวแปรแต่ละตัวในกราฟด้านบนบอกกลุ่มที่สังกัดไว้)  กลุ่มที่แท่งยาวกว่ามีอิทธิพลต่อโมเดลมากกว่า "
                    "แต่เมื่อ AUC ใกล้ 0.5 โมเดลโดยรวมก็ยังทำนายไม่ได้")
 
 
