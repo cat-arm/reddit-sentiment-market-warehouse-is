@@ -204,6 +204,24 @@ class VariableLabelTests(unittest.TestCase):
         self.assertEqual(data.variable_label("something_new"), "something_new")                 # an unknown column keeps its name
 
 
+class EffectTests(unittest.TestCase):
+    def test_a_coefficient_is_a_change_of_the_chance_in_percentage_points(self):
+        self.assertAlmostEqual(float(data.effect_points(0.04)), 1.0)                  # 0.04 / 4 x 100
+        self.assertAlmostEqual(float(data.effect_points(-0.104)), -2.6)
+        # the slope of the logistic curve at 50% is 1/4: the approximation matches the real change for a small coefficient
+        real = 1 / (1 + np.exp(-0.04)) - 0.5
+        self.assertAlmostEqual(float(data.effect_points(0.04)), real * 100, places=1)
+
+    def test_the_summary_averages_the_future_horizons_and_counts_the_steady_sign(self):
+        rows = [("a", "log_return", 0.2)] + [("a", h, v) for h, v in zip(data.HORIZONS, (0.04, 0.04, 0.04, -0.01, 0.04))] \
+            + [("b", h, v) for h, v in zip(data.HORIZONS, (0.04, -0.04, 0.04, -0.04, 0.04))]
+        coefs = pd.DataFrame(rows, columns=["column", "horizon", "value"])
+        out = data.effect_summary(coefs).set_index("column")
+        self.assertAlmostEqual(out.loc["a", "effect"], (0.04 * 4 - 0.01) * 25 / 5)    # the Current Return (0.2) is not in the mean
+        self.assertEqual((out.loc["a", "same_sign"], out.loc["a", "horizons"]), (4, 5))
+        self.assertEqual(out.loc["b", "same_sign"], 3)                                  # three + and two -: the mean is +, 3 agree
+
+
 class StatTableTests(unittest.TestCase):
     def samples(self, n=200, seed=0, slope=0.0):
         rng = np.random.default_rng(seed)

@@ -681,6 +681,25 @@ VARIABLES = {"sentiment_mean": ("ค่าความรู้สึกเฉ�
              "random_direction": ("ทิศทางสุ่ม +1/−1", "Random")}
 
 
+def effect_points(coef):
+    """A standardized coefficient of the Logistic Regression as a change of the chance that the price goes UP, in percentage points
+    for one standard deviation more of the variable.  The slope of the logistic curve at 50% is 1/4, so the change is about
+    coef / 4 x 100 points; it holds near 50%, where every model of this project lives (the AUC is about 0.5)."""
+    return np.asarray(coef, dtype=float) * 25.0
+
+
+def effect_summary(coefs):
+    """Per variable: the mean effect (percentage points, see `effect_points`) over the FUTURE horizons 1h .. 12h and in how many of
+    those horizons the sign is the mean's sign.  `coefs` has `column`, `horizon`, `value`.  -> DataFrame(column, effect, same_sign, horizons)."""
+    future = coefs[coefs.horizon != "log_return"].copy()
+    future["effect"] = effect_points(future.value)
+    rows = []
+    for column, part in future.groupby("column", sort=False):
+        mean = part.effect.mean()
+        rows.append({"column": column, "effect": mean, "same_sign": int((np.sign(part.effect) == np.sign(mean)).sum()), "horizons": len(part)})
+    return pd.DataFrame(rows, columns=["column", "effect", "same_sign", "horizons"])
+
+
 def variable_label(column):
     """Label of a Logistic Regression variable: its column name, the Thai name in brackets and its variable group."""
     thai, group = VARIABLES.get(column, ("", ""))

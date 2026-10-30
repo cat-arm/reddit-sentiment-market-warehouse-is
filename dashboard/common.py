@@ -472,6 +472,11 @@ def zero_rule():
     return alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
 
 
+def zero_rule_x():
+    """The solid grey vertical line at 0 (the same rule as `zero_rule`, for bars that go left and right)."""
+    return alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(color="#555555").encode(x="x:Q")
+
+
 def ref_rule(*levels):
     """Dashed grey reference lines at the given levels (a threshold such as Z = 1.5, RSI 30 / 70, AUC 0.5)."""
     return alt.Chart(alt.Data(values=[{"y": v} for v in levels])).mark_rule(strokeDash=[4, 4], color="gray").encode(y="y:Q")

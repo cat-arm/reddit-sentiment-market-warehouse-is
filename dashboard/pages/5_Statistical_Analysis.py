@@ -210,23 +210,51 @@ def logistic_view():
     if coefs.empty:
         st.info("ไม่มีสัมประสิทธิ์ของ panel นี้ในขอบเขตที่เลือก")
         return
+    panel_auc = one[(one.metric == "auc") & (one.horizon != "log_return")].value.mean()
+    works = abs(panel_auc - 0.5) >= 0.02
+    if works:
+        st.success("AUC เฉลี่ยของ panel นี้ (1h–12h) = %.3f ห่างจาก 0.5 พอสมควร ตัวแปรที่ผลสม่ำเสมอข้าม Horizon อาจมีความหมาย" % panel_auc)
+    else:
+        st.warning("AUC เฉลี่ยของ panel นี้ (1h–12h) = %.3f ใกล้ 0.5 มาก คือโมเดลทายทิศทางราคาไม่ได้ดีกว่าเดา  "
+                   "สัมประสิทธิ์ด้านล่างจึงเป็นแค่เสียงรบกวนของข้อมูล ไม่ควรตีความว่าตัวแปรไหนดีหรือไม่ดี" % panel_auc)
     coefs = coefs.assign(ตัวแปร=coefs.column.map(data.variable_label), ช่วง=coefs.horizon.map(TARGET_LABEL),
                          กลุ่ม=coefs.column.map(lambda c: data.VARIABLE_GROUPS.get(data.VARIABLES.get(c, ("", ""))[1], "")),
-                         label=coefs.value.map("{:+.3f}".format))
+                         effect=data.effect_points(coefs.value))
+    coefs["label"] = coefs.effect.map("{:+.1f}".format)
     row_order = [data.variable_label(c) for c in data.VARIABLES if c in set(coefs.column)]         # grouped: Level, Direction, Vote, Volume, Lag, Momentum
+
+    # 1. one bar per variable: the mean effect over the future horizons and how steady its direction is
+    summary = data.effect_summary(coefs)
+    summary = summary.assign(ตัวแปร=summary.column.map(data.variable_label), กลุ่ม=summary.column.map(
+        lambda c: data.VARIABLE_GROUPS.get(data.VARIABLES.get(c, ("", ""))[1], "")))
+    summary["ทิศทางเดียวกัน"] = ["%d/%d Horizon" % (s, h) for s, h in zip(summary.same_sign, summary.horizons)]
+    st.write("สรุป: แต่ละตัวแปรมีผลต่อโอกาสที่ราคาจะขึ้นกี่จุดเปอร์เซ็นต์ (เฉลี่ย Horizon 1h–12h)")
+    bars = alt.Chart(summary).encode(y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
+    layer = bars.mark_bar().encode(
+        x=alt.X("effect:Q", title="เปลี่ยนโอกาสที่ราคาขึ้น (จุดเปอร์เซ็นต์) เมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน"),
+        color=alt.condition(alt.datum.effect > 0, alt.value("#2ca02c"), alt.value("#d62728")),
+        tooltip=["ตัวแปร", "กลุ่ม", alt.Tooltip("effect:Q", title="ผลเฉลี่ย (จุด%)", format="+.2f"), "ทิศทางเดียวกัน"])
+    tag_up = bars.mark_text(fontSize=10, color="#444444", align="left", dx=6).transform_filter("datum.effect > 0").encode(x="effect:Q", text="ทิศทางเดียวกัน:N")
+    tag_down = bars.mark_text(fontSize=10, color="#444444", align="right", dx=-6).transform_filter("datum.effect <= 0").encode(x="effect:Q", text="ทิศทางเดียวกัน:N")
+    common.show((layer + tag_up + tag_down + common.zero_rule_x()).properties(height=28 * len(summary) + 40))
+    st.caption("วิธีอ่าน: แท่งเขียว = ตัวแปรสูงขึ้นแล้วโอกาสที่ราคาขึ้นสูงขึ้น แท่งแดง = ต่ำลง  ความยาว = กี่จุดเปอร์เซ็นต์ (เช่น −2 = โอกาสขึ้นลดจาก 50% เหลือราว 48%)  "
+               "ข้อความท้ายแท่ง = ใน Horizon 1h–12h ทั้ง 5 ช่วง มีกี่ช่วงที่ทิศทางตรงกับค่าเฉลี่ย (5/5 = ทิศทางเดียวกันตลอด)  "
+               "**ตัวแปรที่ \"ดี\" ต้องมีทั้ง 2 อย่าง: แท่งยาวพอ (อย่างน้อยราว 1 จุด%) และทิศทางเดียวกันทุก Horizon (5/5) และโมเดลโดยรวมต้องมี AUC ห่างจาก 0.5** "
+               "ถ้าแท่งสั้น (ไม่ถึง 1 จุด%) หรือทิศทางสลับไปมา แปลว่าไม่มีผล")
+
+    # 2. the detail: every horizon
+    st.write("รายละเอียด: ผลของแต่ละตัวแปรในแต่ละ Horizon (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")
     chart = alt.Chart(coefs).encode(
         x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
         y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
     rect = chart.mark_rect().encode(
-        color=alt.Color("value:Q", title="สัมประสิทธิ์", scale=alt.Scale(domain=[-0.1, 0.1], scheme="redyellowgreen", clamp=True)),
-        tooltip=["ตัวแปร", "กลุ่ม", "ช่วง", alt.Tooltip("value:Q", title="สัมประสิทธิ์", format="+.4f")])
+        color=alt.Color("effect:Q", title="จุด% ของโอกาสขึ้น", scale=alt.Scale(domain=[-2.5, 2.5], scheme="redyellowgreen", clamp=True)),
+        tooltip=["ตัวแปร", "กลุ่ม", "ช่วง", alt.Tooltip("effect:Q", title="จุดเปอร์เซ็นต์", format="+.2f"),
+                 alt.Tooltip("value:Q", title="สัมประสิทธิ์มาตรฐาน (ค่าดิบของโมเดล)", format="+.4f")])
     text = chart.mark_text(fontSize=11, color="#222222").encode(text="label:N")
     common.show((rect + text).properties(height=30 * len(row_order) + 40))
-    st.caption("สัมประสิทธิ์ = ถ้าตัวแปรนั้นเพิ่มขึ้น 1 ส่วนเบี่ยงเบนมาตรฐาน โอกาสที่ราคาขึ้น (เทียบกับลง) เปลี่ยนไปเท่าไรในสเกลของโมเดล  "
-               "เขียว = ดันให้ขึ้น แดง = ดันให้ลง  ตัวแปรเรียงตามกลุ่ม (ชื่อบอกกลุ่มไว้ท้ายป้าย)  "
-               "ถ้าตัวแปรมีผลต่อราคาจริง ควรเห็นสีเดียวกันสม่ำเสมอข้าม Horizon แต่ที่เห็นคือสลับสีไปมา และค่าที่ไกล 0 ที่สุดคือ %+.3f (%s) ซึ่งใกล้ 0 มาก "
-               "คือแต่ละตัวแปรแทบไม่มีอิทธิพล (ถ้า AUC ของ panel นี้ใกล้ 0.5)"
-               % (coefs.value.loc[coefs.value.abs().idxmax()], coefs.ตัวแปร.loc[coefs.value.abs().idxmax()].split(" (")[0]))
+    st.caption("ค่าในช่อง = จุดเปอร์เซ็นต์ที่โอกาสขึ้นเปลี่ยนไปเมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน (คิดจากสัมประสิทธิ์ ÷ 4 × 100 ซึ่งใช้ได้ใกล้ 50% ดูสัมประสิทธิ์ดิบของโมเดลได้ที่ tooltip)  "
+               "เขียว = ดันให้ขึ้น แดง = ดันให้ลง  Current Return = ชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักแรงกว่าคอลัมน์อื่นเพราะราคากับความรู้สึกขยับไปพร้อมกัน")
     imp = one[one.metric.str.startswith("group_importance:")].assign(
         กลุ่มตัวแปร=lambda d: d.metric.str[17:].map(lambda g: data.VARIABLE_GROUPS.get(g, g)), ช่วง=lambda d: d.horizon.map(TARGET_LABEL),
         label=lambda d: d.value.map("{:.3f}".format))
@@ -234,7 +262,8 @@ def logistic_view():
         st.write("ความสำคัญของกลุ่มตัวแปร (ผลรวมขนาดสัมประสิทธิ์ของกลุ่ม ยิ่งสูงยิ่งมีอิทธิพลต่อโมเดลมาก)")
         chart = alt.Chart(imp).encode(
             x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-            y=alt.Y("กลุ่มตัวแปร:N", sort=[g for g in data.VARIABLE_GROUPS.values() if g in set(imp.กลุ่มตัวแปร)], title=None, axis=alt.Axis(labelLimit=300)))
+            y=alt.Y("กลุ่มตัวแปร:N", sort=[g for g in data.VARIABLE_GROUPS.values() if g in set(imp.กลุ่มตัวแปร)], title=None,
+                    axis=alt.Axis(labelLimit=300, labelOverlap=False)))
         rect = chart.mark_rect().encode(color=alt.Color("value:Q", title="ความสำคัญ", scale=alt.Scale(scheme="greens")),
                                         tooltip=["กลุ่มตัวแปร", "ช่วง", alt.Tooltip("value:Q", title="ความสำคัญ", format=".4f")])
         text = chart.mark_text(fontSize=11, color="#222222").encode(text="label:N")
