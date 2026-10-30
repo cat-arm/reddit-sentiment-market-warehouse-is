@@ -46,9 +46,9 @@ TARGET_LABEL = {"log_return": "Current Return", "1h": "1h", "2h": "2h", "3h": "3
 BASE = {"Spearman": ("spearman_rho", "spearman_p", "spearman_bh", "+.3f", [-0.1, 0.1], "n"),
         "Pearson": ("pearson_rho", "pearson_p", "pearson_bh", "+.3f", [-0.1, 0.1], "n"),
         "Win Rate": ("winrate", "win_p", "win_bh", ".1f", [40, 60], "win_n")}
-VIEWS = [("Spearman ρ", "Spearman", False), ("Spearman p-value", "Spearman", True), ("Pearson ρ", "Pearson", False),
-         ("Pearson p-value", "Pearson", True), ("Win Rate (%)", "Win Rate", False), ("Win Rate p-value", "Win Rate", True)]
-DOT = {g: common.GROUP_DOTS[g] for g in common.GROUP_LABELS}                          # the colour of the asset class, as in the sidebar
+VIEWS = [("Spearman ค่าสหสัมพันธ์", "Spearman", False), ("Spearman p-value", "Spearman", True),
+         ("Pearson ค่าสหสัมพันธ์", "Pearson", False), ("Pearson p-value", "Pearson", True),
+         ("Win Rate (%)", "Win Rate", False), ("Win Rate p-value", "Win Rate", True)]
 groups_chosen = sorted({group_of[t] for t in tickers})
 
 prices = q("price_series_for", tickers, start, end)
@@ -109,9 +109,14 @@ st.caption("การ์ดคิดจาก panel Global ทุกข้อค
            "เพราะข้อมูลรายชั่วโมงเกี่ยวเนื่องกันและกรอบเวลาซ้อนทับกัน")
 
 
+def asset_label(ticker):
+    """The name on the left of the heat map: the ticker and, in brackets, its asset class (หุ้น/ETF, ฟิวเจอร์ส, คริปโต)."""
+    return "%s (%s)" % (ticker, GROUP_LABELS[group_of[ticker]])
+
+
 def heatmap(stat, view):
     """Ticker x horizon heat map of one view (the value of a measure or its p-value): the value and n in every cell, a star when the
-    Benjamini-Hochberg p < 0.05; the asset class is the coloured dot before the ticker, as in the sidebar."""
+    Benjamini-Hochberg p < 0.05; the asset class is written in brackets after the ticker."""
     label, measure, as_p = next(v for v in VIEWS if v[0] == view)
     value, p_col, bh_col, fmt, domain, n_col = BASE[measure]
     d = stat[stat.ticker.isin(tickers)].copy()
@@ -119,13 +124,13 @@ def heatmap(stat, view):
     d["value"] = d[p_col] if as_p else d[value]
     d["p"] = d[p_col]
     d["bh"] = d[bh_col]
-    d["asset"] = [DOT[group_of[t]] + " " + t for t in d.ticker]
+    d["asset"] = [asset_label(t) for t in d.ticker]
     show_fmt = ".3f" if as_p else fmt
     d["label"] = [("" if pd.isna(v) else ("{:%s}" % show_fmt).format(v) + ("★" if b < 0.05 else "")) for v, b in zip(d.value, d.bh)]
     d["nlabel"] = ["" if pd.isna(v) else "n=%s" % "{:,}".format(int(n)) for v, n in zip(d.value, d[n_col])]
     order = [TARGET_LABEL[t] for t in data.STAT_TARGETS]
     chart = alt.Chart(d).encode(x=alt.X("ช่วง:O", sort=order, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-                                y=alt.Y("asset:N", sort=[DOT[group_of[t]] + " " + t for t in ORDER], title=None))
+                                y=alt.Y("asset:N", sort=[asset_label(t) for t in ORDER], title=None, axis=alt.Axis(labelLimit=220)))
     valid = "isValid(datum.value)"
     scale = (alt.Scale(domain=[0, 0.5], scheme="greens", reverse=True, clamp=True) if as_p
              else alt.Scale(domain=domain, scheme="redyellowgreen", clamp=True))
@@ -150,10 +155,9 @@ def panel_view(stat, key):
         return
     common.show(heatmap(stat, view))
     st.caption("%s  ★ = p-value ที่ปรับด้วย Benjamini-Hochberg < 0.05  ช่องว่าง = ข้อมูลน้อยกว่า 30 ชั่วโมง ไม่ใช่ 0  "
-               "จุดสี = กลุ่มสินทรัพย์ (🔵 หุ้น/ETF 🟠 ฟิวเจอร์ส 🟢 คริปโต)  "
                "Current Return = ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) 1h–12h = ผลตอบแทนล่วงหน้า"
                % ("สี = p-value (เขียวเข้ม = ต่ำ = น่าสนใจ)" if as_p else
-                  ("สี = %s (แดง ต่ำ เขียว สูง; 50 = เดา)" % label if measure == "Win Rate" else "สี = ค่าสหสัมพันธ์ ρ (แดง ลบ เขียว บวก)")))
+                  ("สี = %s (แดง ต่ำ เขียว สูง; 50 = เดา)" % label if measure == "Win Rate" else "สี = ค่าสหสัมพันธ์ (แดง ลบ เขียว บวก; 0 = ไม่เกี่ยวกัน)")))
 
 
 def logistic_view():
@@ -210,7 +214,7 @@ def logistic_view():
 
 # ---- one tab per kind of text (lazy: only the open tab is computed); inside it the texts of the market or of the asset itself ----------------
 variants = list(data.PANEL_VARIANTS)
-names_tabs = [data.PANEL_VARIANTS[v] for v in variants] + ["Logistic Regression"]
+names_tabs = [data.PANEL_VARIANTS[v] for v in variants]
 tabs = st.tabs(names_tabs, key="p5_tabs", on_change="rerun")
 for tab, variant in zip(tabs, variants):
     with tab:
@@ -218,11 +222,13 @@ for tab, variant in zip(tabs, variants):
             continue
         if variant == "baseline":
             family = "global"
-            st.caption("Baseline = ทิศทางสุ่ม (+1/−1) แทนความรู้สึก ในชั่วโมงเดียวกับ panel Global  ใช้ดูว่าค่าสุ่มให้ผลหน้าตาแบบไหน "
-                       "ถ้า panel จริงไม่ต่างจากแท็บนี้ แปลว่าไม่มีสัญญาณ")
+            st.info("**Baseline ทิศทางสุ่ม คืออะไร:** กลุ่มควบคุมไว้เทียบ  ระบบเอาความรู้สึกจริงออก แล้วสุ่มทิศทางบวก/ลบ (เหมือนโยนเหรียญ) ใส่แทนในชั่วโมงเดียวกับ panel Global "
+                    "แล้วคำนวณ Spearman, Pearson และ Win Rate แบบเดียวกัน  ผลที่ได้คือ \"หน้าตาของการไม่มีสัญญาณเลย\" (Win Rate ราว 50%, p-value กระจาย 0 ถึง 1) "
+                    "ถ้า panel จริงดูไม่ต่างจากแท็บนี้ แปลว่าความรู้สึกจากชุมชน Reddit ไม่ได้ให้ข้อมูลเกี่ยวกับราคา")
         else:
             family = st.radio("ข้อความที่ใช้", list(data.PANEL_FAMILIES), format_func=data.PANEL_FAMILIES.get, horizontal=True, key="p5_family_" + variant)
         panel_view(stat_all if (variant, family) == ("all", "global") else stat(family, variant), variant)
-with tabs[-1]:
-    if tabs[-1].open:
-        logistic_view()
+
+# ---- the Logistic Regression is below the panels --------------------------------------------------------------------------
+st.subheader("Logistic Regression: ความรู้สึกทำนายทิศทางราคา (ขึ้น/ลง) ได้ไหม")
+logistic_view()

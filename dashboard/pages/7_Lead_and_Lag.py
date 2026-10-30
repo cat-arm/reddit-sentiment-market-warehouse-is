@@ -26,7 +26,7 @@ _, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overvie
 tickers = common.selected_tickers()
 communities = common.selected_communities()
 statuses = common.selected_statuses()
-CARDS = ["ρ ชั่วโมงเดียวกัน", "ρ เมื่อราคาขยับก่อน (−6..−1 ชม.)", "ρ เมื่อราคาขยับหลัง (+1..+6 ชม.)"]
+CARDS = ["ค่าสหสัมพันธ์ ชั่วโมงเดียวกัน", "ค่าสหสัมพันธ์ เมื่อราคาขยับก่อน (−6..−1 ชม.)", "ค่าสหสัมพันธ์ เมื่อราคาขยับหลัง (+1..+6 ชม.)"]
 if not tickers or not communities or not statuses:
     common.nothing_selected(CARDS, "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
 z_th = st.session_state.get("d_z", 0.0)                 # DimDetectionConfig: filters the hours (0 = no filter)
@@ -52,9 +52,9 @@ def _mean(rows):
 
 
 common.kpi_cards([
-    (CARDS[0], _mean(lags[lags.lag == 0]), "Spearman ρ ระหว่าง Sentiment Score ของชั่วโมงที่มีข้อความ กับ Current Return ของชั่วโมงเดียวกัน"),
-    (CARDS[1], _mean(lags[lags.lag < 0]), "ค่าเฉลี่ยของ ρ เมื่อเทียบกับผลตอบแทนของ 1 ถึง 6 ชั่วโมงก่อนชั่วโมงที่มีข้อความ (ราคาขยับก่อน)"),
-    (CARDS[2], _mean(lags[lags.lag > 0]), "ค่าเฉลี่ยของ ρ เมื่อเทียบกับผลตอบแทนของ 1 ถึง 6 ชั่วโมงหลังชั่วโมงที่มีข้อความ (ความรู้สึกขยับก่อน)")])
+    (CARDS[0], _mean(lags[lags.lag == 0]), "Spearman ค่าสหสัมพันธ์ระหว่าง Sentiment Score ของชั่วโมงที่มีข้อความ กับ Current Return ของชั่วโมงเดียวกัน"),
+    (CARDS[1], _mean(lags[lags.lag < 0]), "ค่าเฉลี่ยของค่าสหสัมพันธ์ เมื่อเทียบกับผลตอบแทนของ 1 ถึง 6 ชั่วโมงก่อนชั่วโมงที่มีข้อความ (ราคาขยับก่อน)"),
+    (CARDS[2], _mean(lags[lags.lag > 0]), "ค่าเฉลี่ยของค่าสหสัมพันธ์ เมื่อเทียบกับผลตอบแทนของ 1 ถึง 6 ชั่วโมงหลังชั่วโมงที่มีข้อความ (ความรู้สึกขยับก่อน)")])
 st.subheader("ใครขยับก่อนกัน: ความรู้สึก หรือ ราคา")
 if lags.rho.notna().sum() == 0:
     st.info("ตัวอย่างน้อยเกินไปสำหรับวัดความสัมพันธ์ข้ามเวลา")
@@ -64,10 +64,10 @@ else:
     base = alt.Chart(lags).encode(x=alt.X("lag:O", title="ผลตอบแทนของชั่วโมงที่ห่างจากชั่วโมงที่มีข้อความกี่ชั่วโมง (ลบ = ก่อนมีข้อความ, บวก = หลังมีข้อความ)",
                                           axis=alt.Axis(labelAngle=0)))
     bars = base.mark_bar().encode(
-        y=alt.Y("rho:Q", title="Spearman ρ (ความรู้สึก vs ผลตอบแทน)"),
+        y=alt.Y("rho:Q", title="ค่าสหสัมพันธ์ Spearman (ความรู้สึก vs ผลตอบแทน)"),
         color=alt.Color("ฝั่ง:N", scale=alt.Scale(domain=["ราคาขยับก่อนข้อความ", "ชั่วโมงเดียวกัน", "ราคาขยับหลังข้อความ"],
                                                   range=["#d62728", "#7f7f7f", "#1f77b4"]), legend=alt.Legend(orient="top", title=None)),
-        tooltip=["ช่วงเวลา", alt.Tooltip("rho:Q", title="Spearman ρ", format="+.3f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","),
+        tooltip=["ช่วงเวลา", alt.Tooltip("rho:Q", title="ค่าสหสัมพันธ์ Spearman", format="+.3f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","),
                  alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format="+.3f"), alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format="+.3f")])
     errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
     zero = common.zero_rule()

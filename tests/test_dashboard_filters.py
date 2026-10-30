@@ -215,6 +215,13 @@ class FilterTests(unittest.TestCase):
             at.radio(key="p5_measure_all").set_value(view).run()
             self.assertEqual(len(at.exception), 0, "%s: %s" % (view, [e.value for e in at.exception]))
         self.assertEqual(len(at.radio(key="p5_measure_all").options), 6)
+        self.assertNotIn("ρ", "".join(at.radio(key="p5_measure_all").options))                 # the Greek rho looks like the p of p-value
+        for scope in at.radio(key="p5_scope").options:                                       # the Logistic Regression is a section below the tabs
+            at.radio(key="p5_scope").set_value(scope).run()
+            self.assertEqual(len(at.exception), 0, scope)
+        for h in ("log_return", "1h", "12h"):
+            at.radio(key="p5_log_h").set_value(h).run()
+            self.assertEqual(len(at.exception), 0, h)
         self.assertEqual(at.radio(key="p5_family_all").value, "global")                    # the default: the sentiment of the whole market
         at.radio(key="p5_family_all").set_value("Ticker").run()
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
