@@ -235,10 +235,3 @@ else:
         columns={"mean_sentiment": "Sentiment Score เฉลี่ย", "pos_ratio": "สัดส่วนบวก", "neg_ratio": "สัดส่วนลบ",
                  "hours_with_text": "ชั่วโมงที่มีข้อความ", "texts": "ข้อความ"}).round(3), hide_index=True,
         width="stretch", height=330)
-
-# ---- below: the market measures (close, volume) do not depend on the sentiment filters (communities, majority status)
-st.subheader("ราคาปิดและปริมาณการซื้อขาย (ไม่ขึ้นกับตัวกรองความรู้สึก)")
-st.altair_chart(common.line(shown, "time", "close", "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)", "#1f77b4", 220,
-                            bar=common.kind(st, "s_price")), width="stretch")
-st.altair_chart(common.line(shown, "time", "volume", "ปริมาณซื้อขาย (หน่วย)" if one else "ปริมาณซื้อขาย ดัชนี (ค่าเฉลี่ย = 100)",
-                            "#2ca02c", 220, bar=common.kind(st, "s_market_volume")), width="stretch")
