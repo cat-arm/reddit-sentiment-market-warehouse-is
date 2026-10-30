@@ -213,6 +213,38 @@ class FilterTests(unittest.TestCase):
         self.assertNotEqual(at.metric[0].value, base, "Z-score Threshold changes the events")
         self.assertEqual(len(at.exception), 0)
 
+    def test_majority_vote_chart_follows_every_filter(self):
+        """The vote mode of the ratio chart changes with the majority status, the community, the time range and the tickers."""
+        import pyarrow as pa
+        from streamlit.testing.v1 import AppTest
+
+        def shares(at):
+            for el in at.main:
+                if type(el).__name__ == "UnknownElement":
+                    for d in el.proto.datasets:
+                        tbl = pa.ipc.open_stream(d.data.data).read_all().to_pandas()
+                        if "ประเภท" in tbl.columns and "hours" in tbl.columns:
+                            hours = tbl.groupby("ประเภท").hours.sum()
+                            return {k: round(float(v) / float(hours.sum()), 3) for k, v in hours.items()}
+            return None
+
+        at = AppTest.from_file(str(ROOT / "dashboard" / SENTIMENT_PAGE), default_timeout=180).run()
+        at.radio(key="s_ratio_mode").set_value("ผลโหวตส่วนใหญ่ (สัดส่วนชั่วโมง)").run()
+        base = shares(at)
+        self.assertEqual(set(base), {"บวก", "ลบ", "เป็นกลาง"})
+        at.sidebar.checkbox(key="f_maj_positive").set_value(False).run()
+        self.assertNotIn("บวก", shares(at))                                              # an unticked status has no votes
+        at.sidebar.checkbox(key="f_maj_positive").set_value(True)
+        at.sidebar.checkbox(key="f_ss_r/wallstreetbets").set_value(False).run()
+        self.assertNotEqual(shares(at), base)                                            # community
+        at.sidebar.checkbox(key="f_ss_r/wallstreetbets").set_value(True)
+        at.sidebar.date_input(key="f_range").set_value((dt.date(2026, 3, 1), dt.date(2026, 3, 31))).run()
+        march = shares(at)
+        self.assertNotEqual(march, base)                                                 # time range
+        at = tick_only(at, ["SPY"])
+        self.assertNotEqual(shares(at), march)                                           # tickers
+        self.assertEqual(len(at.exception), 0)
+
     def test_price_page_follows_the_ticked_tickers(self):
         """One ticker, a few (one line each) and many (their average) all render, and the numbers follow the ticks."""
         page = "pages/3_Price_and_Return.py"
