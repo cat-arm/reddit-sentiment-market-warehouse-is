@@ -23,6 +23,7 @@ def panel(n_hours=400, tickers=("AAA", "BBB"), signal=True, seed=0):
             for k in (1, 2, 3, 6, 12):
                 row["sentiment_lag_%dh" % k] = rng.normal()
             drive = s if signal else rng.normal()
+            row["log_return"] = drive + rng.normal(scale=0.5)                  # the Current Return (same hour)
             for hz in ("1h", "2h", "3h", "6h", "12h"):
                 row["future_return_" + hz] = drive + rng.normal(scale=0.5)
             rows.append(row)
@@ -62,10 +63,11 @@ class LogisticTests(unittest.TestCase):
         rows = analyse_panel("panel_global", panel(), META)
         levels = {r["level"] for r in rows}
         self.assertEqual(levels, {"big_group", "all"})                 # no per-ticker fits
-        self.assertEqual(len([r for r in rows if r["metric_name"] == "auc"]), 2 * 5)
+        self.assertEqual(len([r for r in rows if r["metric_name"] == "auc"]), 2 * 6)       # 6 targets: Current Return and 1h..12h
+        self.assertEqual({r["horizon"] for r in rows}, {"log_return", "1h", "2h", "3h", "6h", "12h"})
         used = {c for cols in GROUPS.values() for c in cols}
         self.assertFalse(used & {"score", "upvote_ratio", "num_comments"})        # forbidden snapshot features
-        self.assertFalse([c for c in used if c.startswith("future_return")])      # targets are never inputs
+        self.assertFalse([c for c in used if c.startswith("future_return") or c == "log_return"])      # targets are never inputs
 
 
 if __name__ == "__main__":

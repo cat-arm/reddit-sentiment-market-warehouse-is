@@ -211,19 +211,14 @@ class FilterTests(unittest.TestCase):
         self.assertEqual([m.label for m in at.metric], ["Historical Win Rate", "Spearman p-value", "Pearson p-value", "Logistic AUC"])
         full = [m.value for m in at.metric]
         self.assertRegex(full[0], r"^\d+\.\d%$")
-        for measure in ("Pearson", "Win Rate", "Spearman"):
-            at.radio(key="p5_measure_all").set_value(measure).run()
-            self.assertEqual(len(at.exception), 0, "%s: %s" % (measure, [e.value for e in at.exception]))
+        for view in at.radio(key="p5_measure_all").options:                                 # values and p-values of the three measures
+            at.radio(key="p5_measure_all").set_value(view).run()
+            self.assertEqual(len(at.exception), 0, "%s: %s" % (view, [e.value for e in at.exception]))
+        self.assertEqual(len(at.radio(key="p5_measure_all").options), 6)
         self.assertEqual(at.radio(key="p5_family_all").value, "global")                    # the default: the sentiment of the whole market
         at.radio(key="p5_family_all").set_value("Ticker").run()
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
         at.radio(key="p5_family_all").set_value("global")
-        for scope in at.radio(key="p5_scope").options:
-            at.radio(key="p5_scope").set_value(scope).run()
-            self.assertEqual(len(at.exception), 0, scope)
-        for h in ("1h", "12h"):
-            at.radio(key="p5_log_h").set_value(h).run()
-            self.assertEqual(len(at.exception), 0, h)
         # the time range is a filter of the p-values
         at.sidebar.date_input(key="f_range").set_value((dt.date(2026, 3, 1), dt.date(2026, 3, 31))).run()
         self.assertEqual(len(at.exception), 0)
@@ -238,10 +233,7 @@ class FilterTests(unittest.TestCase):
         at.sidebar.slider(key="d_s").set_value(0.0)
         at = tick_only(at, ["SPY", "QQQ"])
         self.assertEqual(len(at.exception), 0)
-        table = [d for d in at.dataframe if "p ต่ำสุด" in list(d.value.columns)]
-        self.assertLessEqual(len(table), 1)
-        if table:
-            self.assertLessEqual(set(table[0].value["สินทรัพย์"].str.split(" · ").str[0]), {"QQQ", "SPY"})   # two tickers chosen, two at most shown
+        self.assertEqual(len([d for d in at.dataframe if "p ต่ำสุด" in list(d.value.columns)]), 0)       # no separate table of p-values any more
         for key in TICKERS:
             at.sidebar.checkbox(key="f_tk_" + key).set_value(False)
         at = at.run()

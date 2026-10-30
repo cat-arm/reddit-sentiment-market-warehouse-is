@@ -721,7 +721,7 @@ STAT_COLUMNS = ["ticker", "target", "n", "spearman_rho", "spearman_p", "spearman
 def stat_table(samples, min_n=30, sentiment="sentiment_mean"):
     """A1 / A2 computed live on the ticker-hours of a panel: per ticker and target (the Current Return and the future returns
     1h .. 12h) the Spearman and Pearson correlation of the predictor with the return and the Historical Win Rate (share of hours in
-    which the sign of the predictor equals the direction of the return), each with its p-value (Binomial against 50% for the win
+    which the sign of the predictor equals the direction of the return; for the Current Return that is the same-hour co-movement), each with its p-value (Binomial against 50% for the win
     rate) and the Benjamini-Hochberg p-value over the tickers.  Pairs with a NULL are dropped (never 0); a return of exactly 0 or a
     predictor of exactly 0 is not a direction; fewer than `min_n` pairs -> NaN.
     `samples` has `ticker`, the predictor column and `log_return`, `future_return_1h` .. `future_return_12h`.
@@ -738,12 +738,11 @@ def stat_table(samples, min_n=30, sentiment="sentiment_mean"):
                 pe = stats.pearsonr(pair.s, pair.r)
                 row.update(spearman_rho=float(sp.statistic), spearman_p=float(sp.pvalue),
                            pearson_rho=float(pe.statistic), pearson_p=float(pe.pvalue))
-            if target != "log_return":                          # a win rate needs a FUTURE return
-                directional = pair[(pair.s != 0) & (pair.r != 0)]
-                if len(directional) >= min_n:
-                    hits = int((np.sign(directional.s) == np.sign(directional.r)).sum())
-                    row.update(win_n=len(directional), win_hits=hits, winrate=100.0 * hits / len(directional),
-                               win_p=float(stats.binomtest(hits, len(directional), 0.5).pvalue))
+            directional = pair[(pair.s != 0) & (pair.r != 0)]      # for the Current Return it is the same-hour co-movement, not a prediction
+            if len(directional) >= min_n:
+                hits = int((np.sign(directional.s) == np.sign(directional.r)).sum())
+                row.update(win_n=len(directional), win_hits=hits, winrate=100.0 * hits / len(directional),
+                           win_p=float(stats.binomtest(hits, len(directional), 0.5).pvalue))
             rows.append(row)
     out = pd.DataFrame(rows, columns=STAT_COLUMNS)
     if out.empty:

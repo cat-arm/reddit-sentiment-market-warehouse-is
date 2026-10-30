@@ -42,9 +42,13 @@ group_of = dict(zip(universe.ticker, universe.big_group))
 names = dict(zip(universe.ticker, universe.name))
 ORDER = list(universe[universe.ticker.isin(tickers)].sort_values(["big_group", "ticker"]).ticker)
 TARGET_LABEL = {"log_return": "Current Return", "1h": "1h", "2h": "2h", "3h": "3h", "6h": "6h", "12h": "12h"}
-MEASURES = {"Spearman": ("spearman_rho", "spearman_p", "spearman_bh", "+.3f", [-0.1, 0.1]),
-            "Pearson": ("pearson_rho", "pearson_p", "pearson_bh", "+.3f", [-0.1, 0.1]),
-            "Win Rate": ("winrate", "win_p", "win_bh", ".1f", [40, 60])}
+# (value column, p-value column, BH column, format of the value, colour domain, n column): the heat map shows the value or its p-value
+BASE = {"Spearman": ("spearman_rho", "spearman_p", "spearman_bh", "+.3f", [-0.1, 0.1], "n"),
+        "Pearson": ("pearson_rho", "pearson_p", "pearson_bh", "+.3f", [-0.1, 0.1], "n"),
+        "Win Rate": ("winrate", "win_p", "win_bh", ".1f", [40, 60], "win_n")}
+VIEWS = [("Spearman ρ", "Spearman", False), ("Spearman p-value", "Spearman", True), ("Pearson ρ", "Pearson", False),
+         ("Pearson p-value", "Pearson", True), ("Win Rate (%)", "Win Rate", False), ("Win Rate p-value", "Win Rate", True)]
+DOT = {g: common.GROUP_DOTS[g] for g in common.GROUP_LABELS}                          # the colour of the asset class, as in the sidebar
 groups_chosen = sorted({group_of[t] for t in tickers})
 
 prices = q("price_series_for", tickers, start, end)
@@ -52,34 +56,38 @@ if prices.empty:
     common.kpi_cards([(c, "n/a", None) for c in CARDS])
     st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
     st.stop()
-returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in data.HORIZONS]]]
+@st.cache_data(show_spinner="กำลังคำนวณ p-value และ Win Rate ...", max_entries=40)
+def panel_stat(family, variant, tickers, start, end, communities, model, statuses, z_th, s_th):
+    """The live statistics table of one panel after every filter of the sidebar (cached: the same filters are never computed twice)."""
+    prices = q("price_series_for", tickers, start, end)
+    returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in data.HORIZONS]]]
 
+    def frame(fam, var):
+        if fam == "global":
+            sent = q("global_hourly", start, end, communities, model, var)
+        else:
+            sent = q("sentiment_hourly", tickers, start, end, communities, model, var)
+        return data.sentiment_frame(sent, start, end)
 
-def frame(family, variant):
-    """`sentiment_frame` of the texts of a family ('Ticker' = those that mention the asset, 'global' = every text) and a variant."""
-    if family == "global":
-        sent = q("global_hourly", start, end, communities, model, variant)
-    else:
-        sent = q("sentiment_hourly", tickers, start, end, communities, model, variant)
-    return data.sentiment_frame(sent, start, end)
-
-
-def panel_stat(family, variant):
-    """The live statistics table of one panel after every filter of the sidebar."""
     base = frame("global" if variant == "baseline" else family, "all")
     own = frame(family, variant) if variant in ("strong", "quality") else None
     samples = data.panel_samples(base, own, returns, family, variant, statuses, z_th, s_th)
     return data.stat_table(samples) if not samples.empty else pd.DataFrame(columns=data.STAT_COLUMNS)
 
 
+def stat(family, variant):
+    return panel_stat(family, variant, tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_th, s_th)
+
+
 # ---- cards: the default panel (every text of the market), future horizons only ---------------------------------
-stat_all = panel_stat("global", "all")
+stat_all = stat("global", "all")
 base = stat_all[stat_all.target != "log_return"]
 hits, wins = base.win_hits.sum(), base.win_n.sum()
 win_p = stats.binomtest(int(hits), int(wins), 0.5).pvalue if wins else np.nan
 logi = q("logistic_results")
 logi_ok = logi[(logi.status == "ok") & (logi.panel == "panel_global") & (logi.metric == "auc")]
 auc = logi_ok[(logi_ok.level == "all")] if len(groups_chosen) > 1 else logi_ok[(logi_ok.level == "big_group") & (logi_ok.big_group == groups_chosen[0])]
+auc = auc[auc.horizon != "log_return"]                  # the prediction of the future only, like the other cards
 
 
 def p_card(column, label):
@@ -101,69 +109,109 @@ st.caption("การ์ดคิดจาก panel Global ทุกข้อค
            "เพราะข้อมูลรายชั่วโมงเกี่ยวเนื่องกันและกรอบเวลาซ้อนทับกัน")
 
 
-def heatmap(stat, measure):
-    """Ticker x horizon heat map of one measure: the value and n in every cell, a star when the Benjamini-Hochberg p < 0.05."""
-    value, p_col, bh_col, fmt, domain = MEASURES[measure]
+def heatmap(stat, view):
+    """Ticker x horizon heat map of one view (the value of a measure or its p-value): the value and n in every cell, a star when the
+    Benjamini-Hochberg p < 0.05; the asset class is the coloured dot before the ticker, as in the sidebar."""
+    label, measure, as_p = next(v for v in VIEWS if v[0] == view)
+    value, p_col, bh_col, fmt, domain, n_col = BASE[measure]
     d = stat[stat.ticker.isin(tickers)].copy()
-    if measure == "Win Rate":
-        d = d[d.target != "log_return"]
     d["ช่วง"] = d.target.map(TARGET_LABEL)
-    d["value"] = d[value]
+    d["value"] = d[p_col] if as_p else d[value]
     d["p"] = d[p_col]
     d["bh"] = d[bh_col]
-    d["label"] = [("" if pd.isna(v) else ("{:%s}" % fmt).format(v) + ("★" if b < 0.05 else "")) for v, b in zip(d.value, d.bh)]
-    d["nlabel"] = ["" if pd.isna(v) else "n=%s" % "{:,}".format(int(n)) for v, n in zip(d.value, d.win_n if measure == "Win Rate" else d.n)]
-    order = [TARGET_LABEL[t] for t in data.STAT_TARGETS if not (measure == "Win Rate" and t == "log_return")]
+    d["asset"] = [DOT[group_of[t]] + " " + t for t in d.ticker]
+    show_fmt = ".3f" if as_p else fmt
+    d["label"] = [("" if pd.isna(v) else ("{:%s}" % show_fmt).format(v) + ("★" if b < 0.05 else "")) for v, b in zip(d.value, d.bh)]
+    d["nlabel"] = ["" if pd.isna(v) else "n=%s" % "{:,}".format(int(n)) for v, n in zip(d.value, d[n_col])]
+    order = [TARGET_LABEL[t] for t in data.STAT_TARGETS]
     chart = alt.Chart(d).encode(x=alt.X("ช่วง:O", sort=order, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-                                y=alt.Y("ticker:N", sort=ORDER, title=None))
+                                y=alt.Y("asset:N", sort=[DOT[group_of[t]] + " " + t for t in ORDER], title=None))
     valid = "isValid(datum.value)"
+    scale = (alt.Scale(domain=[0, 0.5], scheme="greens", reverse=True, clamp=True) if as_p
+             else alt.Scale(domain=domain, scheme="redyellowgreen", clamp=True))
     rect = chart.mark_rect().transform_filter(valid).encode(
-        color=alt.Color("value:Q", title=measure + (" (%)" if measure == "Win Rate" else " ρ"),
-                        scale=alt.Scale(domain=domain, scheme="redyellowgreen", clamp=True)),
-        tooltip=["ticker", "ช่วง", alt.Tooltip("value:Q", title=measure, format=fmt), alt.Tooltip("p:Q", title="p-value", format=".4f"),
+        color=alt.Color("value:Q", title=label, scale=scale),
+        tooltip=["ticker", "ช่วง", alt.Tooltip("value:Q", title=label, format=show_fmt), alt.Tooltip("p:Q", title="p-value", format=".4f"),
                  alt.Tooltip("bh:Q", title="p-value (BH)", format=".4f"), alt.Tooltip("nlabel:N", title="จำนวนตัวอย่าง")])
     text = chart.mark_text(fontSize=11, dy=-6, color="#222222").transform_filter(valid).encode(text="label:N")
     count = chart.mark_text(fontSize=9, dy=8, color="#555555").transform_filter(valid).encode(text="nlabel:N")
     return (rect + text + count).properties(height=max(120, 34 * len(ORDER) + 30))
 
 
-def pvalue_table(stat, measure):
-    """The p-values behind the heat map: asset x horizon, raw p-value, sorted by the smallest."""
-    _, p_col, bh_col, _, _ = MEASURES[measure]
-    d = stat[stat.ticker.isin(tickers)]
-    if measure == "Win Rate":
-        d = d[d.target != "log_return"]
-    wide = d.pivot_table(index="ticker", columns="target", values=p_col, aggfunc="first", dropna=False)
-    wide = wide.reindex(columns=[t for t in data.STAT_TARGETS if t in wide.columns])
-    wide.columns = [TARGET_LABEL[c] for c in wide.columns]
-    best = d.groupby("ticker")[bh_col].min().rename("p (BH) ต่ำสุด")
-    out = wide.assign(**{"p ต่ำสุด": wide.min(axis=1)}).join(best).reset_index()
-    out.insert(1, "กลุ่ม", out.ticker.map(group_of).map(GROUP_LABELS))
-    out.insert(0, "สินทรัพย์", out.ticker.map(lambda s: "%s · %s" % (s, names.get(s, ""))))
-    return out.drop(columns="ticker").sort_values("p ต่ำสุด")
-
-
 def panel_view(stat, key):
-    """The content of one panel: the measure switch, the heat map and the table of the p-values."""
+    """The content of one panel: the switch between the values and their p-values, and the heat map."""
     if stat.empty or stat.n.fillna(0).sum() == 0:
         st.info("ไม่มีข้อมูลเพียงพอสำหรับ panel นี้ตามตัวกรองที่เลือก (ต้องมีอย่างน้อย 30 ชั่วโมงต่อคู่ ลองขยายช่วงเวลาหรือลดเกณฑ์)")
         return
-    measure = st.radio("วัดด้วย", list(MEASURES), horizontal=True, key="p5_measure_" + key, label_visibility="collapsed")
-    value = MEASURES[measure][0]
-    if stat[stat.ticker.isin(tickers)][value].notna().sum() == 0:
+    view = st.radio("แสดง", [v[0] for v in VIEWS], horizontal=True, key="p5_measure_" + key, label_visibility="collapsed")
+    label, measure, as_p = next(v for v in VIEWS if v[0] == view)
+    if stat[stat.ticker.isin(tickers)][BASE[measure][0]].notna().sum() == 0:
         st.info("ไม่มีค่า %s ของสินทรัพย์ที่เลือกใน panel นี้ (ข้อมูลน้อยกว่า 30 ชั่วโมงต่อคู่)" % measure)
         return
-    common.show(heatmap(stat, measure))
-    st.caption("สี = %s (แดง ต่ำ เขียว สูง)  ★ = p-value ที่ปรับด้วย Benjamini-Hochberg < 0.05  ช่องว่าง = ข้อมูลน้อยกว่า 30 ชั่วโมง ไม่ใช่ 0  "
-               "Current Return = ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)  1h–12h = ผลตอบแทนล่วงหน้า"
-               % ("ค่าสหสัมพันธ์ ρ" if measure != "Win Rate" else "Win Rate (%) 50 = เดา"))
-    st.write("p-value ของ %s (ดิบ) เรียงจากน้อยไปมาก" % measure)
-    common.table(pvalue_table(stat, measure).round(4), hide_index=True, width="stretch", height=min(480, 60 + 36 * len(ORDER)))
+    common.show(heatmap(stat, view))
+    st.caption("%s  ★ = p-value ที่ปรับด้วย Benjamini-Hochberg < 0.05  ช่องว่าง = ข้อมูลน้อยกว่า 30 ชั่วโมง ไม่ใช่ 0  "
+               "จุดสี = กลุ่มสินทรัพย์ (🔵 หุ้น/ETF 🟠 ฟิวเจอร์ส 🟢 คริปโต)  "
+               "Current Return = ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) 1h–12h = ผลตอบแทนล่วงหน้า"
+               % ("สี = p-value (เขียวเข้ม = ต่ำ = น่าสนใจ)" if as_p else
+                  ("สี = %s (แดง ต่ำ เขียว สูง; 50 = เดา)" % label if measure == "Win Rate" else "สี = ค่าสหสัมพันธ์ ρ (แดง ลบ เขียว บวก)")))
 
 
-# ---- one tab per kind of text; inside it the texts of the asset itself or of the whole market ----------------------------------
+def logistic_view():
+    """The stored Logistic Regression: AUC of every panel and horizon, then the coefficients and the importance of the variable groups."""
+    st.caption("ผลเต็มช่วงข้อมูลของระบบ 7.4 (ไม่เปลี่ยนตามเวลา/ชุมชน/เกณฑ์ เพราะเป็นโมเดลที่ตรวจสอบข้ามช่วงเวลา)  แบ่งแบบ TimeSeriesSplit 5 ส่วน ห่าง 12 ชั่วโมง "
+               "ปรับตัวแปรด้วย StandardScaler เฉพาะชุดฝึก  โมเดลทายว่าผลตอบแทนจะ \"ขึ้น\" หรือ \"ลง\" จากตัวแปรความรู้สึกทั้ง 6 กลุ่ม  AUC 0.5 = ทำนายไม่ได้ดีกว่าเดา")
+    scopes = {"ทุกสินทรัพย์รวมกัน": ("all", "ALL")}
+    scopes.update({GROUP_LABELS[g]: ("big_group", g) for g in groups_chosen})
+    default_scope = list(scopes)[0] if len(groups_chosen) > 1 else GROUP_LABELS[groups_chosen[0]]
+    scope_pick = st.radio("ขอบเขต", list(scopes), index=list(scopes).index(default_scope), horizontal=True, key="p5_scope", label_visibility="collapsed")
+    level, group = scopes[scope_pick]
+    lg = logi[(logi.status == "ok") & (logi.level == level) & (logi.big_group == group)]
+    auc_grid = lg[lg.metric == "auc"].copy()
+    if auc_grid.empty:
+        st.info("ไม่มีผล Logistic ของขอบเขตนี้")
+        return
+    labels = {p: "%s (%s)" % (p.replace("panel_", ""), data.STORED_PANELS[p]) for p in data.STORED_PANELS}
+    auc_grid["panel_label"] = auc_grid.panel.map(labels)
+    auc_grid["ช่วง"] = auc_grid.horizon.map(TARGET_LABEL)
+    auc_grid["label"] = auc_grid.value.map("{:.3f}".format)
+    chart = alt.Chart(auc_grid).encode(
+        x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+        y=alt.Y("panel_label:N", sort=[labels[p] for p in data.STORED_PANELS], title=None, axis=alt.Axis(labelLimit=260)))
+    rect = chart.mark_rect().encode(
+        color=alt.Color("value:Q", title="AUC", scale=alt.Scale(domain=[0.47, 0.53], scheme="redblue", reverse=True, clamp=True)),
+        tooltip=["panel_label", "ช่วง", alt.Tooltip("value:Q", title="AUC", format=".4f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=",")])
+    text = chart.mark_text(fontSize=11, color="#222222").encode(text="label:N")
+    st.write("AUC แต่ละ panel × Horizon (รูป a3_auc)")
+    common.show((rect + text).properties(height=34 * auc_grid.panel.nunique() + 30))
+    st.caption("แดง = สูงกว่า 0.5 น้ำเงิน = ต่ำกว่า 0.5  ค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 คือทำนายไม่ได้ดีกว่าเดา  "
+               "Current Return = ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)")
+    horizon_pick = st.radio("Horizon ที่ดูสัมประสิทธิ์", list(TARGET_LABEL), index=1, format_func=TARGET_LABEL.get, horizontal=True,
+                            key="p5_log_h", label_visibility="collapsed")
+    one = lg[(lg.panel == "panel_global") & (lg.horizon == horizon_pick)]
+    coefs = one[one.metric.str.startswith("coef:")].assign(ตัวแปร=lambda d: d.metric.str[5:])
+    imp = one[one.metric.str.startswith("group_importance:")].assign(กลุ่มตัวแปร=lambda d: d.metric.str[17:])
+    if not coefs.empty:
+        st.write("สัมประสิทธิ์ของแต่ละตัวแปร (panel Global, %s)" % TARGET_LABEL[horizon_pick])
+        common.show(alt.Chart(coefs).mark_bar().encode(
+            y=alt.Y("ตัวแปร:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320, labelOverlap=False)),
+            x=alt.X("value:Q", title="สัมประสิทธิ์มาตรฐาน (เฉลี่ยข้าม 5 ส่วน)"),
+            color=alt.condition(alt.datum.value > 0, alt.value("#2ca02c"), alt.value("#d62728")),
+            tooltip=["ตัวแปร", alt.Tooltip("value:Q", title="สัมประสิทธิ์", format="+.4f")]).properties(height=26 * len(coefs) + 40))
+        st.caption("สัมประสิทธิ์ = ถ้าตัวแปรนั้นเพิ่มขึ้น 1 ส่วนเบี่ยงเบนมาตรฐาน โอกาสที่ราคาขึ้น (เทียบกับลง) เปลี่ยนไปเท่าไรในสเกลของโมเดล  "
+                   "บวก = โอกาสขึ้นสูงขึ้น (เขียว) ลบ = ต่ำลง (แดง)  ค่าทั้งหมดอยู่ที่ไม่เกิน ±0.06 ซึ่งใกล้ 0 มาก คือแต่ละตัวแปรแทบไม่มีอิทธิพล")
+    if not imp.empty:
+        st.write("ความสำคัญของกลุ่มตัวแปร (ผลรวมขนาดสัมประสิทธิ์ของกลุ่ม)")
+        common.show(alt.Chart(imp).mark_bar(color=common.C_PRICE).encode(
+            y=alt.Y("กลุ่มตัวแปร:N", sort="-x", title=None), x=alt.X("value:Q", title="ความสำคัญของกลุ่ม (ผลรวม |สัมประสิทธิ์|)"),
+            tooltip=["กลุ่มตัวแปร", alt.Tooltip("value:Q", title="ความสำคัญ", format=".4f")]).properties(height=200))
+        st.caption("กลุ่มตัวแปร: Level, Direction, Vote, Volume, Lag, Momentum ตามที่ proposal กำหนด  กลุ่มที่แท่งยาวกว่ามีอิทธิพลต่อโมเดลมากกว่า "
+                   "แต่เมื่อ AUC ใกล้ 0.5 โมเดลโดยรวมก็ยังทำนายไม่ได้")
+
+
+# ---- one tab per kind of text (lazy: only the open tab is computed); inside it the texts of the market or of the asset itself ----------------
 variants = list(data.PANEL_VARIANTS)
-tabs = st.tabs([data.PANEL_VARIANTS[v] for v in variants], key="p5_tabs", on_change="rerun")
+names_tabs = [data.PANEL_VARIANTS[v] for v in variants] + ["Logistic Regression"]
+tabs = st.tabs(names_tabs, key="p5_tabs", on_change="rerun")
 for tab, variant in zip(tabs, variants):
     with tab:
         if not tab.open:
@@ -174,47 +222,7 @@ for tab, variant in zip(tabs, variants):
                        "ถ้า panel จริงไม่ต่างจากแท็บนี้ แปลว่าไม่มีสัญญาณ")
         else:
             family = st.radio("ข้อความที่ใช้", list(data.PANEL_FAMILIES), format_func=data.PANEL_FAMILIES.get, horizontal=True, key="p5_family_" + variant)
-        panel_view(stat_all if (variant, family) == ("all", "global") else panel_stat(family, variant), variant)
-
-# ---- regression: the stored Logistic Regression of the proposal ------------------------------------------------------------
-st.subheader("Logistic Regression: ความรู้สึกทำนายทิศทางราคา (ขึ้น/ลง) ได้ไหม")
-st.caption("ผลเต็มช่วงข้อมูลของระบบ 7.4 (ไม่เปลี่ยนตามเวลา/ชุมชน/เกณฑ์ เพราะเป็นโมเดลที่ตรวจสอบข้ามช่วงเวลา)  แบ่งแบบ TimeSeriesSplit 5 ส่วน ห่าง 12 ชั่วโมง "
-           "ปรับตัวแปรด้วย StandardScaler เฉพาะชุดฝึก  AUC 0.5 = ทำนายไม่ได้ดีกว่าเดา")
-scopes = {"ทุกสินทรัพย์รวมกัน": ("all", "ALL")}
-scopes.update({GROUP_LABELS[g]: ("big_group", g) for g in groups_chosen})
-default_scope = list(scopes)[0] if len(groups_chosen) > 1 else GROUP_LABELS[groups_chosen[0]]
-scope_pick = st.radio("ขอบเขต", list(scopes), index=list(scopes).index(default_scope), horizontal=True, key="p5_scope", label_visibility="collapsed")
-level, group = scopes[scope_pick]
-lg = logi[(logi.status == "ok") & (logi.level == level) & (logi.big_group == group)]
-auc_grid = lg[lg.metric == "auc"].copy()
-if auc_grid.empty:
-    st.info("ไม่มีผล Logistic ของขอบเขตนี้")
-else:
-    labels = {p: "%s (%s)" % (p.replace("panel_", ""), data.STORED_PANELS[p]) for p in data.STORED_PANELS}
-    auc_grid["panel_label"] = auc_grid.panel.map(labels)
-    auc_grid["ช่วง"] = auc_grid.horizon.map(TARGET_LABEL)
-    auc_grid["label"] = auc_grid.value.map("{:.3f}".format)
-    chart = alt.Chart(auc_grid).encode(
-        x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS[1:]], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-        y=alt.Y("panel_label:N", sort=[labels[p] for p in data.STORED_PANELS], title=None, axis=alt.Axis(labelLimit=260)))
-    rect = chart.mark_rect().encode(
-        color=alt.Color("value:Q", title="AUC", scale=alt.Scale(domain=[0.47, 0.53], scheme="redblue", reverse=True, clamp=True)),
-        tooltip=["panel_label", "ช่วง", alt.Tooltip("value:Q", title="AUC", format=".4f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=",")])
-    text = chart.mark_text(fontSize=11, color="#222222").encode(text="label:N")
-    common.show((rect + text).properties(height=34 * auc_grid.panel.nunique() + 30))
-    st.caption("AUC ของแต่ละ panel และ Horizon (เหมือนรูป a3_auc)  แดง = สูงกว่า 0.5 น้ำเงิน = ต่ำกว่า 0.5  ค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 คือทำนายไม่ได้ดีกว่าเดา")
-    horizon_pick = st.radio("Horizon ที่ดูสัมประสิทธิ์", list(TARGET_LABEL)[1:], horizontal=True, key="p5_log_h", label_visibility="collapsed")
-    one = lg[(lg.panel == "panel_global") & (lg.horizon == horizon_pick)]
-    coefs = one[one.metric.str.startswith("coef:")].assign(ตัวแปร=lambda d: d.metric.str[5:])
-    imp = one[one.metric.str.startswith("group_importance:")].assign(กลุ่มตัวแปร=lambda d: d.metric.str[17:])
-    if not coefs.empty:
-        common.show(alt.Chart(coefs).mark_bar().encode(
-            y=alt.Y("ตัวแปร:N", sort="-x", title=None), x=alt.X("value:Q", title="สัมประสิทธิ์มาตรฐาน (เฉลี่ยข้าม 5 ส่วน)"),
-            color=alt.condition(alt.datum.value > 0, alt.value("#2ca02c"), alt.value("#d62728")),
-            tooltip=["ตัวแปร", alt.Tooltip("value:Q", title="สัมประสิทธิ์", format="+.4f")]).properties(height=330))
-        st.caption("สัมประสิทธิ์ของ panel Global ที่ Horizon %s: บวก = ตัวแปรสูงขึ้นแล้วโอกาสที่ราคาขึ้นสูงขึ้น (เขียว) ลบ = ตรงข้าม (แดง) ค่าที่ใกล้ 0 = ไม่มีอิทธิพล" % horizon_pick)
-    if not imp.empty:
-        common.show(alt.Chart(imp).mark_bar(color=common.C_PRICE).encode(
-            y=alt.Y("กลุ่มตัวแปร:N", sort="-x", title=None), x=alt.X("value:Q", title="ความสำคัญของกลุ่ม (ผลรวม |สัมประสิทธิ์|)"),
-            tooltip=["กลุ่มตัวแปร", alt.Tooltip("value:Q", title="ความสำคัญ", format=".4f")]).properties(height=200))
-        st.caption("กลุ่มตัวแปร: Level, Direction, Vote, Volume, Lag, Momentum ตามที่ proposal กำหนด")
+        panel_view(stat_all if (variant, family) == ("all", "global") else stat(family, variant), variant)
+with tabs[-1]:
+    if tabs[-1].open:
+        logistic_view()

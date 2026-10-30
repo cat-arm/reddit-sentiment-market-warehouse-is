@@ -216,12 +216,14 @@ class StatTableTests(unittest.TestCase):
         noise = data.stat_table(self.samples(slope=0.0, seed=3)).set_index("target")
         self.assertGreater(noise.loc["1h", "spearman_p"], 0.01)
 
-    def test_one_row_per_ticker_and_target_and_no_win_rate_for_the_current_return(self):
+    def test_one_row_per_ticker_and_target_and_a_win_rate_also_for_the_current_return(self):
         out = data.stat_table(pd.concat([self.samples(), self.samples(seed=1).assign(ticker="BBB")]))
         self.assertEqual(len(out), 2 * len(data.STAT_TARGETS))
         self.assertEqual(list(out.columns), data.STAT_COLUMNS)
         current = out[out.target == "log_return"]
-        self.assertTrue(current.winrate.isna().all() and current.spearman_rho.notna().all())
+        self.assertTrue(current.winrate.notna().all() and current.spearman_rho.notna().all())      # same-hour co-movement, not a prediction
+        same_hour = data.stat_table(self.samples(slope=1.0)).set_index("target").loc["log_return"]
+        self.assertGreater(same_hour.winrate, 55)
 
     def test_too_few_pairs_give_nan_not_zero(self):
         out = data.stat_table(self.samples(n=20))

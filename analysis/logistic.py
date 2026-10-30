@@ -3,6 +3,8 @@ Proposal 7.4 step 3 "Logistic Regression": 6 variable groups, StandardScaler, Ti
 AUC-ROC against a random baseline, coefficients as feature importance.  Decisions: docs/METHOD_DECISIONS item 3.
 
   target     y = 1 if future_return_{h} > 0, 0 if < 0   (a return of exactly 0 is dropped)
+             EXTENSION (2026-10-30): also the Current Return (`log_return`, horizon label 'log_return') = the return of the SAME clock
+             hour as the Reddit hour; it describes co-movement, NOT prediction
   groups     Level     sentiment_mean, sentiment_abs_mean
              Direction pos_ratio, neg_ratio
              Vote      majority_final_status (positive=+1, neutral=0, negative=-1), voter_agreement_ratio
@@ -44,7 +46,7 @@ from ingest.pipeline_logs import run_id as new_run_id
 N_SPLITS = 5
 GAP_HOURS = 12
 MIN_ROWS = 500
-HORIZONS = {"future_return_%s" % h: h for h in ("1h", "2h", "3h", "6h", "12h")}
+HORIZONS = {"log_return": "log_return", **{"future_return_%s" % h: h for h in ("1h", "2h", "3h", "6h", "12h")}}
 BASELINE_PANEL = "panel_baseline"
 GROUPS = {
     "Level": ["sentiment_mean", "sentiment_abs_mean"],
