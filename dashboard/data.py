@@ -460,6 +460,23 @@ def mask_majority(df, statuses, majority="majority_final_status"):
     return out
 
 
+def sentiment_buckets(df, value, sentiment="sentiment_mean", bins=5, min_per_bin=10):
+    """Does higher sentiment go with a higher `value` (a return)?  The samples (one per ticker-hour with text) are split
+    into `bins` groups of equal size by sentiment, from the lowest to the highest, and the mean of `value` is taken in
+    each group with its 95% interval (mean +- 1.96 standard errors).  -> DataFrame(bucket, lo, hi, n, mean, ci_lo, ci_hi);
+    empty when there are fewer than bins * min_per_bin samples."""
+    out_cols = ["bucket", "lo", "hi", "n", "mean", "ci_lo", "ci_hi"]
+    d = df[[sentiment, value]].dropna()
+    if len(d) < bins * min_per_bin:
+        return pd.DataFrame(columns=out_cols)
+    d = d.assign(bucket=pd.qcut(d[sentiment], bins, labels=False, duplicates="drop"))
+    g = d.groupby("bucket").agg(lo=(sentiment, "min"), hi=(sentiment, "max"), n=(value, "size"), mean=(value, "mean"),
+                                sd=(value, "std")).reset_index()
+    se = g.sd / np.sqrt(g.n)
+    g["ci_lo"], g["ci_hi"] = g["mean"] - 1.96 * se, g["mean"] + 1.96 * se
+    return g[out_cols]
+
+
 def vote_shares(df, rule=None, majority="majority_final_status"):
     """Majority vote of the hours: per period (`rule` = an entry of common.RESAMPLE; None = every hour on its own) the
     number of hours whose majority status is positive / negative / neutral and its share of the hours that have a status.

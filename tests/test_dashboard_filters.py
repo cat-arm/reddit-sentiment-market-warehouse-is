@@ -186,6 +186,9 @@ class FilterTests(unittest.TestCase):
         status_table = [d for d in at.dataframe if list(d.value.columns) == ["ประเภท", "ชั่วโมง"]]
         self.assertEqual(sorted(status_table[0].value["ประเภท"]), ["negative", "positive"])      # no neutral row any more
         at.sidebar.checkbox(key="f_maj_neutral").set_value(True)
+        for measure in ("Current Return (ชั่วโมงเดียวกัน)", "ผลตอบแทนล่วงหน้า 12h"):                       # sentiment vs return bars
+            at.radio(key="s_bar_measure").set_value(measure).run()
+            self.assertEqual(len(at.exception), 0, measure)
         at.radio(key="s_ratio_mode").set_value("ผลโหวตส่วนใหญ่ (สัดส่วนชั่วโมง)")      # the ratio chart can count the majority votes
         at.sidebar.checkbox(key="f_maj_positive").set_value(False).run()
         self.assertEqual(len(at.exception), 0)

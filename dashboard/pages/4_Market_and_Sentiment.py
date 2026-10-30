@@ -110,6 +110,39 @@ else:
     st.caption("เส้นน้ำเงิน = ราคาปิด  \nเส้นแดง = Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น) "
                "ช่วงที่เส้นแดงขาด = ไม่มีข้อความ ไม่ใช่ค่ากลาง")
 
+# ---- does higher sentiment go with a higher return?  every ticked ticker-hour with text is one sample
+st.subheader("ความรู้สึกยิ่งสูง ผลตอบแทนยิ่งสูงไหม")
+MEASURES = {"Current Return (ชั่วโมงเดียวกัน)": "log_return", **{"ผลตอบแทนล่วงหน้า %s" % h: "future_return_" + h for h in common.data.HORIZONS}}
+st.session_state.setdefault("s_bar_measure", "ผลตอบแทนล่วงหน้า 1h")
+picked = st.radio("วัดผลตอบแทนแบบ", list(MEASURES), horizontal=True, key="s_bar_measure", label_visibility="collapsed")
+column = MEASURES[picked]
+returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in common.data.HORIZONS]]]
+samples = per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "sentiment_mean", "majority"]].merge(
+    returns, on=["ticker", "hour_utc"])
+samples = samples[samples.majority.isin(statuses)]
+buckets = data.sentiment_buckets(samples, column)
+if buckets.empty:
+    st.info("ตัวอย่างน้อยเกินไปสำหรับแบ่งกลุ่มความรู้สึก (ต้องมีอย่างน้อย 50 ticker-ชั่วโมงที่มีทั้งข้อความและผลตอบแทน)")
+else:
+    names5 = ["กลุ่ม 1 (ต่ำสุด)", "กลุ่ม 2", "กลุ่ม 3", "กลุ่ม 4", "กลุ่ม 5 (สูงสุด)"]
+    buckets["กลุ่มความรู้สึก"] = [names5[int(b)] if len(buckets) == 5 else "กลุ่ม %d" % (int(b) + 1) for b in buckets.bucket]
+    buckets["ช่วงความรู้สึก"] = buckets.apply(lambda r: "%+.3f ถึง %+.3f" % (r.lo, r.hi), axis=1)
+    order = list(buckets["กลุ่มความรู้สึก"])
+    base = alt.Chart(buckets).encode(x=alt.X("กลุ่มความรู้สึก:N", sort=order, title="ระดับความรู้สึก แบ่งเป็นกลุ่มเท่าๆ กัน จากต่ำไปสูง"))
+    bars = base.mark_bar(color="#1f77b4").encode(
+        y=alt.Y("mean:Q", title="ผลตอบแทนเฉลี่ย (%)"),
+        tooltip=["กลุ่มความรู้สึก", "ช่วงความรู้สึก", alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","),
+                 alt.Tooltip("mean:Q", title="ค่าเฉลี่ย (%)", format=".4f"), alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format=".4f"),
+                 alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format=".4f")])
+    errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
+    zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
+    st.altair_chart(bars + errors + zero, width="stretch")
+    paired = samples[["sentiment_mean", column]].dropna()
+    st.caption("แท่ง = ผลตอบแทนเฉลี่ยของแต่ละกลุ่มความรู้สึก เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าเส้นคลุมศูนย์ แปลว่าแยกจากศูนย์ไม่ได้  \n"
+               "Spearman ρ ระหว่างความรู้สึกกับผลตอบแทน = %+.3f (%s ticker-ชั่วโมง)  \n"
+               "ใช้ผลตอบแทนแทนระดับราคา เพราะระดับราคาขึ้นลงตามแนวโน้มระยะยาว เทียบกับความรู้สึกตรงๆ จะหลอกตา"
+               % (paired.sentiment_mean.corr(paired[column], method="spearman"), "{:,}".format(len(paired))))
+
 st.subheader("สัดส่วนความคิดเห็นเชิงบวก / ลบ / เป็นกลาง")
 RATIO_MODES = ("ความคิดเห็นจริง (สัดส่วนข้อความ)", "ผลโหวตส่วนใหญ่ (สัดส่วนชั่วโมง)")
 mode = st.radio("นับสัดส่วนจาก", RATIO_MODES, horizontal=True, key="s_ratio_mode", label_visibility="collapsed")

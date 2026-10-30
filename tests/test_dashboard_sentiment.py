@@ -58,6 +58,32 @@ class SentimentFrameTests(unittest.TestCase):
         self.assertTrue(data.sentiment_frame(sums([]), H, H + 3600).empty)
 
 
+class SentimentBucketsTests(unittest.TestCase):
+    def frame(self, slope):
+        rng = np.random.default_rng(0)
+        s = np.linspace(-1, 1, 500)
+        return pd.DataFrame({"sentiment_mean": s, "ret": slope * s + rng.normal(0, 0.01, 500)})
+
+    def test_a_rising_relation_gives_rising_bars(self):
+        g = data.sentiment_buckets(self.frame(1.0), "ret")
+        self.assertEqual(list(g.n), [100] * 5)                           # five groups of equal size
+        self.assertTrue((g["mean"].diff().dropna() > 0).all())          # the higher the sentiment, the higher the mean
+        self.assertTrue((g.lo.iloc[1:].values >= g.hi.iloc[:-1].values).all())     # groups follow each other without overlap
+        self.assertTrue(((g.ci_lo < g["mean"]) & (g["mean"] < g.ci_hi)).all())
+
+    def test_no_relation_gives_bars_near_zero_with_intervals_over_zero(self):
+        g = data.sentiment_buckets(self.frame(0.0), "ret")
+        self.assertTrue(((g.ci_lo < 0) & (g.ci_hi > 0)).all())
+
+    def test_too_few_samples(self):
+        self.assertTrue(data.sentiment_buckets(self.frame(1.0).head(30), "ret").empty)
+
+    def test_missing_values_are_dropped(self):
+        df = self.frame(1.0)
+        df.loc[:99, "ret"] = np.nan
+        self.assertEqual(int(data.sentiment_buckets(df, "ret").n.sum()), 400)
+
+
 class VoteSharesTests(unittest.TestCase):
     def frame(self):
         times = pd.date_range("2026-03-01", periods=6, freq="h", tz="UTC")

@@ -216,6 +216,14 @@ def run(db_path):
                      "AND p.subreddit = 'wallstreetbets' AND p.created_utc >= ? AND p.created_utc < ?", (start, end + 3600))[0][0]
         c.check("4 Market and Sentiment (ชุมชน)", "%s TSLA r/wallstreetbets: จำนวนข้อความ = นับตรงจาก ticker_mentions" % wname,
                 int(wsb[wsb.hour_utc >= start].texts.sum()), direct)
+        # sentiment-vs-return bars: the samples are the ticker-hours with text and a future return
+        samples = data.sentiment_frame(sent, start, end).rename(columns={"series": "ticker"})[["ticker", "hour_utc", "sentiment_mean"]].merge(
+            multi_px[["ticker", "hour_utc", "future_return_1h"]], on=["ticker", "hour_utc"])
+        exp_n = c.q("SELECT COUNT(*) FROM merged_hourly_panel WHERE scope = 'ticker' AND variant = 'all' AND ticker IN (%s) AND sentiment_mean IS NOT NULL "
+                    "AND future_return_1h IS NOT NULL AND hour_utc BETWEEN ? AND ?" % marks, (start, end))[0][0]
+        got = data.sentiment_buckets(samples, "future_return_1h")
+        c.check("4 Market and Sentiment (ความรู้สึก vs ผลตอบแทน)", "%s: จำนวนตัวอย่างหลังแบ่งกลุ่ม = ticker-ชั่วโมงที่มีข้อความและผลตอบแทน 1h" % wname,
+                int(got.n.sum()) if len(got) else 0, int(exp_n))
         ticks = data.mention_ranking(db_path, start, end)
         groups = ticks.groupby("big_group").mentions.sum()
         exp_g = {r[0]: r[1] for r in c.q(
