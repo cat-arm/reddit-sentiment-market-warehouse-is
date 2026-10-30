@@ -689,9 +689,10 @@ def effect_points(coef):
 
 
 def effect_summary(coefs):
-    """Per variable: the mean effect (percentage points, see `effect_points`) over the FUTURE horizons 1h .. 12h and in how many of
-    those horizons the sign is the mean's sign.  `coefs` has `column`, `horizon`, `value`.  -> DataFrame(column, effect, same_sign, horizons)."""
-    future = coefs[coefs.horizon != "log_return"].copy()
+    """Per variable: the mean effect (percentage points, see `effect_points`) over every horizon of `coefs` (the Current Return and the
+    future horizons 1h .. 12h = 6) and in how many of them the sign is the mean's sign.  `coefs` has `column`, `horizon`, `value`.
+    -> DataFrame(column, effect, same_sign, horizons)."""
+    future = coefs.copy()
     future["effect"] = effect_points(future.value)
     rows = []
     for column, part in future.groupby("column", sort=False):
