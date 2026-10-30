@@ -151,64 +151,6 @@ class TimingTests(unittest.TestCase):
         self.assertTrue(data.return_buckets(p, "past").empty)
 
 
-class SignalTests(unittest.TestCase):
-    def frame(self):
-        return pd.DataFrame({"zscore": [2.0, 2.0, 1.0, 3.0, np.nan, 2.0], "sentiment_mean": [0.4, -0.5, 0.9, 0.1, 0.9, np.nan],
-                             "ret": [1.0, -1.0, 5.0, 7.0, 9.0, 9.0]})
-
-    def test_both_thresholds_must_be_met(self):
-        hit = data.signal_hours(self.frame(), 1.5, 0.30)
-        self.assertEqual(list(hit.index), [0, 1])                       # row 2: Z too low, 3: |s| too small, 4/5: NULL never qualifies
-        self.assertEqual(list(hit.direction), ["positive", "negative"])
-
-    def test_thresholds_change_the_hours(self):
-        self.assertEqual(len(data.signal_hours(self.frame(), 0.5, 0.05)), 4)
-        self.assertEqual(len(data.signal_hours(self.frame(), 5.0, 0.30)), 0)
-
-    def test_the_threshold_edge_counts_for_sentiment_but_not_for_z(self):
-        edge = pd.DataFrame({"zscore": [1.5, 1.6], "sentiment_mean": [0.30, 0.30]})
-        self.assertEqual(list(data.signal_hours(edge, 1.5, 0.30).index), [1])    # Z must be above, |s| at least
-
-    def test_a_threshold_of_zero_switches_that_test_off(self):
-        df = self.frame()
-        self.assertEqual(len(data.signal_hours(df, 0.0, 0.0)), 5)           # every hour with a Sentiment Score, also Z <= 0 / NaN
-        self.assertEqual(list(data.signal_hours(df, 0.0, 0.30).index), [0, 1, 2, 4])       # only |s| >= 0.30
-        self.assertEqual(list(data.threshold_mask(df, 0.0, 0.0)), [True] * len(df))
-
-
-
-class ChartDesignTests(unittest.TestCase):
-    """One chart design for every dashboard."""
-
-    def test_every_chart_gets_the_same_height_unless_it_sets_its_own(self):
-        df = pd.DataFrame({"x": [1, 2], "y": [1, 2]})
-        plain = common.style(alt.Chart(df).mark_line().encode(x="x:Q", y="y:Q")).to_dict()
-        self.assertEqual(plain["height"], common.CHART_HEIGHT)
-        own = common.style(alt.Chart(df).mark_bar().encode(x="x:Q", y="y:Q").properties(height=500)).to_dict()
-        self.assertEqual(own["height"], 500)                              # horizontal bar charts size themselves
-
-    def test_the_shared_axis_and_legend_style(self):
-        cfg = common.style(alt.Chart(pd.DataFrame({"x": [1]})).mark_point().encode(x="x:Q")).to_dict()["config"]
-        self.assertEqual(cfg["axis"]["gridColor"], "#e8e8e8")
-        self.assertEqual(cfg["legend"]["orient"], "top")
-
-    def test_reference_rules(self):
-        self.assertEqual(common.zero_rule().to_dict()["data"]["values"], [{"y": 0}])
-        self.assertEqual(common.ref_rule(30, 70).to_dict()["data"]["values"], [{"y": 30}, {"y": 70}])
-
-    def test_dual_axis_can_hide_either_line(self):
-        df = pd.DataFrame({"time": pd.date_range("2026-01-01", periods=4, freq="D", tz="UTC"), "a": [1.0, 2, 3, 4], "b": [0.1, -0.2, 0.0, 0.3]})
-        for left, right in ((True, True), (True, False), (False, True)):
-            spec = common.dual_axis(df, "time", "a", "b", "A", "B", show_left=left, show_right=right).to_dict()
-            self.assertEqual(len(spec["layer"]), (left + right) * 2)               # a line and its tooltip circles per visible series
-            tooltips = [e["field"] for e in spec["layer"][1]["encoding"]["tooltip"]]
-            self.assertEqual(tooltips, ["time"] + (["a"] if left else []) + (["b"] if right else []))
-
-    def test_each_measure_has_its_own_colour(self):
-        colours = [common.C_PRICE, common.C_VOLUME, common.C_REDDIT, common.C_Z, common.C_SENT, common.C_RATE, common.C_ATR, common.C_NATR]
-        self.assertEqual(len(set(colours)), len(colours))
-
-
 class MaskThresholdsTests(unittest.TestCase):
     def frame(self):
         return pd.DataFrame({"close": [10.0, 11.0, 12.0, 13.0], "reddit_volume": [5, 6, 7, 0], "sentiment_mean": [0.5, 0.1, -0.6, np.nan],

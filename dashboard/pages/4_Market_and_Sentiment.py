@@ -187,25 +187,3 @@ if not ratios.empty:
     st.caption(caption)
 
 # ---- DimDetectionConfig drill-down: the hours that meet the thresholds of the sidebar, and what the price did next
-no_rule = not (z_th or s_th)
-rule_text = ("ยังไม่ตั้งเกณฑ์ (0 / 0): ทุกชั่วโมงที่มีข้อความ" if no_rule else
-             "Z-score > %.1f และ |Sentiment| ≥ %.2f" % (z_th, s_th) if z_th and s_th else
-             "Z-score > %.1f" % z_th if z_th else "|Sentiment| ≥ %.2f" % s_th)
-st.subheader("รายการชั่วโมงที่ผ่านเกณฑ์ตรวจจับ")
-RETURN_COLUMNS = ["future_return_" + h for h in common.data.HORIZONS]
-hours = per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "texts", "sentiment_mean", "zscore", "majority"]]
-hours = hours[hours.majority.isin(statuses)].merge(prices[["ticker", "hour_utc", *RETURN_COLUMNS]], on=["ticker", "hour_utc"])
-hit = data.signal_hours(hours, z_th, s_th)
-if hit.empty:
-    st.info("ไม่พบชั่วโมงที่เข้าเงื่อนไขในช่วงที่เลือก ลองลดเกณฑ์ Z-score หรือ Sentiment Threshold ที่แถบด้านซ้าย")
-else:
-    listing = hit.sort_values("hour_utc", ascending=False).copy()
-    listing["เวลา (UTC)"] = pd.to_datetime(listing.hour_utc, unit="s", utc=True).dt.strftime("%Y-%m-%d %H:%M")
-    listing["สินทรัพย์"] = listing.ticker.map(lambda s: "%s · %s" % (s, names.get(s, "")))
-    common.table(listing[["เวลา (UTC)", "สินทรัพย์", "direction", "sentiment_mean", "texts", "zscore", *RETURN_COLUMNS]].rename(
-        columns={"direction": "ทิศทาง", "sentiment_mean": "Sentiment Score", "texts": "ข้อความ", "zscore": "Volume Z-score",
-                 **{"future_return_" + h: "ผลตอบแทนล่วงหน้า %s (%%)" % h for h in common.data.HORIZONS}}).round(3),
-        hide_index=True, width="stretch", height=700)
-    st.caption("เกณฑ์ตอนนี้: %s  จำนวนชั่วโมงที่ผ่านเกณฑ์ = %s (แสดงทั้งหมด เรียงจากล่าสุด)  \n"
-               "ผลตอบแทนล่วงหน้าว่าง = ไม่มีแท่งราคาที่ครบตามกรอบเวลานั้นหลังชั่วโมงนั้น"
-               % (rule_text, "{:,}".format(len(hit))))

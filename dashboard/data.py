@@ -572,14 +572,6 @@ def mask_thresholds(df, z_min, s_min, majority="majority_final_status"):
     return out
 
 
-def signal_hours(df, z_min, s_min, z="zscore", sentiment="sentiment_mean"):
-    """The hours that meet the thresholds (see `threshold_mask`) and have a Sentiment Score.  Adds the column `direction`
-    ('positive' / 'negative')."""
-    hit = df[threshold_mask(df, z_min, s_min, z, sentiment) & df[sentiment].notna()].copy()
-    hit["direction"] = np.where(hit[sentiment] > 0, "positive", "negative")
-    return hit
-
-
 def vote_shares(df, rule=None, majority="majority_final_status"):
     """Majority vote of the hours: per period (`rule` = an entry of common.RESAMPLE; None = every hour on its own) the
     number of hours whose majority status is positive / negative / neutral and its share of the hours that have a status.
