@@ -172,23 +172,6 @@ else:
                  "hours_with_text": "ชั่วโมงที่มีข้อความ", "texts": "ข้อความ"}).round(3), hide_index=True,
         width="stretch", height=330)
 
-# ---- data coverage (not a KPI): how many ticker-hours with a price also have text, after the filters of the sidebar
-st.subheader("ความครบถ้วนของข้อมูลความรู้สึก")
-hours = prices[["ticker", "hour_utc"]].merge(per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "majority"]],
-                                              on=["ticker", "hour_utc"], how="left")
-hours["has_text"] = hours.majority.isin(statuses)
-cover = hours.groupby("ticker").agg(price_hours=("hour_utc", "size"), text_hours=("has_text", "sum")).reset_index()
-cover["share"] = cover.text_hours / cover.price_hours
-cover["สินทรัพย์"] = cover.ticker.map(lambda s: "%s · %s" % (s, names.get(s, "")))
-total_row = pd.DataFrame([{"สินทรัพย์": "รวมทุกตัวที่เลือก", "price_hours": cover.price_hours.sum(), "text_hours": cover.text_hours.sum(),
-                           "share": cover.text_hours.sum() / cover.price_hours.sum()}])
-table = pd.concat([total_row, cover.sort_values("share")[["สินทรัพย์", "price_hours", "text_hours", "share"]]], ignore_index=True)
-common.table(table.rename(columns={"price_hours": "ticker-ชั่วโมงที่มีราคา", "text_hours": "ticker-ชั่วโมงที่มีข้อความ (ตามตัวกรอง)",
-                                   "share": "สัดส่วน (มีข้อความ ÷ มีราคา)"}).round(4), hide_index=True, width="stretch",
-             height=min(420, 60 + 36 * len(table)))
-st.caption("รวมทุกตัว = ผลรวม ticker-ชั่วโมงที่มีข้อความของทุกตัวที่เลือก ÷ ผลรวม ticker-ชั่วโมงที่มีราคาของทุกตัวที่เลือก "
-           "(1 ตัว × 1 ชั่วโมง = 1 หน่วย)")
-
 # ---- below: the market measures (close, volume) do not depend on the sentiment filters (communities, majority status)
 st.subheader("ราคาปิดและปริมาณการซื้อขาย (ไม่ขึ้นกับตัวกรองความรู้สึก)")
 st.altair_chart(common.line(shown, "time", "close", "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)", "#1f77b4", 220,

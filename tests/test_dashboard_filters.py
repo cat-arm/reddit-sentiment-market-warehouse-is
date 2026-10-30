@@ -183,9 +183,8 @@ class FilterTests(unittest.TestCase):
         at.sidebar.checkbox(key="f_maj_neutral").set_value(False).run()
         self.assertNotEqual(at.metric[0].value, full[0], "hours with a neutral majority lose their sentiment")
         self.assertEqual([m.label for m in at.metric], ["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"])
-        cover = [d for d in at.dataframe if "สัดส่วน (มีข้อความ ÷ มีราคา)" in list(d.value.columns)]
-        self.assertEqual(len(cover), 1)
-        self.assertLess(cover[0].value.iloc[0, 2], cover[0].value.iloc[0, 1])                 # neutral hours no longer count
+        status_table = [d for d in at.dataframe if list(d.value.columns) == ["ประเภท", "ชั่วโมง"]]
+        self.assertEqual(sorted(status_table[0].value["ประเภท"]), ["negative", "positive"])      # no neutral row any more
         for key in ("f_ss_" + c for c in COMMUNITIES):
             at.sidebar.checkbox(key=key).set_value(False)
         at = at.run()
