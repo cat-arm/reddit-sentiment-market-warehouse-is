@@ -187,12 +187,13 @@ if not ratios.empty:
     st.caption(caption)
 
 # ---- DimDetectionConfig drill-down: the hours that meet the thresholds of the sidebar, and what the price did next
-rule_text = ("ทุกชั่วโมงที่มีข้อความ (เกณฑ์ Z-score และ Sentiment เป็น 0 = ไม่กรอง)" if not (z_th or s_th) else
+no_rule = not (z_th or s_th)
+rule_text = ("ยังไม่ตั้งเกณฑ์ (0 / 0): ทุกชั่วโมงที่มีข้อความนับเป็นสัญญาณ" if no_rule else
              "Z-score > %.1f และ |Sentiment| ≥ %.2f" % (z_th, s_th) if z_th and s_th else
              "Z-score > %.1f" % z_th if z_th else "|Sentiment| ≥ %.2f" % s_th)
 # the Horizon belongs to this chart only (the sidebar filters apply to the whole page)
 st.session_state.setdefault("s_drill_h", common.data.HORIZONS[0])
-st.subheader("ชั่วโมงที่เข้าเงื่อนไขตรวจจับ (%s) ราคาเป็นอย่างไรต่อ %s" % (rule_text, st.session_state["s_drill_h"]))
+st.subheader("ความรู้สึกบวก/ลบ แล้วราคาเป็นอย่างไรต่อ %s" % st.session_state["s_drill_h"])
 horizon = st.radio("Horizon (ดูผลตอบแทนล่วงหน้ากี่ชั่วโมง)", list(common.data.HORIZONS), horizontal=True, key="s_drill_h")
 hours = per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "texts", "sentiment_mean", "zscore", "majority"]]
 hours = hours[hours.majority.isin(statuses)].merge(prices[["ticker", "hour_utc", "future_return_" + horizon]], on=["ticker", "hour_utc"])
@@ -213,9 +214,13 @@ else:
     errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
     zero = common.zero_rule()
     common.show(bars + errors + zero, width="stretch")
-    st.caption("พบ %s ticker-ชั่วโมงที่ Reddit คึกคักผิดปกติ (Z-score เกินเกณฑ์) และความรู้สึกชัดเจน (|Sentiment Score| ถึงเกณฑ์)  \n"
-               "เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีการขยับไม่ได้ เทียบกับแท่งขวาสุดที่เป็นค่าเฉลี่ยของทุกชั่วโมง"
-               % "{:,}".format(len(hit)))
+    st.caption("เกณฑ์ตอนนี้: %s  
+"
+               "แท่ง \"สัญญาณบวก\" / \"สัญญาณลบ\" = ผลตอบแทนล่วงหน้าเฉลี่ยของชั่วโมงที่ผ่านเกณฑ์ และ Sentiment Score เป็นบวก / ลบ  "
+               "แท่งขวาสุด = ค่าเฉลี่ยของทุกชั่วโมงที่มีข้อความ (ไว้เทียบ)  
+"
+               "เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีการขยับไม่ได้  จำนวนชั่วโมงที่ผ่านเกณฑ์ = %s"
+               % (rule_text, "{:,}".format(len(hit))))
     listing = hit.sort_values("hour_utc", ascending=False).head(300).copy()
     listing["เวลา (UTC)"] = pd.to_datetime(listing.hour_utc, unit="s", utc=True).dt.strftime("%Y-%m-%d %H:%M")
     listing["สินทรัพย์"] = listing.ticker.map(lambda s: "%s · %s" % (s, names.get(s, "")))
