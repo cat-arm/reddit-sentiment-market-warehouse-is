@@ -145,6 +145,56 @@ else:
                "ใช้ผลตอบแทนแทนระดับราคา เพราะระดับราคาขึ้นลงตามแนวโน้มระยะยาว เทียบกับความรู้สึกตรงๆ จะหลอกตา"
                % (paired.sentiment_mean.corr(paired[column], method="spearman"), "{:,}".format(len(paired))))
 
+# ---- who moves first?  the same ticker-hours as above, now looking back as well as forward
+st.subheader("ใครขยับก่อนกัน: ความรู้สึก หรือ ราคา")
+timing = per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "sentiment_mean", "majority"]]
+timing = timing[timing.majority.isin(statuses)].merge(prices[["ticker", "hour_utc", "log_return"]], on=["ticker", "hour_utc"], how="left")
+lags = data.lag_correlation(timing)
+if lags.rho.notna().sum() == 0:
+    st.info("ตัวอย่างน้อยเกินไปสำหรับวัดความสัมพันธ์ข้ามเวลา")
+else:
+    lags["ช่วงเวลา"] = lags.lag.map(lambda k: "ชั่วโมงเดียวกัน" if k == 0 else ("ราคาก่อน %d ชม." % -k if k < 0 else "ราคาหลัง %d ชม." % k))
+    lags["ฝั่ง"] = lags.lag.map(lambda k: "ราคาขยับก่อนข้อความ" if k < 0 else ("ชั่วโมงเดียวกัน" if k == 0 else "ราคาขยับหลังข้อความ"))
+    base = alt.Chart(lags).encode(x=alt.X("lag:O", title="ผลตอบแทนของชั่วโมงที่ห่างจากชั่วโมงที่มีข้อความกี่ชั่วโมง (ลบ = ก่อนมีข้อความ, บวก = หลังมีข้อความ)",
+                                          axis=alt.Axis(labelAngle=0)))
+    bars = base.mark_bar().encode(
+        y=alt.Y("rho:Q", title="Spearman ρ (ความรู้สึก vs ผลตอบแทน)"),
+        color=alt.Color("ฝั่ง:N", scale=alt.Scale(domain=["ราคาขยับก่อนข้อความ", "ชั่วโมงเดียวกัน", "ราคาขยับหลังข้อความ"],
+                                                  range=["#d62728", "#7f7f7f", "#1f77b4"]), legend=alt.Legend(orient="top", title=None)),
+        tooltip=["ช่วงเวลา", alt.Tooltip("rho:Q", title="Spearman ρ", format="+.3f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","),
+                 alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format="+.3f"), alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format="+.3f")])
+    errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
+    zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
+    st.altair_chart(bars + errors + zero, width="stretch")
+    st.caption("วิธีอ่าน: แต่ละแท่งคือความสัมพันธ์ระหว่าง Sentiment Score ของชั่วโมงที่มีข้อความ กับผลตอบแทนรายชั่วโมงที่ห่างไปกี่ชั่วโมง "
+               "ถ้าราคาขยับก่อนแล้วคนค่อยโพสต์ แท่งสีแดง (ฝั่งซ้าย) จะสูงกว่าสีน้ำเงิน ถ้าความรู้สึกนำราคา แท่งสีน้ำเงิน (ฝั่งขวา) จะสูงกว่า "
+               "เส้นดำ = ช่วงเชื่อมั่น 95% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีความสัมพันธ์ไม่ได้")
+
+st.subheader("ราคาขึ้นหรือลงมาก่อน แล้วความรู้สึกเป็นอย่างไร")
+PAST = {"1 ชั่วโมงก่อนหน้า": 1, "3 ชั่วโมงก่อนหน้า": 3, "6 ชั่วโมงก่อนหน้า": 6}
+st.session_state.setdefault("s_past_hours", "3 ชั่วโมงก่อนหน้า")
+past_pick = st.radio("ดูผลตอบแทน", list(PAST), horizontal=True, key="s_past_hours", label_visibility="collapsed")
+timing = timing.assign(past=data.past_return(timing, PAST[past_pick]))
+rb = data.return_buckets(timing, "past")
+if rb.empty:
+    st.info("ตัวอย่างน้อยเกินไปสำหรับแบ่งกลุ่มตามผลตอบแทนก่อนหน้า (ต้องมีอย่างน้อย 50 ticker-ชั่วโมงที่มีทั้งข้อความและราคาก่อนหน้า)")
+else:
+    price_levels = ["ตกแรงสุด", "ตกเล็กน้อย", "ทรงตัว", "ขึ้นเล็กน้อย", "ขึ้นแรงสุด"]
+    rb["ระดับราคา"] = [price_levels[int(b)] if len(rb) == 5 else "กลุ่ม %d" % (int(b) + 1) for b in rb.bucket]
+    rb["ป้าย"] = rb.apply(lambda r: "%s (%+.2f%% ถึง %+.2f%%)" % (r["ระดับราคา"], r.lo, r.hi), axis=1)
+    base = alt.Chart(rb).encode(x=alt.X("ป้าย:N", sort=list(rb["ป้าย"]), axis=alt.Axis(labelAngle=0, labelLimit=200),
+                                        title="ผลตอบแทนก่อนชั่วโมงที่มีข้อความ (แบ่ง 5 กลุ่มเท่าๆ กัน จากตกแรงสุดไปขึ้นแรงสุด)"))
+    bars = base.mark_bar(color="#d62728").encode(
+        y=alt.Y("mean:Q", title="Sentiment Score เฉลี่ย"),
+        tooltip=["ระดับราคา", alt.Tooltip("mean_return:Q", title="ผลตอบแทนก่อนหน้าเฉลี่ย (%)", format="+.3f"),
+                 alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","), alt.Tooltip("mean:Q", title="Sentiment Score เฉลี่ย", format="+.4f"),
+                 alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format="+.4f"), alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format="+.4f")])
+    errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
+    zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
+    st.altair_chart(bars + errors + zero, width="stretch")
+    st.caption("วิธีอ่าน: แบ่ง ticker-ชั่วโมงที่มีข้อความเป็น 5 กลุ่มเท่าๆ กันตามผลตอบแทนของราคาก่อนชั่วโมงนั้น แล้วดู Sentiment Score เฉลี่ยของแต่ละกลุ่ม "
+               "ถ้า \"ราคาตก คนก็กลัว\" แท่งซ้าย (ตกแรงสุด) ควรต่ำกว่าแท่งขวา (ขึ้นแรงสุด) เส้นดำ = ช่วงเชื่อมั่น 95%")
+
 st.subheader("สัดส่วนความคิดเห็นเชิงบวก / ลบ / เป็นกลาง")
 RATIO_MODES = ("ความคิดเห็นจริง (สัดส่วนข้อความ)", "ผลโหวตส่วนใหญ่ (สัดส่วนชั่วโมง)")
 mode = st.radio("นับสัดส่วนจาก", RATIO_MODES, horizontal=True, key="s_ratio_mode", label_visibility="collapsed")

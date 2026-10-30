@@ -98,6 +98,57 @@ class SentimentBucketsTests(unittest.TestCase):
         self.assertEqual(int(data.sentiment_buckets(df, "ret").n.sum()), 400)
 
 
+class TimingTests(unittest.TestCase):
+    def prices(self, n=400, seed=0):
+        rng = np.random.default_rng(seed)
+        hours = np.arange(n) * 3600
+        return pd.DataFrame({"ticker": "AAA", "hour_utc": hours, "log_return": rng.normal(0, 1, n)})
+
+    def test_shifted_return_looks_back_and_forward(self):
+        p = pd.DataFrame({"ticker": "A", "hour_utc": [0, 3600, 7200], "log_return": [1.0, 2.0, 3.0]})
+        self.assertEqual(list(data.shifted_return(p, -1).fillna(-9)), [-9, 1.0, 2.0])
+        self.assertEqual(list(data.shifted_return(p, 1).fillna(-9)), [2.0, 3.0, -9])
+        self.assertEqual(list(data.shifted_return(p, 0)), [1.0, 2.0, 3.0])
+
+    def test_past_return_sums_the_previous_hours_and_needs_all_of_them(self):
+        p = pd.DataFrame({"ticker": "A", "hour_utc": [0, 3600, 7200, 14400], "log_return": [1.0, 2.0, 3.0, 4.0]})
+        self.assertEqual(list(data.past_return(p, 2).fillna(-9)), [-9, -9, 3.0, -9])    # hour 14400: hour 10800 is missing
+
+    def test_the_same_ticker_name_does_not_mix_tickers(self):
+        p = pd.DataFrame({"ticker": ["A", "B"], "hour_utc": [0, 3600], "log_return": [1.0, 2.0]})
+        self.assertTrue(data.shifted_return(p, 1).isna().all())
+
+    def test_lag_correlation_finds_the_lag_that_was_built_in(self):
+        p = self.prices()
+        # the sentiment follows the return of the hour before: price first, text after -> the peak is at lag -1
+        p["sentiment_mean"] = data.shifted_return(p, -1) + np.random.default_rng(1).normal(0, 0.3, len(p))
+        lc = data.lag_correlation(p).set_index("lag")
+        self.assertEqual(lc.rho.idxmax(), -1)
+        self.assertGreater(lc.loc[-1, "ci_lo"], 0.5)
+        self.assertLess(abs(lc.loc[3, "rho"]), 0.2)
+        self.assertTrue(((lc.ci_lo <= lc.rho) & (lc.rho <= lc.ci_hi)).all())
+
+    def test_lag_correlation_with_nothing(self):
+        p = self.prices(10)
+        p["sentiment_mean"] = np.nan
+        self.assertTrue(data.lag_correlation(p).rho.isna().all())
+
+    def test_return_buckets_show_sentiment_following_the_price(self):
+        p = self.prices(600)
+        p["past"] = data.past_return(p, 1)
+        p["sentiment_mean"] = p.past * 0.1
+        g = data.return_buckets(p, "past")
+        self.assertEqual(list(g.bucket), [0, 1, 2, 3, 4])
+        self.assertTrue((g["mean"].diff().dropna() > 0).all())
+        self.assertTrue((g.lo.iloc[1:].values >= g.hi.iloc[:-1].values).all())
+
+    def test_return_buckets_too_few(self):
+        p = self.prices(20)
+        p["past"] = data.past_return(p, 1)
+        p["sentiment_mean"] = 0.1
+        self.assertTrue(data.return_buckets(p, "past").empty)
+
+
 class VoteSharesTests(unittest.TestCase):
     def frame(self):
         times = pd.date_range("2026-03-01", periods=6, freq="h", tz="UTC")

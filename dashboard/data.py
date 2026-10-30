@@ -499,6 +499,54 @@ def sentiment_buckets(df, value, sentiment="sentiment_mean", min_total=50):
     return g[out_cols]
 
 
+def shifted_return(prices, lag, column="log_return"):
+    """The Current Return of the hour t + `lag` for every row (ticker, hour_utc = t): lag < 0 looks back (the hours before
+    the Reddit hour), lag = 0 is the same hour, lag > 0 looks forward.  NULL when that hour has no return (market closed,
+    gap in the bars).  -> Series aligned with prices.index."""
+    lookup = prices.set_index(["ticker", "hour_utc"])[column]
+    keys = pd.MultiIndex.from_arrays([prices.ticker, prices.hour_utc + lag * 3600])
+    return pd.Series(lookup.reindex(keys).values, index=prices.index)
+
+
+def past_return(prices, hours):
+    """Return over the `hours` hours BEFORE the Reddit hour (sum of the hourly log returns of t-hours .. t-1, in %).
+    NULL when any of those hours is missing."""
+    parts = pd.concat([shifted_return(prices, -k) for k in range(1, hours + 1)], axis=1)
+    return parts.sum(axis=1, min_count=hours).where(parts.notna().all(axis=1))
+
+
+def lag_correlation(samples, lags=range(-6, 7), sentiment="sentiment_mean"):
+    """Who moves first?  Spearman correlation between the Sentiment Score of the Reddit hour t and the Current Return of the
+    hour t + lag, for every lag.  `samples` has ticker, hour_utc, the sentiment column and the prices' log_return (every
+    ticker-hour with text).  Negative lags: the price moved BEFORE the text; positive lags: AFTER it.
+    -> DataFrame(lag, rho, n, ci_lo, ci_hi); the interval is the Fisher-z 95% interval."""
+    rows = []
+    for lag in lags:
+        d = pd.DataFrame({"s": samples[sentiment], "r": shifted_return(samples, lag)}).dropna()
+        n = len(d)
+        rho = d.s.corr(d.r, method="spearman") if n > 3 else np.nan
+        half = 1.96 / np.sqrt(n - 3) if n > 3 else np.nan
+        z = np.arctanh(rho) if n > 3 and abs(rho) < 1 else np.nan
+        rows.append({"lag": lag, "rho": rho, "n": n, "ci_lo": np.tanh(z - half), "ci_hi": np.tanh(z + half)})
+    return pd.DataFrame(rows)
+
+
+def return_buckets(df, past, sentiment="sentiment_mean", bins=5, min_total=50):
+    """Does the price move first?  The samples are put into `bins` groups of equal size by their return BEFORE the Reddit hour
+    (lowest to highest) and the average Sentiment Score of each group is taken with its 95% interval (mean +- 1.96 standard
+    errors).  -> DataFrame(bucket, lo, hi, n, mean_return, mean, ci_lo, ci_hi); empty below `min_total` samples."""
+    out_cols = ["bucket", "lo", "hi", "n", "mean_return", "mean", "ci_lo", "ci_hi"]
+    d = df[[sentiment, past]].dropna()
+    if len(d) < min_total:
+        return pd.DataFrame(columns=out_cols)
+    d = d.assign(bucket=pd.qcut(d[past].rank(method="first"), bins, labels=False))
+    g = d.groupby("bucket").agg(lo=(past, "min"), hi=(past, "max"), n=(sentiment, "size"), mean_return=(past, "mean"),
+                                mean=(sentiment, "mean"), sd=(sentiment, "std")).reset_index()
+    se = g.sd / np.sqrt(g.n)
+    g["ci_lo"], g["ci_hi"] = g["mean"] - 1.96 * se, g["mean"] + 1.96 * se
+    return g[out_cols]
+
+
 def vote_shares(df, rule=None, majority="majority_final_status"):
     """Majority vote of the hours: per period (`rule` = an entry of common.RESAMPLE; None = every hour on its own) the
     number of hours whose majority status is positive / negative / neutral and its share of the hours that have a status.
