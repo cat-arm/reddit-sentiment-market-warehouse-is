@@ -14,7 +14,7 @@ SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # sy
 SENTIMENT_PAGE = "pages/4_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
 ANALYSIS_PAGE = "pages/7_Statistical_Analysis.py"                              # 7.5-3: deeper analysis (extension)
 DETECTION_PAGES = {"pages/5_Ranking_and_Signals.py": ["s_z", "s_s", "s_h"], "pages/6_Hot_Events.py": ["h_z", "h_s", "h_n"],
-                   SENTIMENT_PAGE: ["s_z", "s_s", "s_h"]}
+                   SENTIMENT_PAGE: ["d_z", "d_s", "d_h"]}
 MAJORITY_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE, *DETECTION_PAGES}
 SENTIMENT_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE}
 COUNT_PAGES = SOURCE_PAGES | {"pages/3_Price_and_Return.py"}                  # first card = a count that follows the ticks
@@ -213,13 +213,20 @@ class FilterTests(unittest.TestCase):
         self.assertNotEqual(at.metric[0].value, full[0], "hours with a neutral majority lose their sentiment")
         self.assertEqual([m.label for m in at.metric], ["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"])
         at.sidebar.checkbox(key="f_maj_neutral").set_value(True)
-        for z in (3.0, 0.5):                                                        # DimDetectionConfig: the signal hours follow the thresholds
-            at.sidebar.slider(key="s_z").set_value(z).run()
+        # DimDetectionConfig is a FILTER on this page: 0 / 0 removes nothing, a threshold removes hours
+        self.assertEqual((at.sidebar.slider(key="d_z").value, at.sidebar.slider(key="d_s").value), (0.0, 0.0))
+        for z in (3.0, 0.5):
+            at.sidebar.slider(key="d_z").set_value(z).run()
             self.assertEqual(len(at.exception), 0, z)
-        at.sidebar.radio(key="s_h").set_value("12h").run()
+            self.assertNotEqual(at.metric[0].value, full[0], "Z-score Threshold %s removes hours, so the Sentiment Score changes" % z)
+        at.sidebar.slider(key="d_z").set_value(0.0)
+        at.sidebar.slider(key="d_s").set_value(0.5).run()
+        self.assertNotEqual(at.metric[0].value, full[0], "Sentiment Threshold changes the Sentiment Score")
+        at.sidebar.slider(key="d_s").set_value(0.0)
+        at.sidebar.radio(key="d_h").set_value("12h").run()
         self.assertEqual(len(at.exception), 0)
-        at.sidebar.slider(key="s_z").set_value(1.5)
-        at.sidebar.radio(key="s_h").set_value("1h")
+        self.assertEqual([m.value for m in at.metric], full, "back to 0 / 0: nothing is filtered, the numbers are the default ones")
+        at.sidebar.radio(key="d_h").set_value("1h")
         for key in ("s_price_sent", "s_z_sent", "s_price_z"):                      # the dual charts: hide one line, then both
             at.checkbox(key="dl_" + key).set_value(False).run()
             self.assertEqual(len(at.exception), 0, key)

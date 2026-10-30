@@ -24,11 +24,14 @@ from dashboard import common, data  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
 common.setup("Market and Sentiment: ภาพรวมตลาดและความรู้สึก", "🧭")
-_, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="signals", majority=True)
+_, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True)
 how = common.granularity(start, end, "g_sent")
 tickers = common.selected_tickers()
 communities = common.selected_communities()
 statuses = common.selected_statuses()
+z_th = st.session_state.get("d_z", 0.0)                 # DimDetectionConfig: filters the hours (0 = no filter)
+s_th = st.session_state.get("d_s", 0.0)
+horizon = st.session_state.get("d_h", common.data.HORIZONS[0])
 if not tickers or not communities or not statuses:
     common.nothing_selected(["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"],
                             "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
@@ -43,6 +46,8 @@ if prices.empty:
     st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
     st.stop()
 per_ticker = data.sentiment_frame(sent, start, end)                       # one series per ticker
+# the same filter on every ticker-hour: an hour that fails the thresholds loses its majority status, so the samples below skip it
+per_ticker_kept = per_ticker.assign(majority=per_ticker.majority.where(data.threshold_mask(per_ticker, z_th, s_th)))
 series_frame = data.sentiment_frame(sent, start, end, combined=not one)   # what the charts show
 
 
@@ -68,6 +73,8 @@ series = series.rename(columns={"texts": "reddit_volume", "majority": "majority_
 
 # hours whose majority status is not ticked lose every Reddit measure (price and market volume stay); no text = NULL
 series = data.mask_majority(series, statuses)
+# hours that do not meet the thresholds of DimDetectionConfig lose their Reddit measures too (0 / 0 = nothing removed)
+series = data.mask_thresholds(series, z_th, s_th)
 
 
 def weighted_resample(df, how):
@@ -128,7 +135,7 @@ st.session_state.setdefault("s_bar_measure", "ผลตอบแทนล่ว�
 picked = st.radio("วัดผลตอบแทนแบบ", list(MEASURES), horizontal=True, key="s_bar_measure", label_visibility="collapsed")
 column = MEASURES[picked]
 returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in common.data.HORIZONS]]]
-samples = per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "sentiment_mean", "majority"]].merge(
+samples = per_ticker_kept.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "sentiment_mean", "majority"]].merge(
     returns, on=["ticker", "hour_utc"])
 samples = samples[samples.majority.isin(statuses)]
 buckets = data.sentiment_buckets(samples, column)
@@ -181,10 +188,10 @@ if not ratios.empty:
     st.caption(caption)
 
 # ---- DimDetectionConfig drill-down: the hours that meet the thresholds of the sidebar, and what the price did next
-z_th = st.session_state.get("s_z", 1.5)
-s_th = st.session_state.get("s_s", 0.30)
-horizon = st.session_state.get("s_h", common.data.HORIZONS[0])
-st.subheader("ชั่วโมงที่เข้าเงื่อนไขตรวจจับ (Z-score > %.1f และ |Sentiment| ≥ %.2f) ราคาเป็นอย่างไรต่อ %s" % (z_th, s_th, horizon))
+rule_text = ("ทุกชั่วโมงที่มีข้อความ (เกณฑ์ Z-score และ Sentiment เป็น 0 = ไม่กรอง)" if not (z_th or s_th) else
+             "Z-score > %.1f และ |Sentiment| ≥ %.2f" % (z_th, s_th) if z_th and s_th else
+             "Z-score > %.1f" % z_th if z_th else "|Sentiment| ≥ %.2f" % s_th)
+st.subheader("ชั่วโมงที่เข้าเงื่อนไขตรวจจับ (%s) ราคาเป็นอย่างไรต่อ %s" % (rule_text, horizon))
 hours = per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "texts", "sentiment_mean", "zscore", "majority"]]
 hours = hours[hours.majority.isin(statuses)].merge(prices[["ticker", "hour_utc", "future_return_" + horizon]], on=["ticker", "hour_utc"])
 col = "future_return_" + horizon

@@ -169,6 +169,12 @@ class SignalTests(unittest.TestCase):
         edge = pd.DataFrame({"zscore": [1.5, 1.6], "sentiment_mean": [0.30, 0.30]})
         self.assertEqual(list(data.signal_hours(edge, 1.5, 0.30).index), [1])    # Z must be above, |s| at least
 
+    def test_a_threshold_of_zero_switches_that_test_off(self):
+        df = self.frame()
+        self.assertEqual(len(data.signal_hours(df, 0.0, 0.0)), 5)           # every hour with a Sentiment Score, also Z <= 0 / NaN
+        self.assertEqual(list(data.signal_hours(df, 0.0, 0.30).index), [0, 1, 2, 4])       # only |s| >= 0.30
+        self.assertEqual(list(data.threshold_mask(df, 0.0, 0.0)), [True] * len(df))
+
     def test_return_by_signal_compares_with_all_hours(self):
         r = data.return_by_signal(self.frame(), "ret", 1.5, 0.30).set_index("group")
         self.assertEqual((r.loc["signal_positive", "n"], r.loc["signal_negative", "n"]), (1, 1))
@@ -213,6 +219,34 @@ class ChartDesignTests(unittest.TestCase):
     def test_each_measure_has_its_own_colour(self):
         colours = [common.C_PRICE, common.C_VOLUME, common.C_REDDIT, common.C_Z, common.C_SENT, common.C_RATE, common.C_ATR, common.C_NATR]
         self.assertEqual(len(set(colours)), len(colours))
+
+
+class MaskThresholdsTests(unittest.TestCase):
+    def frame(self):
+        return pd.DataFrame({"close": [10.0, 11.0, 12.0, 13.0], "reddit_volume": [5, 6, 7, 0], "sentiment_mean": [0.5, 0.1, -0.6, np.nan],
+                             "pos_ratio": [0.6, 0.3, 0.1, np.nan], "neg_ratio": [0.2, 0.3, 0.7, np.nan], "neu_ratio": [0.2, 0.4, 0.2, np.nan],
+                             "zscore": [2.5, 0.3, 3.0, -1.0], "momentum": [0.1, -0.2, 0.0, np.nan],
+                             "majority_final_status": ["positive", "neutral", "negative", None]})
+
+    def test_zero_zero_changes_nothing(self):
+        pd.testing.assert_frame_equal(data.mask_thresholds(self.frame(), 0.0, 0.0), self.frame())
+
+    def test_failing_hours_lose_every_reddit_measure_but_keep_the_price(self):
+        out = data.mask_thresholds(self.frame(), 2.0, 0.30)
+        self.assertEqual(list(out.sentiment_mean.notna()), [True, False, True, False])      # hour 1 has a low Z, hour 3 no text
+        row = out.iloc[1]
+        for col in data.REDDIT_MEASURES + ("majority_final_status",):
+            self.assertTrue(pd.isna(row[col]), col)
+        self.assertEqual(out.close.tolist(), [10.0, 11.0, 12.0, 13.0])
+
+    def test_each_threshold_alone(self):
+        self.assertEqual(list(data.threshold_mask(self.frame(), 2.0, 0.0)), [True, False, True, False])
+        self.assertEqual(list(data.threshold_mask(self.frame(), 0.0, 0.3)), [True, False, True, False])
+
+    def test_the_input_is_not_modified(self):
+        frame = self.frame()
+        data.mask_thresholds(frame, 2.0, 0.3)
+        pd.testing.assert_frame_equal(frame, self.frame())
 
 
 class SignificantShareTests(unittest.TestCase):

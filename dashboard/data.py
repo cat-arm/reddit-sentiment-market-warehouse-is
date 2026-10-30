@@ -548,11 +548,34 @@ def return_buckets(df, past, sentiment="sentiment_mean", bins=5, min_total=50):
     return g[out_cols]
 
 
+def threshold_mask(df, z_min, s_min, z="zscore", sentiment="sentiment_mean"):
+    """DimDetectionConfig on the hours of a frame: True where the Reddit Volume Z-score is ABOVE `z_min` and the
+    |Sentiment Score| is at least `s_min`.  A threshold of 0 switches that test off (every hour passes it, also an hour with a
+    negative Z-score or without text); with both at 0 every hour passes.  Hours with no text never pass a positive threshold."""
+    ok = pd.Series(True, index=df.index)
+    if z_min > 0:
+        ok &= df[z] > z_min
+    if s_min > 0:
+        ok &= df[sentiment].abs() >= s_min
+    return ok
+
+
+def mask_thresholds(df, z_min, s_min, majority="majority_final_status"):
+    """The thresholds as a filter of the hourly frame: hours that fail lose ALL their Reddit measures (volume, sentiment,
+    ratios, Z-score, momentum, majority status) and become NULL, never 0; price and market volume stay.  With both thresholds
+    at 0 the frame is returned unchanged."""
+    keep = threshold_mask(df, z_min, s_min)
+    out = df.copy()
+    for col in (*REDDIT_MEASURES, majority):
+        if col in out:
+            out[col] = out[col].where(keep)
+    return out
+
+
 def signal_hours(df, z_min, s_min, z="zscore", sentiment="sentiment_mean"):
-    """DimDetectionConfig on the ticker-hours of the page: the hours whose Reddit Volume Z-score is ABOVE `z_min` and whose
-    Sentiment Score is at least `s_min` away from zero (|s| >= s_min, as in the proposal).  Hours with no text (NULL) never
-    qualify.  Adds the column `direction` ('positive' / 'negative')."""
-    hit = df[(df[z] > z_min) & (df[sentiment].abs() >= s_min)].copy()
+    """The hours that meet the thresholds (see `threshold_mask`) and have a Sentiment Score.  Adds the column `direction`
+    ('positive' / 'negative')."""
+    hit = df[threshold_mask(df, z_min, s_min, z, sentiment) & df[sentiment].notna()].copy()
     hit["direction"] = np.where(hit[sentiment] > 0, "positive", "negative")
     return hit
 
