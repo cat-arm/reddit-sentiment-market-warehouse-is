@@ -571,48 +571,37 @@ COLOR_NAMES = {C_PRICE: "น้ำเงิน", C_VOLUME: "เขียว", C_
 
 
 def dual_axis(df, x, left, right, left_title, right_title, height=CHART_HEIGHT, left_color=C_PRICE, right_color=C_SENT,
-              left_fmt=",.4g", right_fmt="+.3f", bar=False, show_left=True, show_right=True):
-    """Two series with independent y axes (e.g. close price vs sentiment_mean); each axis is coloured like its series.
-    Lines (default) or bars (`bar`: the two series side by side in every period, each from the zero of its own axis);
-    `show_left` / `show_right` = False hides that series (and its axis).  Pointing at any point or bar shows that period
-    with the values of the series that are visible."""
+              left_fmt=",.4g", right_fmt="+.3f", show_left=True, show_right=True):
+    """Two lines with independent y axes (e.g. close price vs sentiment_mean); each axis is coloured like its line.
+    `show_left` / `show_right` = False hides that line (and its axis).  Pointing at any point of a line shows that period with
+    the values of the lines that are visible.  (Two bar series on one chart are unreadable, so there is no bar mode.)"""
     how = granularity()
     ticks = {"tickCount": TICK_STEP[how]} if how in TICK_STEP else {}
-    x_axis = alt.Axis(format=DATE_FORMAT[how], labelOverlap=True, **ticks)
-    if bar:
-        enc_x = alt.X(x + ":T", title=None, timeUnit=TIME_UNIT[how], axis=x_axis)
-    else:
-        enc_x = alt.X(x + ":T", title=None, axis=x_axis)
+    enc_x = alt.X(x + ":T", title=None, axis=alt.Axis(format=DATE_FORMAT[how], labelOverlap=True, **ticks))
     sides = [s for s, on in (((left, left_title, left_color, left_fmt), show_left), ((right, right_title, right_color, right_fmt), show_right)) if on]
     tip = [alt.Tooltip(x + ":T", title=PERIOD_LABEL[how], format=DATE_TIP[how])] + [
         alt.Tooltip(col + ":Q", title=title, format=fmt) for col, title, _, fmt in sides]
+    scale = alt.Scale(zero=False)
     layers = []
     for col, title, color, _ in sides:
-        scale = alt.Scale(zero=True) if bar else alt.Scale(zero=False)
         axis = alt.Axis(title=title, titleColor=color, labelColor=color, minExtent=55)
-        y = alt.Y(col + ":Q", axis=axis, scale=scale)
-        if bar:                                            # side by side: every series has its own slot inside the period
-            layers.append(alt.Chart(df).mark_bar(color=color, opacity=0.85).encode(
-                x=enc_x, y=y, xOffset=alt.XOffsetDatum(title), tooltip=tip))
-        else:
-            layers.append(alt.Chart(df).mark_line(color=color, opacity=0.85).encode(x=enc_x, y=y))
-            # an invisible, larger circle on every point carries the tooltip: point at any spot of a line and its values appear
-            layers.append(alt.Chart(df).mark_circle(color=color, size=150, opacity=0).encode(
-                x=enc_x, y=alt.Y(col + ":Q", axis=None, scale=scale), tooltip=tip))
+        layers.append(alt.Chart(df).mark_line(color=color, opacity=0.85).encode(x=enc_x, y=alt.Y(col + ":Q", axis=axis, scale=scale)))
+        # an invisible, larger circle on every point carries the tooltip: point at any spot of a line and its values appear
+        layers.append(alt.Chart(df).mark_circle(color=color, size=150, opacity=0).encode(
+            x=enc_x, y=alt.Y(col + ":Q", axis=None, scale=scale), tooltip=tip))
     return alt.layer(*layers).resolve_scale(y="independent").properties(height=CHART_HEIGHT)
 
 
 def dual_chart(df, x, left, right, left_title, right_title, key, left_name, right_name, left_color=C_PRICE, right_color=C_SENT, **kwargs):
-    """`dual_axis` with its two controls drawn above it: the line / bar switch (like every chart) and one tick box per series
-    (untick a series to hide it and read the other one alone).  `key` makes the widget keys unique per chart."""
-    bar = kind(st, key)
+    """`dual_axis` with one tick box per line drawn above it (untick a line to hide it and read the other one alone).
+    `key` makes the widget keys unique per chart."""
     first, second, _ = st.columns([1, 1, 2])
     show_left = first.checkbox("%s (%s)" % (left_name, COLOR_NAMES.get(left_color, "")), value=True, key="dl_" + key)
     show_right = second.checkbox("%s (%s)" % (right_name, COLOR_NAMES.get(right_color, "")), value=True, key="dr_" + key)
     if not (show_left or show_right):
-        st.info("ติ๊กแสดงอย่างน้อย 1 ชุดข้อมูล")
+        st.info("ติ๊กแสดงอย่างน้อย 1 เส้น")
         return
-    show(dual_axis(df, x, left, right, left_title, right_title, left_color=left_color, right_color=right_color, bar=bar,
+    show(dual_axis(df, x, left, right, left_title, right_title, left_color=left_color, right_color=right_color,
                    show_left=show_left, show_right=show_right, **kwargs))
 
 
