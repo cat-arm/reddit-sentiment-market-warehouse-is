@@ -185,6 +185,11 @@ class FilterTests(unittest.TestCase):
         self.assertEqual([m.label for m in at.metric], ["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"])
         status_table = [d for d in at.dataframe if list(d.value.columns) == ["ประเภท", "ชั่วโมง"]]
         self.assertEqual(sorted(status_table[0].value["ประเภท"]), ["negative", "positive"])      # no neutral row any more
+        at.sidebar.checkbox(key="f_maj_neutral").set_value(True)
+        at.radio(key="s_ratio_mode").set_value("ผลโหวตส่วนใหญ่ (สัดส่วนชั่วโมง)")      # the ratio chart can count the majority votes
+        at.sidebar.checkbox(key="f_maj_positive").set_value(False).run()
+        self.assertEqual(len(at.exception), 0)
+        at.sidebar.checkbox(key="f_maj_positive").set_value(True)
         for key in ("f_ss_" + c for c in COMMUNITIES):
             at.sidebar.checkbox(key=key).set_value(False)
         at = at.run()

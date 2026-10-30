@@ -58,6 +58,32 @@ class SentimentFrameTests(unittest.TestCase):
         self.assertTrue(data.sentiment_frame(sums([]), H, H + 3600).empty)
 
 
+class VoteSharesTests(unittest.TestCase):
+    def frame(self):
+        times = pd.date_range("2026-03-01", periods=6, freq="h", tz="UTC")
+        return pd.DataFrame({"time": times, "majority_final_status": ["positive", "positive", "negative", None, "neutral", "positive"]})
+
+    def test_every_hour_is_one_vote(self):
+        v = data.vote_shares(self.frame())
+        self.assertEqual(len(v), 5)                                    # the hour without text casts no vote
+        self.assertTrue((v.share == 1.0).all())                        # one vote per hour: 100% for its status
+
+    def test_a_day_counts_the_hours_by_status(self):
+        v = data.vote_shares(self.frame(), {"rule": "1D"}).set_index("status")
+        self.assertEqual(dict(v.hours), {"positive": 3, "negative": 1, "neutral": 1})
+        self.assertAlmostEqual(v.loc["positive", "share"], 3 / 5)
+        self.assertAlmostEqual(v.share.sum(), 1.0)
+
+    def test_a_status_ticked_out_has_no_hours(self):
+        masked = data.mask_majority(self.frame().assign(sentiment_mean=1.0), ("negative", "neutral"))
+        v = data.vote_shares(masked, {"rule": "1D"})
+        self.assertNotIn("positive", set(v.status))                    # its share is 0
+        self.assertAlmostEqual(v.share.sum(), 1.0)                     # the rest is re-normalised
+
+    def test_no_votes(self):
+        self.assertTrue(data.vote_shares(self.frame().assign(majority_final_status=None)).empty)
+
+
 class MajorityFilterTests(unittest.TestCase):
     def frame(self):
         return pd.DataFrame({"close": [10.0, 11.0, 12.0], "volume": [5.0, 6.0, 7.0], "reddit_volume": [3, 4, 0],

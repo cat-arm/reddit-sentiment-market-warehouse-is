@@ -111,16 +111,28 @@ else:
                "ช่วงที่เส้นแดงขาด = ไม่มีข้อความ ไม่ใช่ค่ากลาง")
 
 st.subheader("สัดส่วนความคิดเห็นเชิงบวก / ลบ / เป็นกลาง")
-ratios = shown.melt(id_vars="time", value_vars=["pos_ratio", "neg_ratio", "neu_ratio"], var_name="ประเภท",
-                    value_name="สัดส่วน").dropna()
-ratios["ประเภท"] = ratios["ประเภท"].map({"pos_ratio": "บวก", "neg_ratio": "ลบ", "neu_ratio": "เป็นกลาง"})
+RATIO_MODES = ("ความคิดเห็นจริง (สัดส่วนข้อความ)", "ผลโหวตส่วนใหญ่ (สัดส่วนชั่วโมง)")
+mode = st.radio("นับสัดส่วนจาก", RATIO_MODES, horizontal=True, key="s_ratio_mode", label_visibility="collapsed")
+COLORS = alt.Scale(domain=["บวก", "ลบ", "เป็นกลาง"], range=["#2ca02c", "#d62728", "#7f7f7f"])
+if mode == RATIO_MODES[0]:
+    ratios = shown.melt(id_vars="time", value_vars=["pos_ratio", "neg_ratio", "neu_ratio"], var_name="ประเภท",
+                        value_name="สัดส่วน").dropna()
+    ratios["ประเภท"] = ratios["ประเภท"].map({"pos_ratio": "บวก", "neg_ratio": "ลบ", "neu_ratio": "เป็นกลาง"})
+    caption = ("สัดส่วนของข้อความ บวก / ลบ / เป็นกลาง ภายในชั่วโมงที่ผ่านตัวกรอง (ค่าจริงของ pos_ratio, neg_ratio, neu_ratio) "
+               "ชั่วโมงที่ส่วนใหญ่เป็นประเภทที่ติ๊กออกไม่ถูกนับ แต่ชั่วโมงที่เหลือยังมีข้อความประเภทนั้นปนอยู่")
+else:
+    votes = data.vote_shares(series, None if how == "Hourly" else common.RESAMPLE[how])
+    ratios = votes.rename(columns={"share": "สัดส่วน"}).assign(ประเภท=lambda d: d.status.map(
+        {"positive": "บวก", "negative": "ลบ", "neutral": "เป็นกลาง"}))
+    caption = ("สัดส่วนของ**ชั่วโมง**ที่ผลโหวตส่วนใหญ่เป็น บวก / ลบ / เป็นกลาง (นับ 1 ชั่วโมง = 1 โหวต) "
+               "ประเภทที่ติ๊กออกจะเป็น 0 ทั้งหมด")
 if not ratios.empty:
     area = (alt.Chart(ratios).mark_area().encode(
         x=alt.X("time:T", title=None), y=alt.Y("สัดส่วน:Q", stack="normalize", axis=alt.Axis(format="%")),
-        color=alt.Color("ประเภท:N", scale=alt.Scale(domain=["บวก", "ลบ", "เป็นกลาง"],
-                                                    range=["#2ca02c", "#d62728", "#7f7f7f"])),
-        tooltip=["time:T", "ประเภท", alt.Tooltip("สัดส่วน:Q", format=".1%")]).properties(height=240))
+        color=alt.Color("ประเภท:N", scale=COLORS), tooltip=["time:T", "ประเภท", alt.Tooltip("สัดส่วน:Q", format=".1%")])
+        .properties(height=240))
     st.altair_chart(area, width="stretch")
+    st.caption(caption)
 
 st.subheader("ปริมาณการกล่าวถึง")
 st.altair_chart(common.line(shown, "time", "reddit_volume", "Reddit Volume (ข้อความ)", "#ff7f0e", 200, bar=common.kind(st, "s_volume")),

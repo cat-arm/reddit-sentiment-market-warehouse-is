@@ -460,6 +460,20 @@ def mask_majority(df, statuses, majority="majority_final_status"):
     return out
 
 
+def vote_shares(df, rule=None, majority="majority_final_status"):
+    """Majority vote of the hours: per period (`rule` = an entry of common.RESAMPLE; None = every hour on its own) the
+    number of hours whose majority status is positive / negative / neutral and its share of the hours that have a status.
+    Hours without text (no status) and hours removed by the majority filter are not counted: a status that was ticked
+    out has no hours, so its share is 0.  -> DataFrame(time, status, hours, share)."""
+    votes = df.loc[df[majority].notna(), ["time", majority]]
+    if votes.empty:
+        return pd.DataFrame(columns=["time", "status", "hours", "share"])
+    key = "time" if rule is None else pd.Grouper(key="time", freq=rule["rule"], **{k: v for k, v in rule.items() if k != "rule"})
+    counts = votes.groupby([key, majority]).size().rename("hours").reset_index().rename(columns={majority: "status"})
+    counts["share"] = counts.hours / counts.groupby("time").hours.transform("sum")
+    return counts
+
+
 def sentiment_by_ticker(db_path, start, end):
     """Which assets are most positive / negative in the range (mean of hourly sentiment_mean, hours with text only)."""
     return _read(db_path, """
