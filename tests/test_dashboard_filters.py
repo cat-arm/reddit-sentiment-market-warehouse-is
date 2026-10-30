@@ -302,7 +302,7 @@ class FilterTests(unittest.TestCase):
         at.sidebar.slider(key="d_z").set_value(2.0).run()                          # a Z-score is told in texts per hour and follows the slider
         hint = [c.value for c in at.sidebar.caption if "Z-score เกิน" in c.value]
         self.assertEqual(len(hint), 1)
-        self.assertRegex(hint[0], r"Z-score เกิน 2\.0 = ปริมาณ \*\*มากกว่า [\d,]+ ข้อความต่อชั่วโมง\*\*")
+        self.assertRegex(hint[0], r"Z-score เกิน 2\.0 = ปริมาณรวมของ \d+ สินทรัพย์ที่เลือก \*\*มากกว่า [\d,]+ ข้อความต่อชั่วโมง\*\*")
         at.sidebar.slider(key="d_z").set_value(3.5).run()
         harder = [c.value for c in at.sidebar.caption if "Z-score เกิน" in c.value][0]
         self.assertRegex(harder, r"Z-score เกิน 3\.5")

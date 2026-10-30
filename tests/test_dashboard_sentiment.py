@@ -293,6 +293,16 @@ class ZScoreInTextsTests(unittest.TestCase):
                 db.executemany("INSERT INTO reddit_hourly VALUES ('all', ?, ?, ?)", rows)
                 db.commit()
             base = data.volume_baseline(path, ("A",), 3600 * 24, 3600 * 29)
+        with tempfile.TemporaryDirectory() as tmp:                                          # the same hours for a second ticker: combined = the sum
+            path = str(Path(tmp) / "t2.sqlite3")
+            with closing(sqlite3.connect(path)) as db:
+                db.execute("CREATE TABLE reddit_hourly (variant TEXT, ticker TEXT, hour_utc INTEGER, reddit_volume INTEGER)")
+                db.executemany("INSERT INTO reddit_hourly VALUES ('all', ?, ?, ?)", rows + [("B", t, v * 2) for _, t, v in rows])
+                db.commit()
+            both = data.volume_baseline(path, ("A", "B"), 3600 * 24, 3600 * 29, combined=True)
+        self.assertEqual(list(both.ticker.unique()), ["รวม"])
+        again = both[both.hour_utc == 3600 * 25].iloc[0]
+        self.assertAlmostEqual(again.mean24, 3 * (23 * 1 + 11) / 24)                          # A + B = 3 x A
         # at hour 24 the 24 hours before are all 1: the standard deviation is zero, so there is no Z-score there
         self.assertNotIn(3600 * 24, set(base.hour_utc))
         row = base[base.hour_utc == 3600 * 25].iloc[0]                                    # 23 ones and one 11 before it

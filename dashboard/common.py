@@ -217,16 +217,17 @@ def _z_hint(key):
     if not z or not days:
         return
     tickers = tuple(selected_tickers())
-    need = data.texts_needed(q("volume_baseline", tickers, epoch(days[0]), epoch(days[-1], end_of_day=True)), z)
-    if need is None:
+    start, end = epoch(days[0]), epoch(days[-1], end_of_day=True)
+    each = data.texts_needed(q("volume_baseline", tickers, start, end), z)
+    if each is None:
         st.sidebar.caption("ไม่มีข้อมูลปริมาณของหลักทรัพย์และช่วงเวลาที่เลือก")
         return
-    mid, low, high = need
-    if len(tickers) == 1 or low == high:
-        st.sidebar.caption("Z-score เกิน %.1f = ปริมาณ **มากกว่า %s ข้อความต่อชั่วโมง**" % (z, "{:,}".format(mid)))
-    else:
-        st.sidebar.caption("Z-score เกิน %.1f = ปริมาณ **มากกว่า %s ข้อความต่อชั่วโมง** (ค่ากลางของสินทรัพย์ที่เลือก; ส่วนใหญ่ %s–%s ตามความดังของแต่ละตัว)"
-                           % (z, "{:,}".format(mid), "{:,}".format(low), "{:,}".format(high)))
+    if len(tickers) == 1:
+        st.sidebar.caption("Z-score เกิน %.1f = ปริมาณ **มากกว่า %s ข้อความต่อชั่วโมง**" % (z, "{:,}".format(each[0])))
+        return
+    total = data.texts_needed(q("volume_baseline", tickers, start, end, True), z)
+    st.sidebar.caption("Z-score เกิน %.1f = ปริมาณรวมของ %d สินทรัพย์ที่เลือก **มากกว่า %s ข้อความต่อชั่วโมง**  (ถ้าดูทีละตัว ค่ากลาง %s ข้อความ ส่วนใหญ่ %s–%s ตามความดังของแต่ละตัว)"
+                       % (z, len(tickers), "{:,}".format(total[0]), "{:,}".format(each[0]), "{:,}".format(each[1]), "{:,}".format(each[2])))
 
 
 def _detection_filter(kind):

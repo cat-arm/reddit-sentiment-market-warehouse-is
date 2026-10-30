@@ -873,10 +873,11 @@ def signal_counts(db_path):
 
 
 # ------------------------------------------------------------------------------------------------ D6: hot events (EXTENSION)
-def volume_baseline(db_path, tickers, start, end):
+def volume_baseline(db_path, tickers, start, end, combined=False):
     """The normal volume behind the Reddit Volume Z-score: for every ticker-hour of the range the mean and the standard deviation of the
     texts per hour over the 24 hours BEFORE it (current hour excluded, empty hours are 0: the rule of the proposal).  An hour whose
-    standard deviation is zero has no Z-score and is left out.  -> DataFrame(ticker, hour_utc, mean24, std24)."""
+    standard deviation is zero has no Z-score and is left out.  `combined` = the texts of all the tickers added together hour by hour (the
+    series the Market and Sentiment charts show for several tickers; one series named 'รวม').  -> DataFrame(ticker, hour_utc, mean24, std24)."""
     columns = ["ticker", "hour_utc", "mean24", "std24"]
     if not tickers:
         return pd.DataFrame(columns=columns)
@@ -887,6 +888,8 @@ def volume_baseline(db_path, tickers, start, end):
         return pd.DataFrame(columns=columns)
     grid = pd.Index(range(int((start - 86400) // 3600 * 3600), int(end // 3600 * 3600) + 3600, 3600), name="hour_utc")
     wide = df.pivot_table(index="hour_utc", columns="ticker", values="reddit_volume", aggfunc="sum").reindex(grid).fillna(0)
+    if combined:
+        wide = wide.sum(axis=1).to_frame("รวม")
     roll = wide.shift(1).rolling(WINDOW, min_periods=MIN_PRIOR)
     mean, std = roll.mean(), roll.std(ddof=0)
     out = pd.concat([mean.stack().rename("mean24"), std.stack().rename("std24")], axis=1).reset_index()      # the index is (hour, ticker)
