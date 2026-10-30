@@ -144,7 +144,7 @@ else:
     levels = data.SENTIMENT_LEVELS
     buckets["ระดับความรู้สึก"] = [levels[int(b)][0] for b in buckets.bucket]
     buckets["ช่วงความรู้สึก"] = ["Sentiment Score " + levels[int(b)][1] for b in buckets.bucket]
-    buckets["ป้าย"] = ["%s (%s)" % levels[int(b)] for b in buckets.bucket]
+    buckets["ป้าย"] = ["%s (%s)\nn = %s" % (*levels[int(b)], "{:,}".format(int(n))) for b, n in zip(buckets.bucket, buckets.n)]
     order = list(buckets["ป้าย"])
     base = alt.Chart(buckets).encode(x=alt.X("ป้าย:N", sort=order, axis=alt.Axis(labelAngle=0, labelLimit=200), title="ระดับความรู้สึก (ช่วง Sentiment Score ของแต่ละกลุ่ม)"))
     bars = base.mark_bar(color=common.C_PRICE).encode(
@@ -188,12 +188,11 @@ if not ratios.empty:
 
 # ---- DimDetectionConfig drill-down: the hours that meet the thresholds of the sidebar, and what the price did next
 no_rule = not (z_th or s_th)
-rule_text = ("ยังไม่ตั้งเกณฑ์ (0 / 0): ทุกชั่วโมงที่มีข้อความนับเป็นสัญญาณ" if no_rule else
+rule_text = ("ยังไม่ตั้งเกณฑ์ (0 / 0): ทุกชั่วโมงที่มีข้อความ" if no_rule else
              "Z-score > %.1f และ |Sentiment| ≥ %.2f" % (z_th, s_th) if z_th and s_th else
              "Z-score > %.1f" % z_th if z_th else "|Sentiment| ≥ %.2f" % s_th)
-# the Horizon belongs to this chart only (the sidebar filters apply to the whole page)
-st.session_state.setdefault("s_drill_h", common.data.HORIZONS[0])
-st.subheader("ความรู้สึกบวก/ลบ แล้วราคาเป็นอย่างไรต่อ %s" % st.session_state["s_drill_h"])
+st.subheader("รายการชั่วโมงที่ผ่านเกณฑ์ตรวจจับ")
+# the Horizon belongs to this table only (the sidebar filters apply to the whole page)
 horizon = st.radio("Horizon (ดูผลตอบแทนล่วงหน้ากี่ชั่วโมง)", list(common.data.HORIZONS), horizontal=True, key="s_drill_h")
 hours = per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "texts", "sentiment_mean", "zscore", "majority"]]
 hours = hours[hours.majority.isin(statuses)].merge(prices[["ticker", "hour_utc", "future_return_" + horizon]], on=["ticker", "hour_utc"])
@@ -202,27 +201,12 @@ hit = data.signal_hours(hours, z_th, s_th)
 if hit.empty:
     st.info("ไม่พบชั่วโมงที่เข้าเงื่อนไขในช่วงที่เลือก ลองลดเกณฑ์ Z-score หรือ Sentiment Threshold ที่แถบด้านซ้าย")
 else:
-    rs = data.return_by_signal(hours, col, z_th, s_th)
-    rs["กลุ่ม"] = rs.group.map({"signal_positive": "สัญญาณบวก", "signal_negative": "สัญญาณลบ", "all_hours": "ทุกชั่วโมงที่มีข้อความ (เทียบ)"})
-    rs["ป้าย"] = ["%s (n=%s)" % (g, "{:,}".format(n)) for g, n in zip(rs["กลุ่ม"], rs.n)]
-    base = alt.Chart(rs).encode(x=alt.X("ป้าย:N", sort=list(rs["ป้าย"]), axis=alt.Axis(labelAngle=0, labelLimit=240),
-                                        title="ชนิดของชั่วโมง (n = จำนวน ticker-ชั่วโมงที่มีผลตอบแทน %s)" % horizon))
-    bars = base.mark_bar(color=common.C_PRICE).encode(
-        y=alt.Y("mean:Q", title="ผลตอบแทนล่วงหน้า %s เฉลี่ย (%%)" % horizon),
-        tooltip=["กลุ่ม", alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","), alt.Tooltip("mean:Q", title="ผลตอบแทนเฉลี่ย (%)", format="+.4f"),
-                 alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format="+.4f"), alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format="+.4f")])
-    errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
-    zero = common.zero_rule()
-    common.show(bars + errors + zero, width="stretch")
-    st.caption("เกณฑ์ตอนนี้: %s  \n"
-               "แท่ง \"สัญญาณบวก\" / \"สัญญาณลบ\" = ผลตอบแทนล่วงหน้าเฉลี่ยของชั่วโมงที่ผ่านเกณฑ์ และ Sentiment Score เป็นบวก / ลบ  "
-               "แท่งขวาสุด = ค่าเฉลี่ยของทุกชั่วโมงที่มีข้อความ (ไว้เทียบ)  \n"
-               "เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีการขยับไม่ได้  จำนวนชั่วโมงที่ผ่านเกณฑ์ = %s"
-               % (rule_text, "{:,}".format(len(hit))))
     listing = hit.sort_values("hour_utc", ascending=False).head(300).copy()
     listing["เวลา (UTC)"] = pd.to_datetime(listing.hour_utc, unit="s", utc=True).dt.strftime("%Y-%m-%d %H:%M")
     listing["สินทรัพย์"] = listing.ticker.map(lambda s: "%s · %s" % (s, names.get(s, "")))
     common.table(listing[["เวลา (UTC)", "สินทรัพย์", "direction", "sentiment_mean", "texts", "zscore", col]].rename(
         columns={"direction": "ทิศทาง", "sentiment_mean": "Sentiment Score", "texts": "ข้อความ", "zscore": "Volume Z-score",
                  col: "ผลตอบแทนล่วงหน้า %s (%%)" % horizon}).round(3), hide_index=True, width="stretch", height=380)
-    st.caption("รายการล่าสุดไม่เกิน 300 ชั่วโมง ผลตอบแทนว่าง = ไม่มีแท่งราคาที่ครบ %s หลังชั่วโมงนั้น" % horizon)
+    st.caption("เกณฑ์ตอนนี้: %s  จำนวนชั่วโมงที่ผ่านเกณฑ์ = %s  \n"
+               "แสดงล่าสุดไม่เกิน 300 ชั่วโมง ผลตอบแทนว่าง = ไม่มีแท่งราคาที่ครบ %s หลังชั่วโมงนั้น"
+               % (rule_text, "{:,}".format(len(hit)), horizon))

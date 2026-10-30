@@ -175,18 +175,6 @@ class SignalTests(unittest.TestCase):
         self.assertEqual(list(data.signal_hours(df, 0.0, 0.30).index), [0, 1, 2, 4])       # only |s| >= 0.30
         self.assertEqual(list(data.threshold_mask(df, 0.0, 0.0)), [True] * len(df))
 
-    def test_return_by_signal_compares_with_all_hours(self):
-        r = data.return_by_signal(self.frame(), "ret", 1.5, 0.30).set_index("group")
-        self.assertEqual((r.loc["signal_positive", "n"], r.loc["signal_negative", "n"]), (1, 1))
-        self.assertEqual(r.loc["signal_positive", "mean"], 1.0)
-        self.assertEqual(r.loc["signal_negative", "mean"], -1.0)
-        self.assertEqual(r.loc["all_hours", "n"], 5)                    # the 5 rows that have a Sentiment Score
-        self.assertAlmostEqual(r.loc["all_hours", "mean"], (1 - 1 + 5 + 7 + 9) / 5)
-
-    def test_an_empty_group_has_zero_samples(self):
-        r = data.return_by_signal(self.frame(), "ret", 9.0, 0.30).set_index("group")
-        self.assertEqual(r.loc["signal_positive", "n"], 0)
-        self.assertTrue(np.isnan(r.loc["signal_positive", "mean"]))
 
 
 class ChartDesignTests(unittest.TestCase):
