@@ -171,7 +171,7 @@ else:
                "เส้นดำ = ช่วงเชื่อมั่น 95% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีความสัมพันธ์ไม่ได้")
 
 st.subheader("ราคาขึ้นหรือลงมาก่อน แล้วความรู้สึกเป็นอย่างไร")
-PAST = {"1 ชั่วโมงก่อนหน้า": 1, "3 ชั่วโมงก่อนหน้า": 3, "6 ชั่วโมงก่อนหน้า": 6}
+PAST = {"%d ชั่วโมงก่อนหน้า" % h: h for h in (1, 2, 3, 6, 12)}              # the horizons of the proposal (1 / 2 / 3 / 6 / 12 hours)
 st.session_state.setdefault("s_past_hours", "3 ชั่วโมงก่อนหน้า")
 past_pick = st.radio("ดูผลตอบแทน", list(PAST), horizontal=True, key="s_past_hours", label_visibility="collapsed")
 timing = timing.assign(past=data.past_return(timing, PAST[past_pick]))
@@ -184,7 +184,7 @@ else:
     rb["ป้าย"] = rb.apply(lambda r: "%s (%+.2f%% ถึง %+.2f%%)" % (r["ระดับราคา"], r.lo, r.hi), axis=1)
     base = alt.Chart(rb).encode(x=alt.X("ป้าย:N", sort=list(rb["ป้าย"]), axis=alt.Axis(labelAngle=0, labelLimit=200),
                                         title="ผลตอบแทนก่อนชั่วโมงที่มีข้อความ (แบ่ง 5 กลุ่มเท่าๆ กัน จากตกแรงสุดไปขึ้นแรงสุด)"))
-    bars = base.mark_bar(color="#d62728").encode(
+    bars = base.mark_bar(color="#1f77b4").encode(
         y=alt.Y("mean:Q", title="Sentiment Score เฉลี่ย"),
         tooltip=["ระดับราคา", alt.Tooltip("mean_return:Q", title="ผลตอบแทนก่อนหน้าเฉลี่ย (%)", format="+.3f"),
                  alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","), alt.Tooltip("mean:Q", title="Sentiment Score เฉลี่ย", format="+.4f"),
