@@ -66,9 +66,8 @@ series = market.merge(series_frame.drop(columns="series"), on="hour_utc", how="l
 series["texts"] = series.texts.fillna(0)
 series = series.rename(columns={"texts": "reddit_volume", "majority": "majority_final_status"})
 
-# hours whose majority status is not ticked lose their sentiment (price stays); hours without text keep NULL
-mask = series.majority_final_status.isin(statuses) | series.majority_final_status.isna()
-series = series.assign(sentiment_mean=series.sentiment_mean.where(mask))
+# hours whose majority status is not ticked lose every Reddit measure (price and market volume stay); no text = NULL
+series = data.mask_majority(series, statuses)
 
 
 def weighted_resample(df, how):
@@ -95,7 +94,9 @@ shown = weighted_resample(series, how)
 text_hours = series.sentiment_mean.notna().sum()
 w = series.reddit_volume.where(series.sentiment_mean.notna())
 common.kpi_cards([
-    ("ชั่วโมงที่มีข้อความ", "{:,} / {:,}".format(int(text_hours), len(series)), "ชั่วโมงที่มีราคาและมีข้อความที่พูดถึง / ชั่วโมงที่มีราคาทั้งหมด"),
+    ("ชั่วโมงที่มีข้อความ", "{:,} / {:,}".format(int(text_hours), len(series)),
+     "ชั่วโมงที่มีราคาและมีข้อความที่พูดถึง (ตามตัวกรอง) / ชั่วโมงที่มีราคา" + (
+         "" if one else "  เมื่อเลือกหลายตัว นับชั่วโมงที่อย่างน้อยหนึ่งตัวมีแท่งราคา (คริปโตมีทุกชั่วโมง จึงครบทุกชั่วโมงของปี)")),
     ("Sentiment Score", "n/a" if not w.sum() else "{:+.3f}".format((series.sentiment_mean * w).sum() / w.sum()),
      "ผลรวม final_sentiment ÷ จำนวนความคิดเห็น เฉลี่ยถ่วงน้ำหนักด้วยจำนวนข้อความของแต่ละชั่วโมง"),
     ("Sentiment Momentum", common.money(series.momentum.mean()), "(sentiment_mean ชั่วโมงนี้ − ชั่วโมงก่อนหน้า) เฉลี่ย"),
@@ -174,3 +175,10 @@ else:
         columns={"mean_sentiment": "Sentiment Score เฉลี่ย", "pos_ratio": "สัดส่วนบวก", "neg_ratio": "สัดส่วนลบ",
                  "hours_with_text": "ชั่วโมงที่มีข้อความ", "texts": "ข้อความ"}).round(3), hide_index=True,
         width="stretch", height=330)
+
+# ---- below: the market measures (close, volume) do not depend on the sentiment filters (communities, majority status)
+st.subheader("ราคาปิดและปริมาณการซื้อขาย (ไม่ขึ้นกับตัวกรองความรู้สึก)")
+st.altair_chart(common.line(shown, "time", "close", "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)", "#1f77b4", 220,
+                            bar=common.kind(st, "s_price")), width="stretch")
+st.altair_chart(common.line(shown, "time", "volume", "ปริมาณซื้อขาย (หน่วย)" if one else "ปริมาณซื้อขาย ดัชนี (ค่าเฉลี่ย = 100)",
+                            "#2ca02c", 220, bar=common.kind(st, "s_market_volume")), width="stretch")

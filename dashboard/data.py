@@ -445,6 +445,21 @@ def sentiment_frame(sent, start, end, combined=False):
     return long[(long.hour_utc >= start) & (long.hour_utc <= end)][out_cols].reset_index(drop=True)
 
 
+REDDIT_MEASURES = ("reddit_volume", "sentiment_mean", "pos_ratio", "neg_ratio", "neu_ratio", "zscore", "momentum")
+
+
+def mask_majority(df, statuses, majority="majority_final_status"):
+    """DimMajoritySentiment filter on an hourly frame: hours whose majority status is not in `statuses` lose ALL their
+    Reddit measures (volume, sentiment, ratios, Z-score, momentum, the status itself) and become NULL, never 0.
+    Hours without text (no status) and the market columns (close, volume) are kept."""
+    keep = df[majority].isin(statuses) | df[majority].isna()
+    out = df.copy()
+    for col in (*REDDIT_MEASURES, majority):
+        if col in out:
+            out[col] = out[col].where(keep)
+    return out
+
+
 def sentiment_by_ticker(db_path, start, end):
     """Which assets are most positive / negative in the range (mean of hourly sentiment_mean, hours with text only)."""
     return _read(db_path, """
