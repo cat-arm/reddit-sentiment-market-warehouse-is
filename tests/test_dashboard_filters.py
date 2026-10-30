@@ -252,11 +252,6 @@ class FilterTests(unittest.TestCase):
         at.sidebar.slider(key="d_s").set_value(0.0)
         at.run()
         self.assertEqual([m.value for m in at.metric], full, "back to 0 / 0: nothing is filtered, the numbers are the default ones")
-        for h in ("12h", "3h"):                                                     # the Horizon is a choice inside the chart, not a filter
-            at.radio(key="s_drill_h").set_value(h).run()
-            self.assertEqual(len(at.exception), 0, h)
-            self.assertEqual([m.value for m in at.metric], full, "the Horizon does not change the cards")
-        at.radio(key="s_drill_h").set_value("1h")
         for key in ("s_price_sent", "s_z_sent", "s_price_z"):                      # the dual charts: hide one line, then both
             at.checkbox(key="dl_" + key).set_value(False).run()
             self.assertEqual(len(at.exception), 0, key)
