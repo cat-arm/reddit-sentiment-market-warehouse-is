@@ -114,7 +114,7 @@ def asset_label(ticker):
 
 def heatmap(stat, measure):
     """Ticker x horizon heat map of one measure.  Every cell: the value (the colour and the big number, a star when the Benjamini-Hochberg
-    p < 0.05) and under it its p-value; the number of samples n is in the tooltip."""
+    p < 0.05), under it its p-value and under that the number of samples n it is computed from."""
     value, p_col, bh_col, fmt, domain, n_col = BASE[measure]
     d = stat[stat.ticker.isin(tickers)].copy()
     d["ช่วง"] = d.target.map(TARGET_LABEL)
@@ -125,6 +125,7 @@ def heatmap(stat, measure):
     d["asset"] = [asset_label(t) for t in d.ticker]
     d["label"] = [("" if pd.isna(v) else ("{:%s}" % fmt).format(v) + ("★" if b < 0.05 else "")) for v, b in zip(d.value, d.bh)]
     d["plabel"] = ["" if pd.isna(v) else ("p<0.001" if pp < 0.001 else "p=%.3f" % pp) for v, pp in zip(d.value, d.p)]
+    d["nlabel"] = ["" if pd.isna(v) else "n=%s" % "{:,}".format(int(n)) for v, n in zip(d.value, d.n_used)]
     order = [TARGET_LABEL[t] for t in data.STAT_TARGETS]
     chart = alt.Chart(d).encode(x=alt.X("ช่วง:O", sort=order, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
                                 y=alt.Y("asset:N", sort=[asset_label(t) for t in ORDER], title=None, axis=alt.Axis(labelLimit=220)))
@@ -134,9 +135,10 @@ def heatmap(stat, measure):
                         scale=alt.Scale(domain=domain, scheme="redyellowgreen", clamp=True)),
         tooltip=["asset", "ช่วง", alt.Tooltip("value:Q", title=measure, format=fmt), alt.Tooltip("p:Q", title="p-value", format=".4f"),
                  alt.Tooltip("bh:Q", title="p-value (BH)", format=".4f"), alt.Tooltip("n_used:Q", title="จำนวนตัวอย่าง", format=",")])
-    text = chart.mark_text(fontSize=11, dy=-6, color="#222222").transform_filter(valid).encode(text="label:N")
-    ptext = chart.mark_text(fontSize=9, dy=8, color="#444444").transform_filter(valid).encode(text="plabel:N")
-    return (rect + text + ptext).properties(height=max(120, 34 * len(ORDER) + 30))
+    text = chart.mark_text(fontSize=11, dy=-12, color="#222222").transform_filter(valid).encode(text="label:N")
+    ptext = chart.mark_text(fontSize=9, dy=0, color="#444444").transform_filter(valid).encode(text="plabel:N")
+    ntext = chart.mark_text(fontSize=9, dy=11, color="#555555").transform_filter(valid).encode(text="nlabel:N")
+    return (rect + text + ptext + ntext).properties(height=max(120, 46 * len(ORDER) + 30))
 
 
 def panel_view(stat, key):
@@ -149,8 +151,8 @@ def panel_view(stat, key):
         st.info("ไม่มีค่า %s ของสินทรัพย์ที่เลือกใน panel นี้ (ข้อมูลน้อยกว่า 30 ชั่วโมงต่อคู่)" % measure)
         return
     common.show(heatmap(stat, measure))
-    st.caption("ตัวเลขใหญ่ในแต่ละช่อง = %s  ตัวเล็กข้างล่าง = p-value ของค่านั้น (ต่ำกว่า 0.05 = น่าสนใจ)  ★ = p-value ที่ปรับด้วย Benjamini-Hochberg < 0.05  "
-               "ช่องว่าง = ข้อมูลน้อยกว่า 30 ชั่วโมง ไม่ใช่ 0  ชี้เมาส์ที่ช่องเพื่อดูจำนวนตัวอย่าง  "
+    st.caption("ตัวเลขใหญ่ในแต่ละช่อง = %s  บรรทัดที่สอง = p-value ของค่านั้น (ต่ำกว่า 0.05 = น่าสนใจ)  บรรทัดที่สาม = n จำนวนชั่วโมงที่ใช้คำนวณ  ★ = p-value ที่ปรับด้วย Benjamini-Hochberg < 0.05  "
+               "ช่องว่าง = ข้อมูลน้อยกว่า 30 ชั่วโมง ไม่ใช่ 0  "
                "Current Return = ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) 1h–12h = ผลตอบแทนล่วงหน้า"
                % ("Win Rate (%) สี: แดง ต่ำ เขียว สูง 50 = เดา" if measure == "Win Rate" else
                   "ค่าสหสัมพันธ์ %s สี: แดง ลบ เขียว บวก 0 = ไม่เกี่ยวกัน" % measure))
