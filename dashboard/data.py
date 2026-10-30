@@ -529,8 +529,10 @@ def shifted_return(prices, lag, column="log_return"):
 
 
 def past_return(prices, hours):
-    """Return over the `hours` hours BEFORE the Reddit hour (sum of the hourly log returns of t-hours .. t-1, in %).
-    NULL when any of those hours is missing."""
+    """Return over the `hours` hours BEFORE the Reddit hour (sum of the hourly log returns of t-hours .. t-1, in %).  NULL when any of
+    those hours is missing.  `hours` = 0: the Current Return, the return of the Reddit hour itself (co-movement, not a "before")."""
+    if hours == 0:
+        return shifted_return(prices, 0)
     parts = pd.concat([shifted_return(prices, -k) for k in range(1, hours + 1)], axis=1)
     return parts.sum(axis=1, min_count=hours).where(parts.notna().all(axis=1))
 
@@ -631,9 +633,27 @@ def majority_vs_return(db_path, ticker, start, end):
 
 
 # ------------------------------------------------------------------------------------------------ D4: ranking and signals
+def current_winrate(db_path, min_n=30):
+    """The Historical Win Rate of the Current Return (the return of the SAME hour: co-movement, not a prediction) per ticker over the whole
+    data set, like the stored A2 does for the future horizons (panel_Ticker = the ticker's own texts, sign(sentiment_mean) against the
+    sign of the return, zeros are no direction, Binomial test against 50%).  -> DataFrame(ticker, big_group, horizon = 'log_return',
+    winrate in %, p_value, n_samples); a ticker with fewer than `min_n` pairs is left out."""
+    df = _read(db_path, """
+        SELECT ticker, big_group, sentiment_mean, log_return FROM merged_hourly_panel
+        WHERE scope = 'ticker' AND variant = 'all' AND has_reddit_data = 1 AND sentiment_mean IS NOT NULL AND log_return IS NOT NULL""")
+    rows = []
+    for (ticker, group), part in df.groupby(["ticker", "big_group"]):
+        moved = part[(part.sentiment_mean != 0) & (part.log_return != 0)]
+        if len(moved) >= min_n:
+            hits = int((np.sign(moved.sentiment_mean) == np.sign(moved.log_return)).sum())
+            rows.append({"ticker": ticker, "big_group": group, "horizon": "log_return", "winrate": 100.0 * hits / len(moved),
+                         "p_value": float(stats.binomtest(hits, len(moved), 0.5).pvalue), "n_samples": len(moved)})
+    return pd.DataFrame(rows, columns=["ticker", "big_group", "horizon", "winrate", "p_value", "n_samples"])
+
+
 def ranking_table(db_path):
     """One row per ticker: Historical Win Rate (%), Binomial p-value and Spearman rho for each horizon (A1/A2,
-    panel_Ticker = the ticker's own texts).  NULL = not enough data (n < 30)."""
+    panel_Ticker = the ticker's own texts), the Current Return ('log_return') included.  NULL = not enough data (n < 30)."""
     win = _read(db_path, """
         SELECT ticker, big_group, horizon, metric_value * 100.0 AS winrate, p_value, n_samples
         FROM analysis_results WHERE analysis = 'winrate' AND panel_name = 'panel_Ticker' AND level = 'ticker'
@@ -642,7 +662,7 @@ def ranking_table(db_path):
         SELECT ticker, horizon, metric_value AS correlation FROM analysis_results
         WHERE analysis = 'correlation' AND panel_name = 'panel_Ticker' AND level = 'ticker'
           AND predictor = 'sentiment_mean' AND metric_name = 'spearman'""")
-    return win.merge(cor, on=["ticker", "horizon"], how="left")
+    return pd.concat([win, current_winrate(db_path)], ignore_index=True).merge(cor, on=["ticker", "horizon"], how="left")
 
 
 def ticker_period_stats(db_path, start, end, horizon):

@@ -78,7 +78,8 @@ else:
                "เส้นดำ = ช่วงเชื่อมั่น 95% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีความสัมพันธ์ไม่ได้")
 
 st.subheader("ราคาขึ้นหรือลงมาก่อน แล้วความรู้สึกเป็นอย่างไร")
-PAST = {"%d ชั่วโมงก่อนหน้า" % h: h for h in (1, 2, 3, 6, 12)}              # the horizons of the proposal (1 / 2 / 3 / 6 / 12 hours)
+CURRENT = "Current Return (ชั่วโมงเดียวกัน)"
+PAST = {CURRENT: 0, **{"%d ชั่วโมงก่อนหน้า" % h: h for h in (1, 2, 3, 6, 12)}}              # the horizons of the proposal (1 / 2 / 3 / 6 / 12 hours)
 st.session_state.setdefault("s_past_hours", "3 ชั่วโมงก่อนหน้า")
 past_pick = st.radio("ดูผลตอบแทน", list(PAST), horizontal=True, key="s_past_hours", label_visibility="collapsed")
 timing = timing.assign(past=data.past_return(timing, PAST[past_pick]))

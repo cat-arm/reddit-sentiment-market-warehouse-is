@@ -65,13 +65,15 @@ def signal_section():
     monthly = pd.crosstab(months, found.signal_type).reset_index()
     common.table(monthly, hide_index=True, width="stretch")
     st.write("รายการสัญญาณที่ตรวจพบ (ล่าสุด 300 รายการ) พร้อมสถิติย้อนหลังของสินทรัพย์นั้น")
+    choices = {"Current Return": "log_return", **{h: h for h in HORIZONS}}
     st.session_state.setdefault("hs_h", HORIZONS[0])
-    horizon = st.radio("Horizon ของสถิติย้อนหลัง (Win Rate, ความสัมพันธ์)", list(HORIZONS), horizontal=True, key="hs_h")
+    pick = st.radio("Horizon ของสถิติย้อนหลัง (Win Rate, ความสัมพันธ์)", list(choices), horizontal=True, key="hs_h")
+    horizon = choices[pick]
     stats = q("ranking_table")
     stats = stats[stats.horizon == horizon][["ticker", "winrate", "correlation"]]
     listing = found.merge(stats, on="ticker", how="left").sort_values("hour_utc", ascending=False).head(300).copy()
     listing["timestamp"] = pd.to_datetime(listing.hour_utc, unit="s", utc=True).dt.strftime("%Y-%m-%d %H:%M")
-    listing["horizon"] = horizon
+    listing["horizon"] = pick
     common.table(listing[["timestamp", "ticker", "big_group", "signal_type", "signal_level", "sentiment_mean", "reddit_volume",
                           "reddit_volume_zscore_24", "horizon", "winrate", "correlation"]].rename(
         columns={"reddit_volume_zscore_24": "reddit_volume_zscore", "correlation": "correlation_value"}).round(3),

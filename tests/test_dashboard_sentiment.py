@@ -453,5 +453,13 @@ class MajorityFilterTests(unittest.TestCase):
         pd.testing.assert_frame_equal(frame, self.frame())
 
 
+
+class CurrentReturnOptionTests(unittest.TestCase):
+    def test_past_return_zero_hours_is_the_current_return(self):
+        prices = pd.DataFrame({"ticker": "A", "hour_utc": [0, 3600, 7200], "log_return": [None, 1.0, -2.0]})
+        self.assertEqual(data.past_return(prices, 0).tolist()[1:], [1.0, -2.0])
+        self.assertTrue(pd.isna(data.past_return(prices, 0).iloc[0]))
+
+
 if __name__ == "__main__":
     unittest.main()
