@@ -211,6 +211,15 @@ def run(db_path):
                 float((both.mo - both.momentum).abs().max()), 0.0, 1e-9)
         c.check("4 Market and Sentiment (ชุมชน)", "%s: ประเภทความรู้สึกส่วนใหญ่ตรงกับค่าที่เก็บไว้ (ชั่วโมงที่ต่าง)" % wname,
                 int((both.maj.fillna("-") != both.majority.fillna("-")).sum()), 0)
+        for model, col in (("VADER", "vader_score"), ("FinBERT", "finbert_score")):
+            one = data.sentiment_hourly(db_path, ("TSLA",), start, end, everyone, model)
+            one = one[one.hour_utc >= start]
+            direct = c.q("SELECT COUNT(*), SUM(s.%s) FROM ticker_mentions m JOIN processed_text p ON p.src_rowid = m.src_rowid "
+                         "JOIN sentiment_item s ON s.src_rowid = m.src_rowid WHERE m.ticker = 'TSLA' AND p.created_utc >= ? AND p.created_utc < ?"
+                         % col, (start, end + 3600))[0]
+            c.check("4 Market and Sentiment (แบบจำลอง)", "%s TSLA %s: จำนวนข้อความ = นับตรงจาก sentiment_item" % (wname, model), int(one.texts.sum()), direct[0])
+            c.check("4 Market and Sentiment (แบบจำลอง)", "%s TSLA %s: ผลรวมคะแนน = รวมตรงจาก sentiment_item (ต่าง)" % (wname, model),
+                    float(one.sentiment_sum.sum()), float(direct[1] or 0.0), 1e-6)
         wsb = data.sentiment_hourly(db_path, ("TSLA",), start, end, ("r/wallstreetbets",))
         direct = c.q("SELECT COUNT(*) FROM ticker_mentions m JOIN processed_text p ON p.src_rowid = m.src_rowid WHERE m.ticker = 'TSLA' "
                      "AND p.subreddit = 'wallstreetbets' AND p.created_utc >= ? AND p.created_utc < ?", (start, end + 3600))[0][0]

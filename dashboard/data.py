@@ -404,17 +404,18 @@ def overview_series(db_path, ticker, start, end):
     return to_time(df)
 
 
-def sentiment_hourly(db_path, tickers, start, end, communities):
-    """Per ticker-hour sums of the texts of the chosen communities (reddit_hourly_community), from 24 hours before
-    `start` (the Z-score needs them).  Recombine with `sentiment_frame`."""
+def sentiment_hourly(db_path, tickers, start, end, communities, model="VADER+FinBERT"):
+    """Per ticker-hour sums of the texts of the chosen communities (reddit_hourly_community) scored by `model`
+    ('VADER+FinBERT' = the final sentiment, 'VADER' or 'FinBERT'), from 24 hours before `start` (the Z-score needs
+    them).  Recombine with `sentiment_frame`."""
     tf, symbols = _only(tickers, "ticker")
     marks = ",".join("?" * len(communities))
     return _read(db_path, """
         SELECT ticker, hour_utc, SUM(texts) AS texts, SUM(sentiment_sum) AS sentiment_sum, SUM(pos_n) AS pos_n,
                SUM(neg_n) AS neg_n, SUM(neu_n) AS neu_n
         FROM reddit_hourly_community
-        WHERE hour_utc BETWEEN ? AND ? AND subreddit IN (%s)%s GROUP BY ticker, hour_utc"""
-                 % (marks, tf), (start - 86400, end, *communities, *symbols))
+        WHERE model = ? AND hour_utc BETWEEN ? AND ? AND subreddit IN (%s)%s GROUP BY ticker, hour_utc"""
+                 % (marks, tf), (model, start - 86400, end, *communities, *symbols))
 
 
 def sentiment_frame(sent, start, end, combined=False):

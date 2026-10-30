@@ -38,7 +38,7 @@ label = tickers[0] if one else "รวม %d ตัว" % len(tickers)
 
 # ---- prices of the ticked tickers (hours with a valid bar) and the sentiment KPIs recombined from the chosen communities
 prices = q("price_series_for", tickers, start, end)
-sent = q("sentiment_hourly", tickers, start, end, communities)
+sent = q("sentiment_hourly", tickers, start, end, communities, common.selected_model())
 if prices.empty:
     st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
     st.stop()

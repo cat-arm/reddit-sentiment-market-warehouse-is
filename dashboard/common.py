@@ -42,7 +42,7 @@ STATUSES = ("positive", "negative", "neutral")                  # DimMajoritySen
 MAJORITY_KEYS = ["f_maj_" + s for s in STATUSES]
 SIGNAL_KEYS = ["s_z", "s_s", "s_h"]                             # DimDetectionConfig on the Ranking and Signals page
 EVENT_KEYS = ["h_z", "h_s", "h_n"]                              # the same idea on the Hot Events page
-SENTIMENT_MODEL = "VADER+FinBERT"                               # DimSentimentSource.ModelUsed (one value)
+SENTIMENT_MODELS = ("VADER+FinBERT", "VADER", "FinBERT")         # DimSentimentSource.ModelUsed; the first is the proposal's
 DEFAULT_RANGE_DAYS = 365
 
 
@@ -141,7 +141,13 @@ def _sentiment_key(name):
 
 
 def sentiment_source_keys():
-    return [_sentiment_key(c) for c in dict.fromkeys(q("sources").subreddit)]
+    return [_sentiment_key(c) for c in dict.fromkeys(q("sources").subreddit)] + ["f_ss_model"]
+
+
+def selected_model():
+    """The model chosen in the DimSentimentSource filter (one of SENTIMENT_MODELS)."""
+    model = st.session_state.get("f_ss_model", SENTIMENT_MODELS[0])
+    return model if model in SENTIMENT_MODELS else SENTIMENT_MODELS[0]
 
 
 def selected_communities():
@@ -155,16 +161,15 @@ def selected_statuses():
 
 
 def _sentiment_source_filter():
-    """DimSentimentSource: platform (Reddit) > community > model (VADER+FinBERT, the only one)."""
+    """DimSentimentSource: platform (Reddit) > community > model (pick one: VADER+FinBERT, VADER or FinBERT)."""
     st.sidebar.markdown("**แหล่งข้อมูลความรู้สึก (DimSentimentSource)**")
     for key in sentiment_source_keys():
-        st.session_state.setdefault(key, True)
+        st.session_state.setdefault(key, True if key != "f_ss_model" else SENTIMENT_MODELS[0])
     st.sidebar.caption("แพลตฟอร์ม: Reddit › ชุมชน")
     for community in dict.fromkeys(q("sources").subreddit):
         st.sidebar.checkbox(community, key=_sentiment_key(community))
     st.sidebar.caption("แบบจำลองที่ใช้")
-    st.session_state["f_ss_model"] = True
-    st.sidebar.checkbox(SENTIMENT_MODEL, disabled=True, key="f_ss_model")
+    st.sidebar.radio("แบบจำลองที่ใช้", SENTIMENT_MODELS, key="f_ss_model", label_visibility="collapsed")
 
 
 def _majority_filter():

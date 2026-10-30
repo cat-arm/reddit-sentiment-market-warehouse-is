@@ -180,6 +180,11 @@ class FilterTests(unittest.TestCase):
         no_wsb = [m.value for m in at.metric]
         self.assertNotEqual(no_wsb[0], full[0], "Sentiment Score follows the communities")
         at.sidebar.checkbox(key="f_ss_r/wallstreetbets").set_value(True)
+        for model in ("VADER", "FinBERT"):                                  # the model is a choice of ONE: each gives its own numbers
+            at.sidebar.radio(key="f_ss_model").set_value(model).run()
+            self.assertEqual(len(at.exception), 0, model)
+            self.assertNotEqual(at.metric[0].value, full[0], "Sentiment Score of %s differs from VADER+FinBERT" % model)
+        at.sidebar.radio(key="f_ss_model").set_value("VADER+FinBERT")
         at.sidebar.checkbox(key="f_maj_neutral").set_value(False).run()
         self.assertNotEqual(at.metric[0].value, full[0], "hours with a neutral majority lose their sentiment")
         self.assertEqual([m.label for m in at.metric], ["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"])
