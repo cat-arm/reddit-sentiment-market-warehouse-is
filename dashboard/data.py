@@ -729,7 +729,7 @@ def effect_summary(coefs):
 def variable_label(column):
     """Label of a Logistic Regression variable: its column name, the Thai name in brackets and its variable group."""
     thai, group = VARIABLES.get(column, ("", ""))
-    return "%s (%s) · กลุ่ม %s" % (column, thai, group) if thai else column
+    return "%s (%s), กลุ่ม %s" % (column, thai, group) if thai else column
 
 
 def panel_name(variant, family="Ticker"):
@@ -880,10 +880,12 @@ def significant_share(df, p="p_value", alpha=0.05):
 
 
 def signal_panel(db_path):
-    """Ticker-hours with Reddit data (input of the on-demand signal engine, ~120 k rows)."""
+    """Ticker-hours with Reddit data (input of the on-demand signal engine, ~120 k rows) with the Current Return and the forward returns
+    that followed (NULL where no bar exists, see hot_events)."""
     return _read(db_path, """
         SELECT ticker, big_group, hour_utc, sentiment_mean, reddit_volume, reddit_volume_zscore_24,
-               majority_final_status FROM merged_hourly_panel
+               majority_final_status, log_return, future_return_1h, future_return_2h, future_return_3h, future_return_6h, future_return_12h
+        FROM merged_hourly_panel
         WHERE scope = 'ticker' AND variant = 'all' AND has_reddit_data = 1""")
 
 

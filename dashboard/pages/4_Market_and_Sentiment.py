@@ -23,7 +23,7 @@ import streamlit as st  # noqa: E402
 from dashboard import common, data  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
-common.setup("Market and Sentiment: ภาพรวมตลาดและความรู้สึก", "🧭")
+common.setup("Market and Sentiment (ภาพรวมตลาดและความรู้สึก)", "🧭")
 _, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True)
 how = common.granularity(start, end, "g_sent")
 tickers = common.selected_tickers()
@@ -105,7 +105,7 @@ common.kpi_cards([
     ("Sentiment Momentum", common.money(series.momentum.mean()), "(sentiment_mean ชั่วโมงนี้ − ชั่วโมงก่อนหน้า) เฉลี่ย"),
     ("Reddit Volume Z-score สูงสุด", common.money(series.zscore.max()), "เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน")])
 
-st.subheader("%s: ราคาปิดเทียบค่าความรู้สึกเฉลี่ย" % label)
+st.subheader("ราคาปิดเทียบค่าความรู้สึกเฉลี่ย (%s)" % label)
 price_col = "close"
 if shown.sentiment_mean.notna().sum() == 0:
     st.info("ไม่มีข้อความที่พูดถึง %s ในช่วงนี้ จึงแสดงเฉพาะราคา" % label)
@@ -114,22 +114,22 @@ if shown.sentiment_mean.notna().sum() == 0:
 else:
     price_title = "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)"
     common.dual_chart(shown, "time", price_col, "sentiment_mean", price_title, "Sentiment Score", "s_price_sent", "ราคาปิด", "Sentiment Score")
-    st.caption("สีน้ำเงิน = ราคาปิด  \nสีเขียวอมฟ้า = Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น) "
-               "ช่วงที่สีเขียวอมฟ้าขาด = ไม่มีข้อความ ไม่ใช่ค่ากลาง")
+    st.caption("สีน้ำเงินคือราคาปิด  \nสีเขียวอมฟ้าคือ Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น)  \n"
+               "ช่วงที่เส้นสีเขียวอมฟ้าขาดหมายถึงไม่มีข้อความ ไม่ใช่ค่าความรู้สึกเป็นกลาง")
 
-    st.subheader("%s: Reddit Volume Z-score เทียบค่าความรู้สึกเฉลี่ย" % label)
+    st.subheader("Reddit Volume Z-score เทียบค่าความรู้สึกเฉลี่ย (%s)" % label)
     common.dual_chart(shown, "time", "zscore", "sentiment_mean", "Reddit Volume Z-score", "Sentiment Score", "s_z_sent",
                       "Reddit Volume Z-score", "Sentiment Score", left_color=common.C_Z, left_fmt=".2f")
-    st.caption("สีแดง = Reddit Volume Z-score (ปริมาณข้อความเทียบ 24 ชั่วโมงก่อนหน้า)  \nสีเขียวอมฟ้า = Sentiment Score  "
-               "ถ้าคนพูดถึงมากผิดปกติแล้วความรู้สึกเปลี่ยน สองสีจะขยับไปด้วยกันหรือสวนกัน")
+    st.caption("สีแดงคือ Reddit Volume Z-score (ปริมาณข้อความเทียบกับ 24 ชั่วโมงก่อนหน้า)  \nสีเขียวอมฟ้าคือ Sentiment Score  \n"
+               "หากมีการกล่าวถึงมากผิดปกติและความรู้สึกเปลี่ยนตาม สองเส้นจะเปลี่ยนไปในทิศทางเดียวกันหรือสวนทางกัน")
 
-    st.subheader("%s: ราคาปิดเทียบ Reddit Volume Z-score" % label)
+    st.subheader("ราคาปิดเทียบ Reddit Volume Z-score (%s)" % label)
     common.dual_chart(shown, "time", price_col, "zscore", price_title, "Reddit Volume Z-score", "s_price_z", "ราคาปิด",
                       "Reddit Volume Z-score", right_color=common.C_Z, right_fmt=".2f")
-    st.caption("สีน้ำเงิน = ราคาปิด  \nสีแดง = Reddit Volume Z-score  ช่วงที่ปริมาณพุ่ง (สีแดงสูง) ราคาขยับตามหรือไม่")
+    st.caption("สีน้ำเงินคือราคาปิด  \nสีแดงคือ Reddit Volume Z-score  \nใช้ดูว่าในช่วงที่ปริมาณพุ่ง (เส้นสีแดงสูง) ราคาเคลื่อนไหวตามหรือไม่")
 
 # ---- does higher sentiment go with a higher return?  every ticked ticker-hour with text is one sample
-st.subheader("ความรู้สึกยิ่งสูง ผลตอบแทนยิ่งสูงไหม")
+st.subheader("ความสัมพันธ์ระหว่างระดับความรู้สึกกับผลตอบแทน")
 MEASURES = {"Current Return (ชั่วโมงเดียวกัน)": "log_return", **{"ผลตอบแทนล่วงหน้า %s" % h: "future_return_" + h for h in common.data.HORIZONS}}
 st.session_state.setdefault("s_bar_measure", "ผลตอบแทนล่วงหน้า " + common.data.HORIZONS[0])
 picked = st.radio("วัดผลตอบแทนแบบ", list(MEASURES), horizontal=True, key="s_bar_measure", label_visibility="collapsed")
@@ -140,7 +140,7 @@ samples = per_ticker_kept.rename(columns={"series": "ticker"})[["ticker", "hour_
 samples = samples[samples.majority.isin(statuses)]
 buckets = data.sentiment_buckets(samples, column)
 if buckets.empty:
-    st.info("ตัวอย่างน้อยเกินไปสำหรับแบ่งกลุ่มความรู้สึก (ต้องมีอย่างน้อย 50 ticker-ชั่วโมงที่มีทั้งข้อความและผลตอบแทน)")
+    st.info("ตัวอย่างน้อยเกินไปสำหรับแบ่งกลุ่มความรู้สึก (ต้องมีอย่างน้อย 50 ticker-hourที่มีทั้งข้อความและผลตอบแทน)")
 else:
     levels = data.SENTIMENT_LEVELS
     buckets["ระดับความรู้สึก"] = [levels[int(b)][0] for b in buckets.bucket]
@@ -157,13 +157,16 @@ else:
     zero = common.zero_rule()
     common.show(bars + errors + zero, width="stretch")
     paired = samples[["sentiment_mean", column]].dropna()
-    st.caption("วิธีอ่าน: เอาทุก ticker-ชั่วโมงที่มีข้อความ มาใส่ 5 ระดับตาม Sentiment Score ของชั่วโมงนั้น โดยใช้เกณฑ์ตายตัวของ proposal: ±0.05 = ขอบเป็นกลาง, ±0.30 = เกณฑ์ความรู้สึกชัดเจน  \n"
-               "แท่ง = ผลตอบแทนเฉลี่ยของระดับนั้น (ระดับที่ไม่มีข้อมูลจะไม่มีแท่ง) เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าเส้นคลุมศูนย์ แปลว่าแยกจากศูนย์ไม่ได้  \n"
-               "ค่าสหสัมพันธ์ Spearman ระหว่างความรู้สึกกับผลตอบแทน = %+.3f (%s ticker-ชั่วโมง)  \n"
-               "ใช้ผลตอบแทนแทนระดับราคา เพราะระดับราคาขึ้นลงตามแนวโน้มระยะยาว เทียบกับความรู้สึกตรงๆ จะหลอกตา"
+    st.caption("**วิธีอ่าน**  \n"
+               "นำทุก ticker-hour ที่มีข้อความมาจัดเป็น 5 ระดับตาม Sentiment Score ของชั่วโมงนั้น โดยใช้เกณฑ์ตายตัวของ proposal  \n"
+               "ค่า ±0.05 เป็นขอบของความรู้สึกเป็นกลาง และค่า ±0.30 เป็นเกณฑ์ความรู้สึกชัดเจน  \n"
+               "แท่งคือผลตอบแทนเฉลี่ยของระดับนั้น (ระดับที่ไม่มีข้อมูลจะไม่มีแท่ง)  \n"
+               "เส้นสีดำคือช่วงเชื่อมั่น 95%% หากเส้นคร่อมศูนย์ แสดงว่าแยกจากศูนย์ไม่ได้  \n"
+               "ค่าสหสัมพันธ์ Spearman ระหว่างความรู้สึกกับผลตอบแทนเท่ากับ %+.3f (%s ticker-hour)  \n"
+               "ใช้ผลตอบแทนแทนระดับราคา เพราะระดับราคามีแนวโน้มระยะยาวที่ทำให้การเทียบกับความรู้สึกโดยตรงคลาดเคลื่อน"
                % (paired.sentiment_mean.corr(paired[column], method="spearman"), "{:,}".format(len(paired))))
 
-st.subheader("สัดส่วนความคิดเห็นเชิงบวก / ลบ / เป็นกลาง")
+st.subheader("สัดส่วนความคิดเห็นเชิงบวก ลบ และเป็นกลาง")
 RATIO_MODES = ("ความคิดเห็นจริง (สัดส่วนข้อความ)", "ผลโหวตส่วนใหญ่ (สัดส่วนชั่วโมง)")
 mode = st.radio("นับสัดส่วนจาก", RATIO_MODES, horizontal=True, key="s_ratio_mode", label_visibility="collapsed")
 COLORS = alt.Scale(domain=["บวก", "ลบ", "เป็นกลาง"], range=["#2ca02c", "#d62728", "#7f7f7f"])
@@ -171,13 +174,13 @@ if mode == RATIO_MODES[0]:
     ratios = shown.melt(id_vars="time", value_vars=["pos_ratio", "neg_ratio", "neu_ratio"], var_name="ประเภท",
                         value_name="สัดส่วน").dropna()
     ratios["ประเภท"] = ratios["ประเภท"].map({"pos_ratio": "บวก", "neg_ratio": "ลบ", "neu_ratio": "เป็นกลาง"})
-    caption = ("สัดส่วนของข้อความ บวก / ลบ / เป็นกลาง ภายในชั่วโมงที่ผ่านตัวกรอง (ค่าจริงของ pos_ratio, neg_ratio, neu_ratio) "
-               "ชั่วโมงที่ส่วนใหญ่เป็นประเภทที่ติ๊กออกไม่ถูกนับ แต่ชั่วโมงที่เหลือยังมีข้อความประเภทนั้นปนอยู่")
+    caption = ("สัดส่วนของข้อความบวก ลบ และเป็นกลางในชั่วโมงที่ผ่านตัวกรอง (ค่าจริงของ pos_ratio, neg_ratio และ neu_ratio)  \n"
+               "ชั่วโมงที่ส่วนใหญ่เป็นประเภทที่ติ๊กออกจะไม่ถูกนับ แต่ชั่วโมงที่เหลือยังมีข้อความประเภทนั้นปนอยู่")
 else:
     votes = data.vote_shares(series, None if how == "Hourly" else common.RESAMPLE[how])
     ratios = votes.rename(columns={"share": "สัดส่วน"}).assign(ประเภท=lambda d: d.status.map(
         {"positive": "บวก", "negative": "ลบ", "neutral": "เป็นกลาง"}))
-    caption = ("สัดส่วนของ**ชั่วโมง**ที่ผลโหวตส่วนใหญ่เป็น บวก / ลบ / เป็นกลาง (นับ 1 ชั่วโมง = 1 โหวต) "
+    caption = ("สัดส่วนของ**ชั่วโมง**ที่ผลโหวตส่วนใหญ่เป็นบวก ลบ หรือเป็นกลาง (1 ชั่วโมงนับเป็น 1 โหวต)  \n"
                "ประเภทที่ติ๊กออกจะเป็น 0 ทั้งหมด")
 if not ratios.empty:
     area = (alt.Chart(ratios).mark_area().encode(

@@ -23,7 +23,7 @@ from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
 MAX_LINES = 8                       # up to this many tickers: one line per ticker, otherwise their average
 
-common.setup("Price and Return: ราคาและผลตอบแทนรายชั่วโมง", "📈")
+common.setup("Price and Return (ราคาและผลตอบแทนรายชั่วโมง)", "📈")
 _, start, end, _ = common.sidebar(multi=True)
 how = common.granularity(start, end, "g_price")
 tickers = common.selected_tickers()
@@ -93,20 +93,20 @@ common.show(trend("volume" if one else "volume_index", "ปริมาณซื
 common.show(trend("rsi", "RSI", common.C_RATE, "p_rsi", y_domain=[0, 100])
                 + alt.Chart(alt.Data(values=[{"y": 30}, {"y": 70}])).mark_rule(strokeDash=[4, 4], color="gray")
                 .encode(y="y:Q"), width="stretch")
-st.caption("RSI = ดัชนีความแข็งแกร่งสัมพัทธ์ 0–100 (Wilder 14 แท่ง) วัดความเร็วและการเปลี่ยนแปลงของการเคลื่อนไหวของราคา "
-           "เส้นประที่ 30 และ 70 คือระดับที่นิยมใช้อ่านว่าขายมากเกินไป / ซื้อมากเกินไป")
+st.caption("RSI (Relative Strength Index) คือดัชนีความแข็งแกร่งสัมพัทธ์ในช่วง 0 ถึง 100 (Wilder 14 แท่ง) วัดความเร็วและขนาดการเปลี่ยนแปลงของราคา  \n"
+           "เส้นประที่ 30 และ 70 เป็นระดับที่นิยมใช้อ่านภาวะขายมากเกินไปและซื้อมากเกินไป")
 if len(tickers) <= MAX_LINES:
     common.show(trend("atr", "ATR (USD)" if one else "ATR (USD) แกนลอการิทึม", common.C_ATR, "p_atr", log=True, y_zero=one)
                     if not one else common.line(shown, "time", "atr", "ATR (USD)", common.C_ATR, 220, y_zero=True,
                                                 bar=common.kind(st, "p_atr")), width="stretch")
-    st.caption("ATR = ช่วงความผันผวนเฉลี่ยที่แท้จริง (ดอลลาร์สหรัฐ) เฉลี่ย True Range 24 ชั่วโมง วัดระดับความผันผวนของราคาโดยไม่พิจารณาทิศทาง "
-               "ค่าเป็นดอลลาร์ จึงเทียบข้ามสินทรัพย์ไม่ได้ ให้ดู Normalized ATR")
+    st.caption("ATR (Average True Range) คือค่าเฉลี่ยของ True Range 24 ชั่วโมง วัดระดับความผันผวนของราคาโดยไม่พิจารณาทิศทาง  \n"
+               "ค่าเป็นดอลลาร์สหรัฐ จึงเทียบข้ามสินทรัพย์ไม่ได้ ให้ดู Normalized ATR แทน")
 common.show(trend("normalized_atr", "Normalized ATR (%)", common.C_NATR, "p_natr", y_zero=True), width="stretch")
 
 # ---- the measures of every ticked ticker
 st.subheader("รายละเอียดค่าวัดของหลักทรัพย์ที่เลือก")
 snap = q("ticker_snapshot", start, end, tickers)
-snap["สินทรัพย์"] = snap.ticker.map(lambda s: "%s · %s" % (s, names.get(s, "")))
+snap["สินทรัพย์"] = snap.ticker.map(lambda s: "%s (%s)" % (s, names.get(s, "")))
 snap["กลุ่ม"] = snap.big_group.map(GROUP_LABELS)
 rsi_zones = hourly.dropna(subset=["rsi"]).groupby("ticker").rsi.agg(over70=lambda s: (s > 70).mean(), under30=lambda s: (s < 30).mean())
 snap = snap.merge(rsi_zones, left_on="ticker", right_index=True, how="left")
@@ -116,7 +116,7 @@ common.table(snap[["สินทรัพย์", "กลุ่ม", "last_close
     "current_return_pct": "Current Return รวม (%)", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)",
     "fr_1h": "ผลตอบแทน 1h (%)", "fr_2h": "2h (%)", "fr_3h": "3h (%)", "fr_6h": "6h (%)", "fr_12h": "12h (%)"}).round(4),
     hide_index=True, width="stretch", height=min(420, 60 + 36 * len(snap)))
-st.caption("ผลตอบแทนล่วงหน้า = ค่าเฉลี่ยของแต่ละกรอบเวลาในช่วงที่เลือก ว่างเมื่อไม่มีแท่งราคาครบตามกรอบเวลา (หุ้น/ETF ที่ 12h ไม่มีเลย เพราะตลาดปิดกลางคืน)")
+st.caption("ผลตอบแทนล่วงหน้าคือค่าเฉลี่ยของแต่ละกรอบเวลาในช่วงที่เลือก ช่องที่ว่างหมายถึงไม่มีแท่งราคาครบตามกรอบเวลา (หุ้นและ ETF ที่ 12h ไม่มีเลย เพราะตลาดปิดกลางคืน)")
 
 # ---- below, as before: asset classes (computed over the ticked tickers)
 st.subheader("ผลตอบแทนล่วงหน้าแยกตามกลุ่มสินทรัพย์")
@@ -135,7 +135,7 @@ else:
     common.table(fr[["กลุ่ม", "horizon", "n", "mean_return_pct", "share_up"]].rename(columns={
         "n": "จำนวนตัวอย่าง", "mean_return_pct": "ผลตอบแทนเฉลี่ย (%)", "share_up": "สัดส่วนที่เป็นบวก"}),
         hide_index=True, width="stretch")
-    st.caption("จำนวนตัวอย่างหุ้น/ETF ที่ 6h น้อยและที่ 12h เป็น 0 เพราะตลาดปิดกลางคืนจึงมีบาร์รายชั่วโมงไม่ครบ ไม่ได้แปลว่าผลตอบแทนเป็น 0")
+    st.caption("จำนวนตัวอย่างของหุ้นและ ETF ที่ 6h มีน้อย และที่ 12h เป็น 0 เพราะตลาดปิดกลางคืนจึงมีแท่งราคารายชั่วโมงไม่ครบ ไม่ได้แปลว่าผลตอบแทนเป็น 0")
 
 st.subheader("กลุ่มสินทรัพย์ใดผันผวนสูงที่สุด")
 risk = q("group_risk", start, end, tickers)

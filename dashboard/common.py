@@ -32,7 +32,7 @@ from dashboard import data                          # noqa: E402
 
 DB_PATH = os.environ.get("REDDIT_DB", str(data.DEFAULT_DB))
 DISCLAIMER = ("ข้อมูลย้อนหลังจาก Academic Torrents และ yfinance เพื่อสนับสนุนการวิเคราะห์เท่านั้น  \n"
-              "ไม่ใช่ข้อมูล real-time, ไม่ใช่คำแนะนำการลงทุน และไม่ใช่การทำนายราคา")
+              "ไม่ใช่ข้อมูลแบบ real-time ไม่ใช่คำแนะนำการลงทุน และไม่ใช่การทำนายราคา")
 # Asset classes always appear in this order (stocks/ETF, futures, crypto) and with the same colour in every chart.
 GROUP_LABELS = {"stock_etf": "หุ้น/ETF", "futures": "ฟิวเจอร์ส", "crypto": "คริปโต"}
 GROUP_COLORS = {"stock_etf": "#1f77b4", "futures": "#ff7f0e", "crypto": "#2ca02c"}   # blue, orange, green
@@ -41,7 +41,7 @@ TYPE_KEYS = ["f_type_Post", "f_type_Comment"]
 STATUSES = ("positive", "negative", "neutral")                  # DimMajoritySentiment
 MAJORITY_KEYS = ["f_maj_" + s for s in STATUSES]
 SIGNAL_KEYS = ["s_z", "s_s", "s_h"]                             # DimDetectionConfig on the Ranking and Signals page
-EVENT_KEYS = ["h_z", "h_s"]                                     # the same idea on the Hot Events page
+EVENT_KEYS = ["h_z", "h_s", "h_n", "h_lv_low", "h_lv_medium", "h_lv_high"]                                     # the same idea on the Hot Events page
 OVERVIEW_KEYS = ["d_z", "d_s"]                                  # Market and Sentiment: thresholds FILTER the whole page (0 = no filter)
 SENTIMENT_MODELS = ("VADER+FinBERT", "VADER", "FinBERT")         # DimSentimentSource.ModelUsed; the first is the proposal's
 DEFAULT_RANGE_DAYS = 365
@@ -188,7 +188,7 @@ def _sentiment_source_filter():
     st.sidebar.markdown("**แหล่งข้อมูลความรู้สึก (DimSentimentSource)**")
     for key in sentiment_source_keys() + TYPE_KEYS:
         st.session_state.setdefault(key, True if key != "f_ss_model" else SENTIMENT_MODELS[0])
-    st.sidebar.caption("แพลตฟอร์ม: Reddit › ชุมชน")
+    st.sidebar.caption("แพลตฟอร์ม Reddit › ชุมชน")
     for community in dict.fromkeys(q("sources").subreddit):
         st.sidebar.checkbox(community, key=_sentiment_key(community))
     st.sidebar.caption("ประเภทเนื้อหา (DimSource)")
@@ -223,9 +223,9 @@ def _z_hint(key):
     if need is None:
         st.sidebar.caption("ไม่มีข้อมูลปริมาณของหลักทรัพย์และช่วงเวลาที่เลือก")
     elif len(tickers) == 1:
-        st.sidebar.caption("Z-score เกิน %.1f = ปริมาณ **มากกว่า %s ข้อความต่อชั่วโมง**" % (z, "{:,}".format(need[0])))
+        st.sidebar.caption("Z-score เกิน %.1f คือปริมาณ **มากกว่า %s ข้อความต่อชั่วโมง**" % (z, "{:,}".format(need[0])))
     else:
-        st.sidebar.caption("Z-score เกิน %.1f = ปริมาณรวมของ %d สินทรัพย์ที่เลือก **มากกว่า %s ข้อความต่อชั่วโมง**" % (z, len(tickers), "{:,}".format(need[0])))
+        st.sidebar.caption("Z-score เกิน %.1f คือปริมาณรวมของ %d สินทรัพย์ที่เลือก **มากกว่า %s ข้อความต่อชั่วโมง**" % (z, len(tickers), "{:,}".format(need[0])))
 
 
 def _detection_filter(kind):
@@ -237,10 +237,10 @@ def _detection_filter(kind):
     if kind == "overview":                                  # filters the hours of the page; 0 = off, so by default nothing is removed
         state.setdefault("d_z", 0.0)
         state.setdefault("d_s", 0.0)
-        st.sidebar.caption("Reddit Volume Z-score Threshold (ปริมาณต้องเกิน; 0 = ไม่กรอง)")
+        st.sidebar.caption("Reddit Volume Z-score Threshold (ปริมาณต้องเกินค่านี้ ค่า 0 คือไม่กรอง)")
         st.sidebar.slider("Reddit Volume Z-score Threshold", 0.0, 4.0, step=0.1, key="d_z", label_visibility="collapsed")
         _z_hint("d_z")
-        st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่; 0 = ไม่กรอง)")
+        st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่ค่านี้ ค่า 0 คือไม่กรอง)")
         st.sidebar.slider("Sentiment Threshold", 0.0, 1.0, step=0.05, key="d_s", label_visibility="collapsed")
 
     elif kind == "signals":
@@ -254,13 +254,13 @@ def _detection_filter(kind):
         st.sidebar.caption("Horizon (กรอบเวลาของสถิติย้อนหลัง)")
         st.sidebar.radio("Horizon", list(data.HORIZONS), key="s_h", horizontal=True, label_visibility="collapsed")
     else:
-        state.setdefault("h_z", 2.0)
-        state.setdefault("h_s", 0.50)
-        st.sidebar.caption("Reddit Volume Z-score Threshold (ปริมาณต้องเกิน)")
-        st.sidebar.slider("Reddit Volume Z-score Threshold", 1.5, 4.0, step=0.1, key="h_z", label_visibility="collapsed")
+        state.setdefault("h_z", 0.0)
+        state.setdefault("h_s", 0.0)
+        st.sidebar.caption("Reddit Volume Z-score Threshold (ปริมาณต้องเกินค่านี้ ค่า 0 คือไม่กรอง)")
+        st.sidebar.slider("Reddit Volume Z-score Threshold", 0.0, 4.0, step=0.1, key="h_z", label_visibility="collapsed")
         _z_hint("h_z")
-        st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่)")
-        st.sidebar.slider("Sentiment Threshold", 0.05, 0.90, step=0.05, key="h_s", label_visibility="collapsed")
+        st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่ค่านี้ ค่า 0 คือไม่กรอง)")
+        st.sidebar.slider("Sentiment Threshold", 0.0, 1.0, step=0.05, key="h_s", label_visibility="collapsed")
 
 
 
@@ -270,7 +270,7 @@ def _source_filter():
     st.sidebar.markdown("**แหล่งข้อมูล (DimSource)**")
     for key in source_keys():
         st.session_state.setdefault(key, True)
-    st.sidebar.caption("แพลตฟอร์ม: Reddit › ชุมชน")
+    st.sidebar.caption("แพลตฟอร์ม Reddit › ชุมชน")
     for community in dict.fromkeys(src.subreddit):
         st.sidebar.checkbox(community, key=_community_key(community))
     st.sidebar.caption("ประเภทเนื้อหา")
@@ -300,8 +300,8 @@ def _time_filter(info):
     days = list(picked) if isinstance(picked, (tuple, list)) else [picked]
     start_day, end_day = (days[0], days[1]) if len(days) >= 2 else (days[0], days[0])
     if len(days) < 2:
-        st.sidebar.caption("เลือกวันเดียวอยู่: ดูเฉพาะวันนี้ จนกว่าจะคลิกวันสุดท้ายของช่วง")
-    st.sidebar.caption("ข้อมูล Reddit: %s → %s" % (dt.datetime.fromtimestamp(info["reddit_lo"], dt.timezone.utc).date(), hi))
+        st.sidebar.caption("เลือกวันเดียวอยู่ จะแสดงเฉพาะวันนี้จนกว่าจะคลิกวันสุดท้ายของช่วง")
+    st.sidebar.caption("ข้อมูล Reddit ตั้งแต่ %s ถึง %s" % (dt.datetime.fromtimestamp(info["reddit_lo"], dt.timezone.utc).date(), hi))
     st.sidebar.caption("ระดับเวลาของกราฟ (ชั่วโมง › วัน › สัปดาห์ › เดือน › ปี)")
     st.sidebar.radio("ระดับเวลาของกราฟ", list(GRANULARITY), key="f_gran", label_visibility="collapsed",
                      help="ระดับเวลาของ DimTime (รายชั่วโมงในช่วงยาวมากอาจโหลดช้า)")
@@ -580,12 +580,12 @@ def count_chart(daily, hourly, col, title, color, how, height=210, bar=False):
 def count_caption(how):
     """What one point / bar of `count_chart` means (one fact per line, no separators)."""
     if how == "Hourly":
-        return "ค่าที่แสดง = จำนวนต่อชั่วโมง"
+        return "ค่าที่แสดงคือจำนวนต่อชั่วโมง"
     if how == "Daily":
-        return "ค่าที่แสดง = จำนวนทั้งวัน  \nชี้เมาส์เพื่อดูชั่วโมงที่สูงสุดของวันนั้นและเวลา"
+        return "ค่าที่แสดงคือจำนวนทั้งวัน  \nชี้เมาส์เพื่อดูชั่วโมงที่สูงสุดของวันนั้นและเวลา"
     unit = PERIOD_LABEL[how]
-    text = "ค่าที่แสดง = ค่าเฉลี่ยต่อวันของ%s" % unit
-    text += "  \nถ้าแสดงเป็นแท่ง ขีดดำบนแท่ง = วันที่สูงสุดของ%s" % unit
+    text = "ค่าที่แสดงคือค่าเฉลี่ยต่อวันของ%s" % unit
+    text += "  \nหากแสดงเป็นแท่ง ขีดสีดำบนแท่งคือวันที่สูงสุดของ%s" % unit
     return text + "  \nชี้เมาส์เพื่อดูค่าและวันที่"
 
 

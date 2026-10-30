@@ -20,7 +20,7 @@ from dashboard.common import q  # noqa: E402
 
 MAX_LINES = 8                       # up to this many tickers the trend shows one line per ticker, otherwise their sum
 
-common.setup("Ticker Mentions: สินทรัพย์ที่ถูกกล่าวถึงบน Reddit", "🗣️")
+common.setup("Ticker Mentions (สินทรัพย์ที่ถูกกล่าวถึงบน Reddit)", "🗣️")
 _, start, end, groups = common.sidebar(sources=True, multi=True)
 how = common.granularity(start, end)
 src_ids = common.selected_sources()
@@ -58,12 +58,12 @@ common.kpi_cards([
      "Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดในช่วงเดียวกัน × 100"),
     ("Reddit Volume Z-score สูงสุด", common.money(volume.zscore.max()),
      "Z-score ของจำนวนที่พูดถึงสินทรัพย์ที่เลือก เทียบกับ 24 ชั่วโมงก่อนหน้าของตัวเอง"),
-    ("ชั่วโมงที่ Z-score > 1.5", "{:,}".format(int((volume.zscore > 1.5).sum())), "spike ตามเกณฑ์ 1.5 ของ proposal")])
+    ("ชั่วโมงที่ Z-score > 1.5", "{:,}".format(int((volume.zscore > 1.5).sum())), "Spike ตามเกณฑ์ 1.5 ของ proposal")])
 if volume.empty or volume.basis.iloc[0] == "texts":
-    st.caption("Volume Z-score ของสินทรัพย์ = เทียบจำนวนข้อความที่พูดถึงตัวนี้กับ 24 ชั่วโมงก่อนหน้าของตัวเอง "
+    st.caption("Volume Z-score ของสินทรัพย์ คือการเทียบจำนวนข้อความที่กล่าวถึงตัวนี้กับ 24 ชั่วโมงก่อนหน้าของตัวเอง "
                "(ใช้ในชุดข้อมูล panel_Ticker_spike)")
 else:
-    st.caption("Volume Z-score (เมื่อเลือกหลายตัวหรือแหล่งข้อมูลบางส่วน) = เทียบจำนวนครั้งที่ถูกพูดถึงรวมของที่เลือกกับ 24 ชั่วโมงก่อนหน้า "
+    st.caption("Volume Z-score เมื่อเลือกหลายตัวหรือแหล่งข้อมูลบางส่วน คือการเทียบจำนวนครั้งที่ถูกกล่าวถึงรวมของที่เลือกกับ 24 ชั่วโมงก่อนหน้า "
                "กฎเดียวกับปกติ แต่นับจาก Ticker Mention Count เพราะไม่ได้เก็บจำนวนข้อความต่อแหล่งข้อมูล และข้อความเดียวอาจพูดถึงหลายตัว")
 
 # ================================================================================================ ranking

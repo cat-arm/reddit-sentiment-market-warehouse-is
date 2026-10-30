@@ -302,7 +302,7 @@ class FilterTests(unittest.TestCase):
         at.sidebar.slider(key="d_z").set_value(2.0).run()                          # a Z-score is told in texts per hour and follows the slider
         hint = [c.value for c in at.sidebar.caption if "Z-score เกิน" in c.value]
         self.assertEqual(len(hint), 1)
-        self.assertRegex(hint[0], r"Z-score เกิน 2\.0 = ปริมาณรวมของ \d+ สินทรัพย์ที่เลือก \*\*มากกว่า [\d,]+ ข้อความต่อชั่วโมง\*\*")
+        self.assertRegex(hint[0], r"Z-score เกิน 2\.0 คือปริมาณรวมของ \d+ สินทรัพย์ที่เลือก \*\*มากกว่า [\d,]+ ข้อความต่อชั่วโมง\*\*")
         at.sidebar.slider(key="d_z").set_value(3.5).run()
         harder = [c.value for c in at.sidebar.caption if "Z-score เกิน" in c.value][0]
         self.assertRegex(harder, r"Z-score เกิน 3\.5")
@@ -343,8 +343,12 @@ class FilterTests(unittest.TestCase):
         page = "pages/7_Hot_Events.py"
         at = self.run_page(page)
         base = at.metric[0].value
-        at.sidebar.slider(key="h_z").set_value(3.5).run()
-        self.assertNotEqual(at.metric[0].value, base, "Z-score Threshold changes the events")
+        at.sidebar.slider(key="h_z").set_value(3.5).run()                          # both thresholds start at 0: every hour with texts is a signal
+        at.sidebar.slider(key="h_s").set_value(0.5).run()
+        self.assertNotEqual(at.metric[0].value, base, "the thresholds change the signals")
+        narrow = at.metric[0].value
+        at.slider(key="h_n").set_value(10).run()
+        self.assertNotEqual(at.metric[0].value, narrow, "the least texts per hour change the signals")
         self.assertEqual(len(at.exception), 0)
 
     def test_majority_vote_chart_follows_every_filter(self):

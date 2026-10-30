@@ -26,7 +26,7 @@ from scipy import stats  # noqa: E402
 from dashboard import common, data  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
-common.setup("Statistical Analysis: วิเคราะห์เชิงสถิติ", "🏆")
+common.setup("Statistical Analysis (วิเคราะห์เชิงสถิติ)", "🏆")
 _, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True)
 tickers = common.selected_tickers()
 communities = common.selected_communities()
@@ -98,17 +98,17 @@ def p_card(column, label):
     p = base[column].dropna()
     n_sig, n_tests = data.significant_share(base, column)
     return (label, "n/a" if p.empty else "{:.3f}".format(p.median()),
-            "ค่ากลางของ p-value ทุกคู่ (สินทรัพย์ × Horizon ล่วงหน้า) ที่เลือก: p ต่ำกว่า 0.05 ใน %d จาก %d คู่ (ก่อนปรับ BH) "
-            "ถ้าความรู้สึกไม่เกี่ยวกับราคา ค่ากลางควรอยู่ราว 0.5" % (n_sig, n_tests))
+            "ค่ากลางของ p-value ทุกคู่ (สินทรัพย์ × Horizon ล่วงหน้า) ที่เลือก โดย p ต่ำกว่า 0.05 ใน %d จาก %d คู่ (ก่อนปรับ BH)  \n"
+            "หากความรู้สึกไม่เกี่ยวกับราคา ค่ากลางควรอยู่ราว 0.5" % (n_sig, n_tests))
 
 
 common.kpi_cards([
     ("Historical Win Rate", "n/a" if not wins else "{:.1f}%".format(100.0 * hits / wins),
-     "สัดส่วนชั่วโมงที่ทิศทางของความรู้สึกตรงกับทิศทางผลตอบแทนอนาคต (ทุก Horizon รวมกัน) 50%% = เดา  p-value ของทั้งก้อน = %s"
+     "สัดส่วนชั่วโมงที่ทิศทางของความรู้สึกตรงกับทิศทางผลตอบแทนอนาคต (ทุก Horizon รวมกัน)  \n50%% เท่ากับการสุ่ม  \np-value ของทั้งชุดเท่ากับ %s"
      % ("n/a" if np.isnan(win_p) else "{:.3f}".format(win_p))),
     p_card("spearman_p", "Spearman p-value"), p_card("pearson_p", "Pearson p-value"),
     ("Logistic AUC", "n/a" if auc.empty else "{:.3f}".format(auc.value.mean()),
-     "AUC เฉลี่ยทุก Horizon ของ Logistic Regression (ผลเต็มช่วงข้อมูลของระบบ 7.4 ของกลุ่มสินทรัพย์ที่เลือก ไม่เปลี่ยนตามเวลา) 0.5 = เดา")])
+     "AUC เฉลี่ยทุก Horizon ของ Logistic Regression (ผลเต็มช่วงข้อมูลของระบบ 7.4 ของกลุ่มสินทรัพย์ที่เลือก ไม่เปลี่ยนตามเวลา)  \n0.5 เท่ากับการสุ่ม")])
 st.caption("การ์ดคิดจาก panel Global ทุกข้อความ (ความรู้สึกรวมของทั้งตลาด เทียบกับผลตอบแทนของแต่ละสินทรัพย์ที่เลือก) ของชั่วโมงที่ผ่านตัวกรองทุกอัน  ค่า p-value เป็นเชิงพรรณนา "
            "เพราะข้อมูลรายชั่วโมงเกี่ยวเนื่องกันและกรอบเวลาซ้อนทับกัน")
 
@@ -154,36 +154,47 @@ def panel_view(stat, key):
         return
     measure = st.radio("แสดง", VIEWS, horizontal=True, key="p5_measure_" + key, label_visibility="collapsed")
     if measure == "Win Rate" and predictor == "zscore":
-        st.info("Reddit Volume Z-score ไม่มีทิศทาง บวก/ลบ จึงไม่มี Win Rate (ดูเฉพาะ Spearman และ Pearson)")
+        st.info("Reddit Volume Z-score ไม่มีทิศทางบวกหรือลบ จึงไม่มี Win Rate (ดูได้เฉพาะ Spearman และ Pearson)")
         return
     if stat[stat.ticker.isin(tickers)][BASE[measure][0]].notna().sum() == 0:
         st.info("ไม่มีค่า %s ของสินทรัพย์ที่เลือกใน panel นี้ (ข้อมูลน้อยกว่า 30 ชั่วโมงต่อคู่)" % measure)
         return
     common.show(heatmap(stat, measure))
-    st.caption("ตัวเลขใหญ่ในแต่ละช่อง = %s  บรรทัดที่สอง = p-value ของค่านั้น (ต่ำกว่า 0.05 = น่าสนใจ)  บรรทัดที่สาม = n จำนวนชั่วโมงที่ใช้คำนวณ  ★ = p-value ที่ปรับด้วย Benjamini-Hochberg < 0.05  "
-               "ช่องว่าง = ข้อมูลน้อยกว่า 30 ชั่วโมง ไม่ใช่ 0  "
-               "Current Return = ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) 1h–12h = ผลตอบแทนล่วงหน้า"
-               % ("Win Rate (%) สี: แดง ต่ำ เขียว สูง 50 = เดา" if measure == "Win Rate" else
-                  "ค่าสหสัมพันธ์ %s สี: แดง ลบ เขียว บวก 0 = ไม่เกี่ยวกัน" % measure))
+    st.caption("ตัวเลขใหญ่ในแต่ละช่องคือ %s  \n"
+               "บรรทัดที่สองคือ p-value ของค่านั้น (ต่ำกว่า 0.05 ถือว่าน่าสนใจ)  \n"
+               "บรรทัดที่สามคือ n หรือจำนวนชั่วโมงที่ใช้คำนวณ  \n"
+               "เครื่องหมาย ★ หมายถึง p-value ที่ปรับด้วย Benjamini-Hochberg แล้วต่ำกว่า 0.05  \n"
+               "ช่องว่างหมายถึงข้อมูลน้อยกว่า 30 ชั่วโมง ไม่ใช่ค่า 0  \n"
+               "Current Return คือผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) ส่วน 1h ถึง 12h คือผลตอบแทนล่วงหน้า  \n"
+               "%s"
+               % (("Win Rate (%)" if measure == "Win Rate" else "ค่าสหสัมพันธ์ %s" % measure),
+                  ("สี: แดงคือต่ำกว่า 50 เขียวคือสูงกว่า 50 (50 เท่ากับการสุ่ม)" if measure == "Win Rate" else
+                   "สี: แดงคือค่าลบ เขียวคือค่าบวก ค่า 0 คือไม่มีความสัมพันธ์")))
 
 
 METHOD_NOTE = """
-**เป้าหมายที่ให้โมเดลทาย:** ผลตอบแทนที่ Horizon นั้นเป็นบวก (ขึ้น = 1) หรือเป็นลบ (ลง = 0) ผลตอบแทนที่เท่ากับ 0 พอดีไม่นับ  Current Return = ทิศทางของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)
+**เป้าหมายที่ให้โมเดลทาย**  
+ผลตอบแทนที่ Horizon นั้นเป็นบวก (ขึ้น = 1) หรือเป็นลบ (ลง = 0) ผลตอบแทนที่เท่ากับ 0 พอดีไม่นับ  Current Return คือ ทิศทางของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)
 
-**ตัวแปรที่ป้อนให้โมเดล (6 กลุ่มตามที่ proposal กำหนด):** Level (ค่าความรู้สึกเฉลี่ย, ความแรง), Direction (สัดส่วนบวก/ลบ), Vote (ประเภทความรู้สึกส่วนใหญ่, สัดส่วนที่เห็นตรงกัน), Volume (Reddit Volume Z-score), Lag (ความรู้สึก 1, 2, 3, 6, 12 ชั่วโมงก่อนหน้า), Momentum (การเปลี่ยนแปลงจากชั่วโมงก่อน)  ไม่ใช้ score, upvote_ratio, num_comments และไม่ใช้ผลตอบแทนอนาคตเป็นตัวแปรป้อนเข้า
+**ตัวแปรที่ป้อนให้โมเดล (6 กลุ่มตามที่ proposal กำหนด)**  
+Level (ค่าความรู้สึกเฉลี่ย, ความแรง), Direction (สัดส่วนบวก/ลบ), Vote (ประเภทความรู้สึกส่วนใหญ่, สัดส่วนที่เห็นตรงกัน), Volume (Reddit Volume Z-score), Lag (ความรู้สึก 1, 2, 3, 6, 12 ชั่วโมงก่อนหน้า), Momentum (การเปลี่ยนแปลงจากชั่วโมงก่อน)  ไม่ใช้ score, upvote_ratio, num_comments และไม่ใช้ผลตอบแทนอนาคตเป็นตัวแปรป้อนเข้า
 
-**วิธีทดสอบ (เฉลี่ยจาก 5 รอบ):** เรียงข้อมูลตามเวลา แล้วแบ่งแบบ TimeSeriesSplit เป็น 5 รอบ แต่ละรอบให้โมเดลเรียนจากข้อมูล**ช่วงก่อนหน้า**แล้วทดสอบกับข้อมูล**ช่วงถัดมา** (ไม่สลับช่วงเวลา) และเว้นห่าง 12 ชั่วโมงระหว่างชุดเรียนกับชุดทดสอบ เพื่อไม่ให้ผลตอบแทนล่วงหน้า 12 ชั่วโมงของชุดเรียนซ้อนกับชุดทดสอบ  ทุกรอบปรับสเกลตัวแปร (StandardScaler) ด้วยข้อมูลชุดเรียนเท่านั้น  **AUC และสัมประสิทธิ์ในหน้านี้คือค่าเฉลี่ยของ 5 รอบ**
+**วิธีทดสอบ (เฉลี่ยจาก 5 รอบ)**  
+เรียงข้อมูลตามเวลา แล้วแบ่งแบบ TimeSeriesSplit เป็น 5 รอบ แต่ละรอบให้โมเดลเรียนจากข้อมูล**ช่วงก่อนหน้า**แล้วทดสอบกับข้อมูล**ช่วงถัดมา** (ไม่สลับช่วงเวลา) และเว้นห่าง 12 ชั่วโมงระหว่างชุดเรียนกับชุดทดสอบ เพื่อไม่ให้ผลตอบแทนล่วงหน้า 12 ชั่วโมงของชุดเรียนซ้อนกับชุดทดสอบ  ทุกรอบปรับสเกลตัวแปร (StandardScaler) ด้วยข้อมูลชุดเรียนเท่านั้น  **AUC และสัมประสิทธิ์ในหน้านี้คือค่าเฉลี่ยของ 5 รอบ**
 
-**แถวข้อมูล:** ใช้เฉพาะแถวที่ตัวแปรครบทุกตัว (ไม่เติม 0 แทนค่าที่ขาด เพราะ 0 หมายถึงเป็นกลาง) ต้องมีอย่างน้อย 500 แถวและทุกรอบต้องมีทั้งขึ้นและลง ไม่งั้นไม่แสดงผล  ตัวเลขนับรวมทุกสินทรัพย์ในกลุ่มที่เลือก (ทุกชั่วโมงของทุกสินทรัพย์ในที่เดียว)
+**แถวข้อมูล**  
+ใช้เฉพาะแถวที่ตัวแปรครบทุกตัว (ไม่เติม 0 แทนค่าที่ขาด เพราะ 0 หมายถึงเป็นกลาง) ต้องมีอย่างน้อย 500 แถวและทุกรอบต้องมีทั้งขึ้นและลง ไม่งั้นไม่แสดงผล  ตัวเลขนับรวมทุกสินทรัพย์ในกลุ่มที่เลือก (ทุกชั่วโมงของทุกสินทรัพย์ในที่เดียว)
 
-**วิธีอ่านผล:** AUC 0.5 = เดา, 1.0 = ทายถูกหมด  สัมประสิทธิ์มาตรฐาน = ถ้าตัวแปรนั้นเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน โอกาสที่ราคาขึ้นเปลี่ยนไปเท่าไรในสเกลของโมเดล (บวก = ดันให้ขึ้น ลบ = ดันให้ลง)  ผลทั้งหมดเป็นการบรรยายข้อมูลย้อนหลัง ไม่ใช่คำแนะนำการลงทุน
+**วิธีอ่านผล**  
+AUC เท่ากับ 0.5 คือการสุ่ม และ 1.0 คือทายถูกทั้งหมด  
+สัมประสิทธิ์มาตรฐานคือการเปลี่ยนแปลงของโอกาสที่ราคาขึ้น (ในสเกลของโมเดล) เมื่อตัวแปรนั้นเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน ค่าบวกดันให้ขึ้น ค่าลบดันให้ลง  ผลทั้งหมดเป็นการบรรยายข้อมูลย้อนหลัง ไม่ใช่คำแนะนำการลงทุน
 """
 
 
 def logistic_view():
     """The stored Logistic Regression: AUC of every panel and horizon, then the coefficients and the importance of the variable groups."""
     st.caption("ผลเต็มช่วงข้อมูลของระบบ 7.4 (ไม่เปลี่ยนตามเวลา/ชุมชน/เกณฑ์ เพราะเป็นโมเดลที่ตรวจสอบข้ามช่วงเวลา)  โมเดลทายว่าผลตอบแทนจะ \"ขึ้น\" หรือ \"ลง\" "
-               "จากตัวแปรความรู้สึกทั้ง 6 กลุ่ม  AUC 0.5 = ทำนายไม่ได้ดีกว่าเดา")
+               "จากตัวแปรความรู้สึกทั้ง 6 กลุ่ม  AUC เท่ากับ 0.5 หมายถึงทำนายได้ไม่ดีกว่าการสุ่ม")
     with st.expander("รายละเอียดวิธีทำ (Logistic Regression)"):
         st.markdown(METHOD_NOTE)
     scopes = {"ทุกสินทรัพย์รวมกัน": ("all", "ALL")}
@@ -209,9 +220,9 @@ def logistic_view():
     text = chart.mark_text(fontSize=11, color="#222222").encode(text="label:N")
     st.write("AUC แต่ละ panel × Horizon (รูป a3_auc)")
     common.show((rect + text).properties(height=34 * auc_grid.panel.nunique() + 30))
-    st.caption("เหลือง = 0.5 (เดา) เขียว = สูงกว่า 0.5 แดง = ต่ำกว่า 0.5 (สีเดียวกับ heat map ด้านบน)  ค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 คือทำนายไม่ได้ดีกว่าเดา  "
-               "Current Return = ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)")
-    st.write("สัมประสิทธิ์ของแต่ละตัวแปร: ตัวแปรไหนมีผลต่อทิศทางราคาไหม (เลือก panel)")
+    st.caption("สีเหลืองคือ 0.5 (เท่ากับการสุ่ม) สีเขียวคือสูงกว่า 0.5 สีแดงคือต่ำกว่า 0.5 (สีเดียวกับ heat map ด้านบน)  \nค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 หมายความว่าทำนายได้ไม่ดีกว่าการสุ่ม  \n"
+               "Current Return คือ ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)")
+    st.write("สัมประสิทธิ์ของแต่ละตัวแปร (ตัวแปรใดมีผลต่อทิศทางราคา) เลือก panel ได้")
     by_label = {v: k for k, v in labels.items()}                                          # the dropdown lists Global first, then Ticker
     panel_pick = by_label[st.selectbox("panel", list(by_label), key="p5_log_panel", label_visibility="collapsed")]
     one = lg[lg.panel == panel_pick]
@@ -230,7 +241,7 @@ def logistic_view():
     summary = summary.assign(ตัวแปร=summary.column.map(data.variable_label), กลุ่ม=summary.column.map(
         lambda c: data.VARIABLE_GROUPS.get(data.VARIABLES.get(c, ("", ""))[1], "")))
     summary["ทิศทางเดียวกัน"] = ["%d/%d Horizon" % (s, h) for s, h in zip(summary.same_sign, summary.horizons)]
-    st.write("สรุป: แต่ละตัวแปรมีผลต่อโอกาสที่ราคาจะขึ้นกี่จุดเปอร์เซ็นต์ (เฉลี่ย 6 ช่วง: Current Return และ Horizon 1h–12h)")
+    st.write("สรุปผลของแต่ละตัวแปรต่อโอกาสที่ราคาจะขึ้น (จุดเปอร์เซ็นต์) เฉลี่ยจาก 6 ช่วง ได้แก่ Current Return และ Horizon 1h ถึง 12h")
     pad = max(summary.effect.abs().max(), 0.5) * 1.45                                       # room at both ends for the label after the bar
     x_scale = alt.Scale(domain=[-pad, pad], nice=False)
     bars = alt.Chart(summary).encode(y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
@@ -241,13 +252,19 @@ def logistic_view():
     tag_up = bars.mark_text(fontSize=10, color="#444444", align="left", dx=6).transform_filter("datum.effect > 0").encode(x=alt.X("effect:Q", scale=x_scale), text="ทิศทางเดียวกัน:N")
     tag_down = bars.mark_text(fontSize=10, color="#444444", align="right", dx=-6).transform_filter("datum.effect <= 0").encode(x=alt.X("effect:Q", scale=x_scale), text="ทิศทางเดียวกัน:N")
     common.show((layer + tag_up + tag_down + common.zero_rule_x()).properties(height=28 * len(summary) + 40))
-    st.caption("วิธีอ่าน: แท่งเขียว = ตัวแปรสูงขึ้นแล้วโอกาสที่ราคาขึ้นสูงขึ้น แท่งแดง = ต่ำลง  ความยาว = กี่จุดเปอร์เซ็นต์ (เช่น −2 = โอกาสขึ้นลดจาก 50% เหลือราว 48%)  "
-               "ข้อความท้ายแท่ง = ใน 6 ช่วง (Current Return, 1h, 2h, 3h, 6h, 12h) มีกี่ช่วงที่ทิศทางตรงกับค่าเฉลี่ย (6/6 = ทิศทางเดียวกันตลอด)  Current Return คือราคาของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงทำให้ค่าเฉลี่ยมีส่วนของการเคลื่อนไหวพร้อมกันปนอยู่  "
-               "**ตัวแปรที่ \"ดี\" ต้องมีทั้ง 2 อย่าง: แท่งยาวพอ (อย่างน้อยราว 1 จุด%) และทิศทางเดียวกันทุกช่วง (6/6) และโมเดลโดยรวมต้องมี AUC ห่างจาก 0.5** "
-               "ถ้าแท่งสั้น (ไม่ถึง 1 จุด%) หรือทิศทางสลับไปมา แปลว่าไม่มีผล")
+    st.caption("**วิธีอ่าน**  \n"
+               "แท่งสีเขียวคือตัวแปรที่สูงขึ้นแล้วโอกาสที่ราคาขึ้นสูงขึ้น แท่งสีแดงคือตรงข้าม  \n"
+               "ความยาวแท่งคือจำนวนจุดเปอร์เซ็นต์ (เช่น −2 คือโอกาสขึ้นลดจาก 50% เหลือราว 48%)  \n"
+               "ข้อความท้ายแท่งบอกว่าใน 6 ช่วง (Current Return, 1h, 2h, 3h, 6h, 12h) มีกี่ช่วงที่ทิศทางตรงกับค่าเฉลี่ย (6/6 คือทิศทางเดียวกันตลอด)  \n"
+               "Current Return คือราคาของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) ค่าเฉลี่ยจึงมีส่วนของการเคลื่อนไหวพร้อมกันปนอยู่  \n"
+               "**ตัวแปรที่มีผลจริงต้องผ่านครบ 3 เงื่อนไข**  \n"
+               "แท่งยาวพอ (อย่างน้อยราว 1 จุดเปอร์เซ็นต์)  \n"
+               "ทิศทางเดียวกันทุกช่วง (6/6)  \n"
+               "โมเดลโดยรวมมี AUC ห่างจาก 0.5  \n"
+               "หากแท่งสั้นกว่า 1 จุดเปอร์เซ็นต์หรือทิศทางสลับไปมา แสดงว่าไม่มีผล")
 
     # 2. the detail: every horizon
-    st.write("รายละเอียด: ผลของแต่ละตัวแปรในแต่ละ Horizon (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")
+    st.write("รายละเอียดผลของแต่ละตัวแปรในแต่ละ Horizon (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")
     chart = alt.Chart(coefs).encode(
         x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
         y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
@@ -257,8 +274,8 @@ def logistic_view():
                  alt.Tooltip("value:Q", title="สัมประสิทธิ์มาตรฐาน (ค่าดิบของโมเดล)", format="+.4f")])
     text = chart.mark_text(fontSize=11, color="#222222").encode(text="label:N")
     common.show((rect + text).properties(height=30 * len(row_order) + 40))
-    st.caption("ค่าในช่อง = จุดเปอร์เซ็นต์ที่โอกาสขึ้นเปลี่ยนไปเมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน (คิดจากสัมประสิทธิ์ ÷ 4 × 100 ซึ่งใช้ได้ใกล้ 50% ดูสัมประสิทธิ์ดิบของโมเดลได้ที่ tooltip)  "
-               "เขียว = ดันให้ขึ้น แดง = ดันให้ลง  Current Return = ชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักแรงกว่าคอลัมน์อื่นเพราะราคากับความรู้สึกขยับไปพร้อมกัน")
+    st.caption("ค่าในช่องคือจำนวนจุดเปอร์เซ็นต์ที่โอกาสขึ้นเปลี่ยนไปเมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน (คิดจากสัมประสิทธิ์ ÷ 4 × 100 ซึ่งใช้ได้เมื่อโอกาสใกล้ 50% ดูสัมประสิทธิ์ดิบของโมเดลได้ที่ tooltip)  \n"
+               "สีเขียวคือดันให้ขึ้น สีแดงคือดันให้ลง  \nCurrent Return คือชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักแรงกว่าคอลัมน์อื่น เพราะราคากับความรู้สึกเปลี่ยนไปพร้อมกัน")
     imp = one[one.metric.str.startswith("group_importance:")].assign(
         กลุ่มตัวแปร=lambda d: d.metric.str[17:].map(lambda g: data.VARIABLE_GROUPS.get(g, g)), ช่วง=lambda d: d.horizon.map(TARGET_LABEL),
         label=lambda d: d.value.map("{:.3f}".format))
@@ -276,8 +293,8 @@ def logistic_view():
 
 
 st.radio("ตัวแปรที่วัด (ส่วนขยายนอก proposal: proposal วัดค่าความรู้สึกเฉลี่ย)", list(PREDICTOR_OF), horizontal=True, key="p5_predictor")
-st.caption("ตัวแปรที่วัด = ตัวเลขรายชั่วโมงที่เอามาเทียบกับผลตอบแทน  momentum = ความรู้สึกชั่วโมงนี้ลบชั่วโมงก่อน  lag 1h = ความรู้สึกของชั่วโมงก่อนหน้า  "
-           "Reddit Volume Z-score ไม่มีทิศทาง จึงไม่มี Win Rate  การ์ดและทุกแท็บเปลี่ยนตามตัวแปรที่เลือก")
+st.caption("ตัวแปรที่วัดคือตัวเลขรายชั่วโมงที่นำมาเทียบกับผลตอบแทน  \nMomentum คือความรู้สึกชั่วโมงนี้ลบด้วยชั่วโมงก่อน  \nLag 1h คือความรู้สึกของชั่วโมงก่อนหน้า  \n"
+           "Reddit Volume Z-score ไม่มีทิศทาง จึงไม่มี Win Rate  \nการ์ดและทุกแท็บเปลี่ยนตามตัวแปรที่เลือก")
 
 # ---- one tab per kind of text; ALL of them are computed with the page (cached, so a second visit and every tab switch is instant) --------------
 variants = list(data.PANEL_VARIANTS)
@@ -287,13 +304,13 @@ for tab, variant in zip(tabs, variants):
     with tab:
         if variant == "baseline":
             family = "global"
-            st.info("**Baseline ทิศทางสุ่ม คืออะไร:** กลุ่มควบคุมไว้เทียบ  ระบบเอาความรู้สึกจริงออก แล้วสุ่มทิศทางบวก/ลบ (เหมือนโยนเหรียญ) ใส่แทนในชั่วโมงเดียวกับ panel Global "
-                    "แล้วคำนวณ Spearman, Pearson และ Win Rate แบบเดียวกัน  ผลที่ได้คือ \"หน้าตาของการไม่มีสัญญาณเลย\" (Win Rate ราว 50%, p-value กระจาย 0 ถึง 1) "
-                    "ถ้า panel จริงดูไม่ต่างจากแท็บนี้ แปลว่าความรู้สึกจากชุมชน Reddit ไม่ได้ให้ข้อมูลเกี่ยวกับราคา")
+            st.info("**Baseline ทิศทางสุ่มคืออะไร**  \nเป็นกลุ่มควบคุมไว้เทียบ ระบบนำความรู้สึกจริงออก แล้วสุ่มทิศทางบวกหรือลบ (เหมือนโยนเหรียญ) ใส่แทนในชั่วโมงเดียวกับ panel Global "
+                    "แล้วคำนวณ Spearman, Pearson และ Win Rate แบบเดียวกัน  \nผลที่ได้คือ \"หน้าตาของการไม่มีสัญญาณเลย\" (Win Rate ราว 50%, p-value กระจาย 0 ถึง 1) "
+                    "หาก panel จริงไม่ต่างจากแท็บนี้ แสดงว่าความรู้สึกจากชุมชน Reddit ไม่ได้ให้ข้อมูลเกี่ยวกับราคา")
         else:
             family = st.radio("ข้อความที่ใช้", list(data.PANEL_FAMILIES), format_func=data.PANEL_FAMILIES.get, horizontal=True, key="p5_family_" + variant)
         panel_view(stat_all if (variant, family) == ("all", "global") else stat(family, variant), variant)
 
 # ---- the Logistic Regression is below the panels --------------------------------------------------------------------------
-st.subheader("Logistic Regression: ความรู้สึกทำนายทิศทางราคา (ขึ้น/ลง) ได้ไหม")
+st.subheader("Logistic Regression (ความรู้สึกทำนายทิศทางราคาขึ้นหรือลงได้หรือไม่)")
 logistic_view()

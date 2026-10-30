@@ -19,14 +19,14 @@ import streamlit as st  # noqa: E402
 from dashboard import common  # noqa: E402
 from dashboard.common import q  # noqa: E402
 
-common.setup("Reddit Volume: ปริมาณโพสต์และความคิดเห็น", "💬")
+common.setup("Reddit Volume (ปริมาณโพสต์และความคิดเห็น)", "💬")
 _, start, end, _ = common.sidebar(sources=True, multi=True)
 how = common.granularity(start, end)
 src_ids = common.selected_sources()
 tickers = common.selected_tickers()
 restricted = common.tickers_restricted()
 if not src_ids or not tickers:
-    common.nothing_selected(["Reddit Volume รวม", "เฉลี่ยต่อชั่วโมง", "ชั่วโมงที่คึกคักสุด", "Reddit Volume Z-score สูงสุด",
+    common.nothing_selected(["Reddit Volume รวม", "เฉลี่ยต่อชั่วโมง", "ชั่วโมงที่ปริมาณสูงสุด", "Reddit Volume Z-score สูงสุด",
                              "ชั่วโมงที่ Z-score > 1.5"])
 
 everything = q("total_volume_series", start, end, src_ids)      # all texts of the chosen sources (also the base of the rate)
@@ -52,11 +52,11 @@ shown = common.resample(total, {"posts": "sum", "comments": "sum", "texts": "sum
 cards = [(count_name + " รวม", "{:,}".format(int(total.texts.sum())),
           "โพสต์ + ความคิดเห็น" if not restricted else "จำนวนครั้งที่หลักทรัพย์ที่เลือกถูกพูดถึงในแหล่งข้อมูลที่เลือก"),
          ("เฉลี่ยต่อชั่วโมง", "{:,.0f}".format(total.texts.mean()), None),
-         ("ชั่วโมงที่คึกคักสุด", "{:,}".format(int(total.texts.max())), str(total.loc[total.texts.idxmax(), "time"])[:16] + " UTC"),
+         ("ชั่วโมงที่ปริมาณสูงสุด", "{:,}".format(int(total.texts.max())), str(total.loc[total.texts.idxmax(), "time"])[:16] + " UTC"),
          ("Reddit Volume Z-score สูงสุด" if not restricted else "Volume Z-score ของที่เลือก สูงสุด", common.money(total.zscore.max()),
-          "Z-score ของชั่วโมงที่คึกคักผิดปกติที่สุดในช่วงที่เลือก: สูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้ากี่เท่าของส่วนเบี่ยงเบนมาตรฐาน"),
+          "Z-score ของชั่วโมงที่ปริมาณสูงผิดปกติที่สุดในช่วงที่เลือก คือสูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้ากี่เท่าของส่วนเบี่ยงเบนมาตรฐาน"),
          ("ชั่วโมงที่ Z-score > 1.5", "{:,}".format(int((total.zscore > 1.5).sum())),
-          "spike = ชั่วโมงที่ปริมาณสูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้า เกิน 1.5 เท่าของส่วนเบี่ยงเบนมาตรฐาน (เกณฑ์ 1.5 ตาม proposal)")]
+          "Spike คือชั่วโมงที่ปริมาณสูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้าเกิน 1.5 เท่าของส่วนเบี่ยงเบนมาตรฐาน (เกณฑ์ 1.5 ตาม proposal)")]
 if restricted:
     base = float(everything.texts.sum())
     cards.append(("Ticker Mention Rate (%)", "n/a" if not base else "{:.3f}".format(100.0 * total.texts.sum() / base),
@@ -86,9 +86,9 @@ z = common.line(shown, "time", "zscore", "Volume Z-score" + ("" if not restricte
 zero = common.zero_rule()       # Z = 0: normal volume
 rule = common.ref_rule(1.5)
 common.show(z + zero + rule, width="stretch")
-st.caption("เส้นแดง = Z-score ของปริมาณ เทียบกับ 24 ชั่วโมงก่อนหน้า" + ("" if how == "Hourly" else "  \nค่าของแต่ละจุด = ชั่วโมงที่สูงที่สุดในช่วงนั้น") + "  \n"
-           "เส้นทึบเทา = ระดับ 0 (ปริมาณปกติ)  \n"
-           "เส้นประ = ระดับ 1.5 ถ้าเส้นแดงอยู่เหนือเส้นนี้ ถือว่าคึกคักผิดปกติ (spike)")
+st.caption("เส้นแดงคือ Z-score ของปริมาณ เทียบกับ 24 ชั่วโมงก่อนหน้า" + ("" if how == "Hourly" else "  \nค่าของแต่ละจุดคือชั่วโมงที่สูงที่สุดในช่วงนั้น") + "  \n"
+           "เส้นทึบสีเทาคือระดับ 0 (ปริมาณปกติ)  \n"
+           "เส้นประคือระดับ 1.5 หากเส้นแดงอยู่เหนือเส้นนี้ ถือว่าปริมาณสูงผิดปกติ (spike)")
 
 if not restricted:
     by_source = q("total_volume_by_source", start, end, src_ids)
