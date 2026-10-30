@@ -180,12 +180,12 @@ def logistic_view():
         x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
         y=alt.Y("panel_label:N", sort=[labels[p] for p in data.STORED_PANELS], title=None, axis=alt.Axis(labelLimit=260)))
     rect = chart.mark_rect().encode(
-        color=alt.Color("value:Q", title="AUC", scale=alt.Scale(domain=[0.47, 0.53], scheme="redblue", reverse=True, clamp=True)),
+        color=alt.Color("value:Q", title="AUC", scale=alt.Scale(domain=[0.47, 0.53], scheme="redyellowgreen", clamp=True)),
         tooltip=["panel_label", "ช่วง", alt.Tooltip("value:Q", title="AUC", format=".4f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=",")])
     text = chart.mark_text(fontSize=11, color="#222222").encode(text="label:N")
     st.write("AUC แต่ละ panel × Horizon (รูป a3_auc)")
     common.show((rect + text).properties(height=34 * auc_grid.panel.nunique() + 30))
-    st.caption("แดง = สูงกว่า 0.5 น้ำเงิน = ต่ำกว่า 0.5  ค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 คือทำนายไม่ได้ดีกว่าเดา  "
+    st.caption("เหลือง = 0.5 (เดา) เขียว = สูงกว่า 0.5 แดง = ต่ำกว่า 0.5 (สีเดียวกับ heat map ด้านบน)  ค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 คือทำนายไม่ได้ดีกว่าเดา  "
                "Current Return = ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)")
     horizon_pick = st.radio("Horizon ที่ดูสัมประสิทธิ์", list(TARGET_LABEL), index=1, format_func=TARGET_LABEL.get, horizontal=True,
                             key="p5_log_h", label_visibility="collapsed")
