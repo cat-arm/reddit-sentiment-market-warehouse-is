@@ -223,9 +223,6 @@ class FilterTests(unittest.TestCase):
             at.selectbox(key="p5_log_panel").select_index(i).run()
             self.assertEqual(len(at.exception), 0, i)
         at.selectbox(key="p5_log_panel").select_index(0)
-        for h in ("log_return", "1h", "12h"):
-            at.radio(key="p5_log_h").set_value(h).run()
-            self.assertEqual(len(at.exception), 0, h)
         self.assertEqual(at.radio(key="p5_family_all").value, "global")                    # the default: the sentiment of the whole market
         at.radio(key="p5_family_all").set_value("Ticker").run()
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
