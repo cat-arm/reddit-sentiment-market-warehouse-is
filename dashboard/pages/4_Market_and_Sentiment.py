@@ -30,7 +30,7 @@ tickers = common.selected_tickers()
 communities = common.selected_communities()
 statuses = common.selected_statuses()
 if not tickers or not communities or not statuses:
-    common.nothing_selected(["ชั่วโมงที่มีข้อความ", "Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"],
+    common.nothing_selected(["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"],
                             "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
 one = len(tickers) == 1
 names = dict(zip(q("tickers").ticker, q("tickers").name))
@@ -90,13 +90,9 @@ def weighted_resample(df, how):
 
 shown = weighted_resample(series, how)
 
-# KPI cards first (table 15): Sentiment Score, Sentiment Momentum, Reddit Volume Z-score
-text_hours = series.sentiment_mean.notna().sum()
+# KPI cards first: the three KPIs of dashboard 1 (tables 15 and 17): Sentiment Score, Sentiment Momentum, Reddit Volume Z-score
 w = series.reddit_volume.where(series.sentiment_mean.notna())
 common.kpi_cards([
-    ("ชั่วโมงที่มีข้อความ", "{:,} / {:,}".format(int(text_hours), len(series)),
-     "ชั่วโมงที่มีราคาและมีข้อความที่พูดถึง (ตามตัวกรอง) / ชั่วโมงที่มีราคา" + (
-         "" if one else "  เมื่อเลือกหลายตัว นับชั่วโมงที่อย่างน้อยหนึ่งตัวมีแท่งราคา (คริปโตมีทุกชั่วโมง จึงครบทุกชั่วโมงของปี)")),
     ("Sentiment Score", "n/a" if not w.sum() else "{:+.3f}".format((series.sentiment_mean * w).sum() / w.sum()),
      "ผลรวม final_sentiment ÷ จำนวนความคิดเห็น เฉลี่ยถ่วงน้ำหนักด้วยจำนวนข้อความของแต่ละชั่วโมง"),
     ("Sentiment Momentum", common.money(series.momentum.mean()), "(sentiment_mean ชั่วโมงนี้ − ชั่วโมงก่อนหน้า) เฉลี่ย"),
@@ -175,6 +171,23 @@ else:
         columns={"mean_sentiment": "Sentiment Score เฉลี่ย", "pos_ratio": "สัดส่วนบวก", "neg_ratio": "สัดส่วนลบ",
                  "hours_with_text": "ชั่วโมงที่มีข้อความ", "texts": "ข้อความ"}).round(3), hide_index=True,
         width="stretch", height=330)
+
+# ---- data coverage (not a KPI): how many ticker-hours with a price also have text, after the filters of the sidebar
+st.subheader("ความครบถ้วนของข้อมูลความรู้สึก")
+hours = prices[["ticker", "hour_utc"]].merge(per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "majority"]],
+                                              on=["ticker", "hour_utc"], how="left")
+hours["has_text"] = hours.majority.isin(statuses)
+cover = hours.groupby("ticker").agg(price_hours=("hour_utc", "size"), text_hours=("has_text", "sum")).reset_index()
+cover["share"] = cover.text_hours / cover.price_hours
+cover["สินทรัพย์"] = cover.ticker.map(lambda s: "%s · %s" % (s, names.get(s, "")))
+total_row = pd.DataFrame([{"สินทรัพย์": "รวมทุกตัวที่เลือก", "price_hours": cover.price_hours.sum(), "text_hours": cover.text_hours.sum(),
+                           "share": cover.text_hours.sum() / cover.price_hours.sum()}])
+table = pd.concat([total_row, cover.sort_values("share")[["สินทรัพย์", "price_hours", "text_hours", "share"]]], ignore_index=True)
+common.table(table.rename(columns={"price_hours": "ticker-ชั่วโมงที่มีราคา", "text_hours": "ticker-ชั่วโมงที่มีข้อความ (ตามตัวกรอง)",
+                                   "share": "สัดส่วน (มีข้อความ ÷ มีราคา)"}).round(4), hide_index=True, width="stretch",
+             height=min(420, 60 + 36 * len(table)))
+st.caption("รวมทุกตัว = ผลรวม ticker-ชั่วโมงที่มีข้อความของทุกตัวที่เลือก ÷ ผลรวม ticker-ชั่วโมงที่มีราคาของทุกตัวที่เลือก "
+           "(1 ตัว × 1 ชั่วโมง = 1 หน่วย)")
 
 # ---- below: the market measures (close, volume) do not depend on the sentiment filters (communities, majority status)
 st.subheader("ราคาปิดและปริมาณการซื้อขาย (ไม่ขึ้นกับตัวกรองความรู้สึก)")

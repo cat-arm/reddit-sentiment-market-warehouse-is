@@ -178,10 +178,14 @@ class FilterTests(unittest.TestCase):
         full = [m.value for m in at.metric]
         at.sidebar.checkbox(key="f_ss_r/wallstreetbets").set_value(False).run()
         no_wsb = [m.value for m in at.metric]
-        self.assertNotEqual(no_wsb[1], full[1], "Sentiment Score follows the communities")
+        self.assertNotEqual(no_wsb[0], full[0], "Sentiment Score follows the communities")
         at.sidebar.checkbox(key="f_ss_r/wallstreetbets").set_value(True)
         at.sidebar.checkbox(key="f_maj_neutral").set_value(False).run()
         self.assertNotEqual(at.metric[0].value, full[0], "hours with a neutral majority lose their sentiment")
+        self.assertEqual([m.label for m in at.metric], ["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"])
+        cover = [d for d in at.dataframe if "สัดส่วน (มีข้อความ ÷ มีราคา)" in list(d.value.columns)]
+        self.assertEqual(len(cover), 1)
+        self.assertLess(cover[0].value.iloc[0, 2], cover[0].value.iloc[0, 1])                 # neutral hours no longer count
         for key in ("f_ss_" + c for c in COMMUNITIES):
             at.sidebar.checkbox(key=key).set_value(False)
         at = at.run()
