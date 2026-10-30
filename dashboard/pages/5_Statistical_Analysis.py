@@ -1,4 +1,4 @@
-"""Dashboard 7.5-2  Ranking and Statistics  (proposal 7.5 dashboard 2: Historical Win Rate, p-value, Logistic Regression per asset and
+"""Dashboard 7.5-2  Statistical Analysis  (proposal 7.5 dashboard 2 "Ranking and Detection Configuration", table 17: Historical Win Rate, p-value, Logistic Regression per asset and
 horizon; the figures a1_*, a2_*, a3_* of output/figures made interactive).
 
 Same filters as Market and Sentiment (table 17): time, assets, sentiment source (communities, model), the two thresholds, majority
@@ -26,7 +26,7 @@ from scipy import stats  # noqa: E402
 from dashboard import common, data  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
-common.setup("Ranking and Statistics: จัดอันดับและสถิติความสัมพันธ์", "🏆")
+common.setup("Statistical Analysis: วิเคราะห์เชิงสถิติ", "🏆")
 _, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True)
 tickers = common.selected_tickers()
 communities = common.selected_communities()
@@ -187,20 +187,24 @@ def logistic_view():
     common.show((rect + text).properties(height=34 * auc_grid.panel.nunique() + 30))
     st.caption("เหลือง = 0.5 (เดา) เขียว = สูงกว่า 0.5 แดง = ต่ำกว่า 0.5 (สีเดียวกับ heat map ด้านบน)  ค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 คือทำนายไม่ได้ดีกว่าเดา  "
                "Current Return = ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)")
+    st.write("สัมประสิทธิ์: เลือก panel และ Horizon")
+    by_label = {v: k for k, v in labels.items()}                                          # the dropdown lists Global first, then Ticker
+    panel_pick = by_label[st.selectbox("panel", list(by_label), key="p5_log_panel", label_visibility="collapsed")]
     horizon_pick = st.radio("Horizon ที่ดูสัมประสิทธิ์", list(TARGET_LABEL), index=1, format_func=TARGET_LABEL.get, horizontal=True,
                             key="p5_log_h", label_visibility="collapsed")
-    one = lg[(lg.panel == "panel_global") & (lg.horizon == horizon_pick)]
+    one = lg[(lg.panel == panel_pick) & (lg.horizon == horizon_pick)]
     coefs = one[one.metric.str.startswith("coef:")].assign(ตัวแปร=lambda d: d.metric.str[5:])
     imp = one[one.metric.str.startswith("group_importance:")].assign(กลุ่มตัวแปร=lambda d: d.metric.str[17:])
     if not coefs.empty:
-        st.write("สัมประสิทธิ์ของแต่ละตัวแปร (panel Global, %s)" % TARGET_LABEL[horizon_pick])
+        st.write("สัมประสิทธิ์ของแต่ละตัวแปร (%s, %s)" % (labels[panel_pick], TARGET_LABEL[horizon_pick]))
         common.show(alt.Chart(coefs).mark_bar().encode(
             y=alt.Y("ตัวแปร:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320, labelOverlap=False)),
             x=alt.X("value:Q", title="สัมประสิทธิ์มาตรฐาน (เฉลี่ยข้าม 5 ส่วน)"),
             color=alt.condition(alt.datum.value > 0, alt.value("#2ca02c"), alt.value("#d62728")),
             tooltip=["ตัวแปร", alt.Tooltip("value:Q", title="สัมประสิทธิ์", format="+.4f")]).properties(height=26 * len(coefs) + 40))
         st.caption("สัมประสิทธิ์ = ถ้าตัวแปรนั้นเพิ่มขึ้น 1 ส่วนเบี่ยงเบนมาตรฐาน โอกาสที่ราคาขึ้น (เทียบกับลง) เปลี่ยนไปเท่าไรในสเกลของโมเดล  "
-                   "บวก = โอกาสขึ้นสูงขึ้น (เขียว) ลบ = ต่ำลง (แดง)  ค่าทั้งหมดอยู่ที่ไม่เกิน ±0.06 ซึ่งใกล้ 0 มาก คือแต่ละตัวแปรแทบไม่มีอิทธิพล")
+                   "บวก = โอกาสขึ้นสูงขึ้น (เขียว) ลบ = ต่ำลง (แดง)  ใน panel และ Horizon นี้ ค่าที่ไกล 0 ที่สุดคือ %+.3f (%s) ซึ่งใกล้ 0 มาก "
+                   "คือแต่ละตัวแปรแทบไม่มีอิทธิพล (ถ้า AUC ของ panel นี้ใกล้ 0.5)" % (coefs.value.loc[coefs.value.abs().idxmax()], coefs.ตัวแปร.loc[coefs.value.abs().idxmax()]))
     if not imp.empty:
         st.write("ความสำคัญของกลุ่มตัวแปร (ผลรวมขนาดสัมประสิทธิ์ของกลุ่ม)")
         common.show(alt.Chart(imp).mark_bar(color=common.C_PRICE).encode(

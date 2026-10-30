@@ -658,9 +658,9 @@ HORIZON_LABELS = {"log_return": "Current Return", "1h": "1h", "2h": "2h", "3h": 
 PANEL_VARIANTS = {"all": "ทุกข้อความ", "strong": "ความรู้สึกชัดเจน (|s| ≥ 0.05)", "quality": "ความรู้สึกคุณภาพ (|s| ≥ 0.30)",
                   "spike": "ปริมาณพุ่ง (Z-score > 1.5)", "baseline": "Baseline ทิศทางสุ่ม"}
 PANEL_FAMILIES = {"global": "ข้อความทั้งตลาด (ความรู้สึกรวม ใช้กับทุกสินทรัพย์)", "Ticker": "เฉพาะข้อความที่พูดถึงสินทรัพย์นั้นโดยตรง"}   # the first is the default
-STORED_PANELS = {"panel_Ticker": "Ticker", "panel_Ticker_strong": "Ticker strong", "panel_Ticker_quality": "Ticker quality",
-                 "panel_Ticker_spike": "Ticker spike", "panel_global": "Global", "panel_global_strong": "Global strong",
-                 "panel_global_quality": "Global quality", "panel_global_spike": "Global spike", "panel_baseline": "Baseline"}
+STORED_PANELS = {"panel_global": "Global", "panel_global_strong": "Global strong", "panel_global_quality": "Global quality",
+                 "panel_global_spike": "Global spike", "panel_Ticker": "Ticker", "panel_Ticker_strong": "Ticker strong",
+                 "panel_Ticker_quality": "Ticker quality", "panel_Ticker_spike": "Ticker spike", "panel_baseline": "Baseline"}
 
 
 def panel_name(variant, family="Ticker"):

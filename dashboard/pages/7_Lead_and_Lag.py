@@ -4,7 +4,7 @@ Same filters as Market and Sentiment (table 17).  Everything is computed from th
 chosen communities and model, the hours in the range, the two thresholds, the majority status):
   * Spearman correlation between the Sentiment Score of an hour and the return k hours before / after it (k = -6 .. +6),
   * the average Sentiment Score after a fall or a rise of the price (1 / 2 / 3 / 6 / 12 hours before).
-The p-values and win rates per asset are on dashboard 5 (Ranking and Statistics).
+The p-values and win rates per asset are on dashboard 5 (Statistical Analysis).
 Descriptive only: hourly data are autocorrelated, so intervals are narrower than they should be; no investment advice.
 """
 

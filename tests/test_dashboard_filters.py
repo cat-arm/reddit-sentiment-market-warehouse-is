@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
 SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # system 7.1: DimSource filter
 SENTIMENT_PAGE = "pages/4_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
-RANKING_PAGE = "pages/5_Ranking_and_Statistics.py"                            # 7.5-2: p-values, win rate, regression
+RANKING_PAGE = "pages/5_Statistical_Analysis.py"                              # 7.5-2: p-values, win rate, regression
 ANALYSIS_PAGE = "pages/7_Lead_and_Lag.py"                                      # extension: who moves first
 DETECTION_PAGES = {"pages/6_Hot_Events.py": ["h_z", "h_s", "h_n"], SENTIMENT_PAGE: ["d_z", "d_s"], RANKING_PAGE: ["d_z", "d_s"],
                    ANALYSIS_PAGE: ["d_z", "d_s"]}
@@ -219,6 +219,10 @@ class FilterTests(unittest.TestCase):
         for scope in at.radio(key="p5_scope").options:                                       # the Logistic Regression is a section below the tabs
             at.radio(key="p5_scope").set_value(scope).run()
             self.assertEqual(len(at.exception), 0, scope)
+        for i in range(len(at.selectbox(key="p5_log_panel").options)):                        # the coefficients of every one of the nine panels
+            at.selectbox(key="p5_log_panel").select_index(i).run()
+            self.assertEqual(len(at.exception), 0, i)
+        at.selectbox(key="p5_log_panel").select_index(0)
         for h in ("log_return", "1h", "12h"):
             at.radio(key="p5_log_h").set_value(h).run()
             self.assertEqual(len(at.exception), 0, h)

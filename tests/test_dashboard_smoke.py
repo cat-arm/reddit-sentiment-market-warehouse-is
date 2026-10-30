@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
 PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
-         "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Statistics.py", "pages/6_Hot_Events.py",
+         "pages/4_Market_and_Sentiment.py", "pages/5_Statistical_Analysis.py", "pages/6_Hot_Events.py",
          "pages/7_Lead_and_Lag.py"]
 
 
