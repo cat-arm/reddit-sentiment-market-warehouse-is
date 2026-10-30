@@ -12,9 +12,11 @@ ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
 SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # system 7.1: DimSource filter
 SENTIMENT_PAGE = "pages/4_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
+ANALYSIS_PAGE = "pages/7_Statistical_Analysis.py"                              # 7.5-3: deeper analysis (extension)
 DETECTION_PAGES = {"pages/5_Ranking_and_Signals.py": ["s_z", "s_s", "s_h"], "pages/6_Hot_Events.py": ["h_z", "h_s", "h_n"],
-                   "pages/4_Market_and_Sentiment.py": ["s_z", "s_s", "s_h"]}
+                   ANALYSIS_PAGE: ["s_z", "s_s", "s_h"]}
 MAJORITY_PAGES = {SENTIMENT_PAGE, *DETECTION_PAGES}
+SENTIMENT_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE}
 COUNT_PAGES = SOURCE_PAGES | {"pages/3_Price_and_Return.py"}                  # first card = a count that follows the ticks
 TIME_KEYS = ["f_range", "f_gran"]
 COMMUNITIES = ["r/wallstreetbets", "r/stocks", "r/investing", "r/StockMarket", "r/options", "r/CryptoCurrency"]
@@ -26,7 +28,8 @@ TICKERS = ["AAPL", "AMC", "AMD", "BITO", "BRK-B", "COIN", "GME", "HOOD", "IBIT",
            "MSTR", "NVDA", "PLTR", "QQQ", "SPY", "TSLA", "XOM", "CL=F", "ES=F", "GC=F", "NG=F", "NQ=F", "RTY=F",
            "BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD", "SOL-USD", "XRP-USD"]
 PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
-         "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Signals.py", "pages/6_Hot_Events.py"]
+         "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Signals.py", "pages/6_Hot_Events.py",
+         ANALYSIS_PAGE]
 MULTI_PAGES = set(PAGES[1:])                                                  # every dashboard takes several tickers
 
 
@@ -46,7 +49,7 @@ def expected_keys(page):
     if page in SOURCE_PAGES:
         keys += SOURCE_KEYS
     keys += GROUP_KEYS + (["f_tk_" + s for s in TICKERS] if page in MULTI_PAGES else [])
-    if page == SENTIMENT_PAGE:
+    if page in SENTIMENT_PAGES:
         keys += SENTIMENT_KEYS
     keys += DETECTION_PAGES.get(page, [])
     if page in MAJORITY_PAGES:
@@ -173,6 +176,28 @@ class FilterTests(unittest.TestCase):
             at = at.run()
             self.assertEqual(len(at.exception), 0, "%s: %s" % (page, [e.value for e in at.exception]))
 
+    def test_statistical_analysis_page(self):
+        """Stored analyses (A1-A3) follow the ticker filter; the live part follows every filter; nothing ticked = cards 0."""
+        at = self.run_page(ANALYSIS_PAGE)
+        self.assertEqual([m.label for m in at.metric], ["Spearman ที่ p < 0.05", "ผ่านการปรับ Benjamini-Hochberg", "Win Rate ที่ p < 0.05",
+                                                         "Logistic AUC เฉลี่ย"])
+        full = [m.value for m in at.metric]
+        self.assertRegex(full[0], r"^\d+ / \d+$")
+        for key, values in (("a_method", ["Pearson (เชิงเส้น)"]), ("a_horizon", ["Current Return", "12h"]), ("a_win_horizon", ["1h", "12h"]),
+                            ("a_log_horizon", ["1h", "12h"]), ("s_past_hours", ["2 ชั่วโมงก่อนหน้า", "12 ชั่วโมงก่อนหน้า"])):
+            for value in values:
+                at.radio(key=key).set_value(value).run()
+                self.assertEqual(len(at.exception), 0, "%s=%s: %s" % (key, value, [e.value for e in at.exception]))
+        at.sidebar.slider(key="s_z").set_value(3.0).run()                        # a stricter threshold: fewer signal hours, no error
+        self.assertEqual(len(at.exception), 0)
+        at = tick_only(at, ["SPY"])
+        self.assertEqual(len(at.exception), 0)
+        self.assertNotEqual([m.value for m in at.metric], full)                 # the cards follow the tickers
+        for key in TICKERS:
+            at.sidebar.checkbox(key="f_tk_" + key).set_value(False)
+        at = at.run()
+        self.assertEqual([m.value for m in at.metric], ["0"] * 4)
+
     def test_system_75_dimension_filters_change_the_numbers(self):
         """DimSentimentSource, DimMajoritySentiment and DimDetectionConfig are real filters, not decoration."""
         at = self.run_page(SENTIMENT_PAGE)
@@ -190,9 +215,6 @@ class FilterTests(unittest.TestCase):
         self.assertNotEqual(at.metric[0].value, full[0], "hours with a neutral majority lose their sentiment")
         self.assertEqual([m.label for m in at.metric], ["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"])
         at.sidebar.checkbox(key="f_maj_neutral").set_value(True)
-        for hours in ("2 ชั่วโมงก่อนหน้า", "12 ชั่วโมงก่อนหน้า"):                                           # price first, sentiment after
-            at.radio(key="s_past_hours").set_value(hours).run()
-            self.assertEqual(len(at.exception), 0, hours)
         for measure in ("Current Return (ชั่วโมงเดียวกัน)", "ผลตอบแทนล่วงหน้า 12h"):                       # sentiment vs return bars
             at.radio(key="s_bar_measure").set_value(measure).run()
             self.assertEqual(len(at.exception), 0, measure)

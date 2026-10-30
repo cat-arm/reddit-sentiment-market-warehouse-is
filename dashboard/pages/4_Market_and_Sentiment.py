@@ -24,7 +24,7 @@ from dashboard import common, data  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
 common.setup("Market and Sentiment: ภาพรวมตลาดและความรู้สึก", "🧭")
-_, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="signals", majority=True)
+_, start, end, _ = common.sidebar(multi=True, sentiment=True, majority=True)
 how = common.granularity(start, end, "g_sent")
 tickers = common.selected_tickers()
 communities = common.selected_communities()
@@ -145,56 +145,6 @@ else:
                "ใช้ผลตอบแทนแทนระดับราคา เพราะระดับราคาขึ้นลงตามแนวโน้มระยะยาว เทียบกับความรู้สึกตรงๆ จะหลอกตา"
                % (paired.sentiment_mean.corr(paired[column], method="spearman"), "{:,}".format(len(paired))))
 
-# ---- who moves first?  the same ticker-hours as above, now looking back as well as forward
-st.subheader("ใครขยับก่อนกัน: ความรู้สึก หรือ ราคา")
-timing = per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "sentiment_mean", "majority"]]
-timing = timing[timing.majority.isin(statuses)].merge(prices[["ticker", "hour_utc", "log_return"]], on=["ticker", "hour_utc"], how="left")
-lags = data.lag_correlation(timing)
-if lags.rho.notna().sum() == 0:
-    st.info("ตัวอย่างน้อยเกินไปสำหรับวัดความสัมพันธ์ข้ามเวลา")
-else:
-    lags["ช่วงเวลา"] = lags.lag.map(lambda k: "ชั่วโมงเดียวกัน" if k == 0 else ("ราคาก่อน %d ชม." % -k if k < 0 else "ราคาหลัง %d ชม." % k))
-    lags["ฝั่ง"] = lags.lag.map(lambda k: "ราคาขยับก่อนข้อความ" if k < 0 else ("ชั่วโมงเดียวกัน" if k == 0 else "ราคาขยับหลังข้อความ"))
-    base = alt.Chart(lags).encode(x=alt.X("lag:O", title="ผลตอบแทนของชั่วโมงที่ห่างจากชั่วโมงที่มีข้อความกี่ชั่วโมง (ลบ = ก่อนมีข้อความ, บวก = หลังมีข้อความ)",
-                                          axis=alt.Axis(labelAngle=0)))
-    bars = base.mark_bar().encode(
-        y=alt.Y("rho:Q", title="Spearman ρ (ความรู้สึก vs ผลตอบแทน)"),
-        color=alt.Color("ฝั่ง:N", scale=alt.Scale(domain=["ราคาขยับก่อนข้อความ", "ชั่วโมงเดียวกัน", "ราคาขยับหลังข้อความ"],
-                                                  range=["#d62728", "#7f7f7f", "#1f77b4"]), legend=alt.Legend(orient="top", title=None)),
-        tooltip=["ช่วงเวลา", alt.Tooltip("rho:Q", title="Spearman ρ", format="+.3f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","),
-                 alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format="+.3f"), alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format="+.3f")])
-    errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
-    zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
-    st.altair_chart(bars + errors + zero, width="stretch")
-    st.caption("วิธีอ่าน: แต่ละแท่งคือความสัมพันธ์ระหว่าง Sentiment Score ของชั่วโมงที่มีข้อความ กับผลตอบแทนรายชั่วโมงที่ห่างไปกี่ชั่วโมง "
-               "ถ้าราคาขยับก่อนแล้วคนค่อยโพสต์ แท่งสีแดง (ฝั่งซ้าย) จะสูงกว่าสีน้ำเงิน ถ้าความรู้สึกนำราคา แท่งสีน้ำเงิน (ฝั่งขวา) จะสูงกว่า "
-               "เส้นดำ = ช่วงเชื่อมั่น 95% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีความสัมพันธ์ไม่ได้")
-
-st.subheader("ราคาขึ้นหรือลงมาก่อน แล้วความรู้สึกเป็นอย่างไร")
-PAST = {"%d ชั่วโมงก่อนหน้า" % h: h for h in (1, 2, 3, 6, 12)}              # the horizons of the proposal (1 / 2 / 3 / 6 / 12 hours)
-st.session_state.setdefault("s_past_hours", "3 ชั่วโมงก่อนหน้า")
-past_pick = st.radio("ดูผลตอบแทน", list(PAST), horizontal=True, key="s_past_hours", label_visibility="collapsed")
-timing = timing.assign(past=data.past_return(timing, PAST[past_pick]))
-rb = data.return_buckets(timing, "past")
-if rb.empty:
-    st.info("ตัวอย่างน้อยเกินไปสำหรับแบ่งกลุ่มตามผลตอบแทนก่อนหน้า (ต้องมีอย่างน้อย 50 ticker-ชั่วโมงที่มีทั้งข้อความและราคาก่อนหน้า)")
-else:
-    price_levels = ["ตกแรงสุด", "ตกเล็กน้อย", "ทรงตัว", "ขึ้นเล็กน้อย", "ขึ้นแรงสุด"]
-    rb["ระดับราคา"] = [price_levels[int(b)] if len(rb) == 5 else "กลุ่ม %d" % (int(b) + 1) for b in rb.bucket]
-    rb["ป้าย"] = rb.apply(lambda r: "%s (%+.2f%% ถึง %+.2f%%)" % (r["ระดับราคา"], r.lo, r.hi), axis=1)
-    base = alt.Chart(rb).encode(x=alt.X("ป้าย:N", sort=list(rb["ป้าย"]), axis=alt.Axis(labelAngle=0, labelLimit=200),
-                                        title="ผลตอบแทนก่อนชั่วโมงที่มีข้อความ (แบ่ง 5 กลุ่มเท่าๆ กัน จากตกแรงสุดไปขึ้นแรงสุด)"))
-    bars = base.mark_bar(color="#1f77b4").encode(
-        y=alt.Y("mean:Q", title="Sentiment Score เฉลี่ย"),
-        tooltip=["ระดับราคา", alt.Tooltip("mean_return:Q", title="ผลตอบแทนก่อนหน้าเฉลี่ย (%)", format="+.3f"),
-                 alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","), alt.Tooltip("mean:Q", title="Sentiment Score เฉลี่ย", format="+.4f"),
-                 alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format="+.4f"), alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format="+.4f")])
-    errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
-    zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
-    st.altair_chart(bars + errors + zero, width="stretch")
-    st.caption("วิธีอ่าน: แบ่ง ticker-ชั่วโมงที่มีข้อความเป็น 5 กลุ่มเท่าๆ กันตามผลตอบแทนของราคาก่อนชั่วโมงนั้น แล้วดู Sentiment Score เฉลี่ยของแต่ละกลุ่ม "
-               "ถ้า \"ราคาตก คนก็กลัว\" แท่งซ้าย (ตกแรงสุด) ควรต่ำกว่าแท่งขวา (ขึ้นแรงสุด) เส้นดำ = ช่วงเชื่อมั่น 95%")
-
 st.subheader("สัดส่วนความคิดเห็นเชิงบวก / ลบ / เป็นกลาง")
 RATIO_MODES = ("ความคิดเห็นจริง (สัดส่วนข้อความ)", "ผลโหวตส่วนใหญ่ (สัดส่วนชั่วโมง)")
 mode = st.radio("นับสัดส่วนจาก", RATIO_MODES, horizontal=True, key="s_ratio_mode", label_visibility="collapsed")
@@ -219,41 +169,6 @@ if not ratios.empty:
     st.altair_chart(area, width="stretch")
     st.caption(caption)
 
-# ---- DimDetectionConfig drill-down: the hours that meet the thresholds of the sidebar, and what the price did next
-z_th = st.session_state.get("s_z", 1.5)
-s_th = st.session_state.get("s_s", 0.30)
-horizon = st.session_state.get("s_h", common.data.HORIZONS[0])
-st.subheader("ชั่วโมงที่เข้าเงื่อนไขตรวจจับ (Z-score > %.1f และ |Sentiment| ≥ %.2f) ราคาเป็นอย่างไรต่อ %s" % (z_th, s_th, horizon))
-hours = per_ticker.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "texts", "sentiment_mean", "zscore", "majority"]]
-hours = hours[hours.majority.isin(statuses)].merge(prices[["ticker", "hour_utc", "future_return_" + horizon]], on=["ticker", "hour_utc"])
-col = "future_return_" + horizon
-hit = data.signal_hours(hours, z_th, s_th)
-if hit.empty:
-    st.info("ไม่พบชั่วโมงที่เข้าเงื่อนไขในช่วงที่เลือก ลองลดเกณฑ์ Z-score หรือ Sentiment Threshold ที่แถบด้านซ้าย")
-else:
-    rs = data.return_by_signal(hours, col, z_th, s_th)
-    rs["กลุ่ม"] = rs.group.map({"signal_positive": "สัญญาณบวก", "signal_negative": "สัญญาณลบ", "all_hours": "ทุกชั่วโมงที่มีข้อความ (เทียบ)"})
-    rs["ป้าย"] = ["%s (n=%s)" % (g, "{:,}".format(n)) for g, n in zip(rs["กลุ่ม"], rs.n)]
-    base = alt.Chart(rs).encode(x=alt.X("ป้าย:N", sort=list(rs["ป้าย"]), axis=alt.Axis(labelAngle=0, labelLimit=240),
-                                        title="ชนิดของชั่วโมง (n = จำนวน ticker-ชั่วโมงที่มีผลตอบแทน %s)" % horizon))
-    bars = base.mark_bar(color="#1f77b4").encode(
-        y=alt.Y("mean:Q", title="ผลตอบแทนล่วงหน้า %s เฉลี่ย (%%)" % horizon),
-        tooltip=["กลุ่ม", alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","), alt.Tooltip("mean:Q", title="ผลตอบแทนเฉลี่ย (%)", format="+.4f"),
-                 alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format="+.4f"), alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format="+.4f")])
-    errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
-    zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
-    st.altair_chart(bars + errors + zero, width="stretch")
-    st.caption("พบ %s ticker-ชั่วโมงที่ Reddit คึกคักผิดปกติ (Z-score เกินเกณฑ์) และความรู้สึกชัดเจน (|Sentiment Score| ถึงเกณฑ์)  \n"
-               "เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าคร่อมศูนย์ แปลว่าแยกจากไม่มีการขยับไม่ได้ เทียบกับแท่งขวาสุดที่เป็นค่าเฉลี่ยของทุกชั่วโมง"
-               % "{:,}".format(len(hit)))
-    listing = hit.sort_values("hour_utc", ascending=False).head(300).copy()
-    listing["เวลา (UTC)"] = pd.to_datetime(listing.hour_utc, unit="s", utc=True).dt.strftime("%Y-%m-%d %H:%M")
-    listing["สินทรัพย์"] = listing.ticker.map(lambda s: "%s · %s" % (s, names.get(s, "")))
-    common.table(listing[["เวลา (UTC)", "สินทรัพย์", "direction", "sentiment_mean", "texts", "zscore", col]].rename(
-        columns={"direction": "ทิศทาง", "sentiment_mean": "Sentiment Score", "texts": "ข้อความ", "zscore": "Volume Z-score",
-                 col: "ผลตอบแทนล่วงหน้า %s (%%)" % horizon}).round(3), hide_index=True, width="stretch", height=380)
-    st.caption("รายการล่าสุดไม่เกิน 300 ชั่วโมง ผลตอบแทนว่าง = ไม่มีแท่งราคาที่ครบ %s หลังชั่วโมงนั้น" % horizon)
-
 st.subheader("สินทรัพย์ใดมีความรู้สึกเชิงบวก/ลบมากที่สุดในช่วงนี้")
 hours = prices[["ticker", "hour_utc"]]
 by_ticker = per_ticker.rename(columns={"series": "ticker"}).merge(hours, on=["ticker", "hour_utc"])
@@ -261,12 +176,30 @@ by_ticker = by_ticker[by_ticker.majority.isin(statuses) & by_ticker.sentiment_me
 if by_ticker.empty:
     st.info("ไม่มีข้อความตามตัวกรองที่เลือก")
 else:
+    SPIKE_Z = 1.5                                                           # proposal: spike when Z-score > 1.5
     rank = by_ticker.groupby("ticker").agg(mean_sentiment=("sentiment_mean", "mean"), pos_ratio=("pos_ratio", "mean"),
                                            neg_ratio=("neg_ratio", "mean"), hours_with_text=("sentiment_mean", "size"),
-                                           texts=("texts", "sum")).reset_index().sort_values("mean_sentiment", ascending=False)
+                                           texts=("texts", "sum"), max_z=("zscore", "max"),
+                                           spike_hours=("zscore", lambda s: int((s > SPIKE_Z).sum()))).reset_index().sort_values(
+        "mean_sentiment", ascending=False)
     rank["สินทรัพย์"] = rank.ticker.map(lambda s: "%s · %s" % (s, names.get(s, "")))
     rank["กลุ่ม"] = rank.ticker.map(dict(zip(q("tickers").ticker, q("tickers").big_group))).map(GROUP_LABELS)
-    common.table(rank[["สินทรัพย์", "กลุ่ม", "mean_sentiment", "pos_ratio", "neg_ratio", "hours_with_text", "texts"]].rename(
+    common.table(rank[["สินทรัพย์", "กลุ่ม", "mean_sentiment", "pos_ratio", "neg_ratio", "max_z", "spike_hours", "hours_with_text",
+                       "texts"]].rename(
         columns={"mean_sentiment": "Sentiment Score เฉลี่ย", "pos_ratio": "สัดส่วนบวก", "neg_ratio": "สัดส่วนลบ",
+                 "max_z": "Volume Z-score สูงสุด", "spike_hours": "ชั่วโมงที่ Z-score > 1.5",
                  "hours_with_text": "ชั่วโมงที่มีข้อความ", "texts": "ข้อความ"}).round(3), hide_index=True,
         width="stretch", height=330)
+    # the same by asset class: the texts-weighted Sentiment Score and the Z-score peak of the class
+    by_ticker = by_ticker.assign(group=by_ticker.ticker.map(dict(zip(q("tickers").ticker, q("tickers").big_group))).map(GROUP_LABELS),
+                                 weighted=by_ticker.sentiment_mean * by_ticker.texts)
+    groups_table = by_ticker.groupby("group").agg(assets=("ticker", "nunique"), weighted=("weighted", "sum"), texts=("texts", "sum"),
+                                                  max_z=("zscore", "max"),
+                                                  spike_hours=("zscore", lambda s: int((s > SPIKE_Z).sum()))).reset_index()
+    groups_table["Sentiment Score เฉลี่ย"] = groups_table.weighted / groups_table.texts
+    common.table(groups_table[["group", "assets", "Sentiment Score เฉลี่ย", "max_z", "spike_hours", "texts"]].rename(
+        columns={"group": "กลุ่มสินทรัพย์", "assets": "จำนวนสินทรัพย์", "max_z": "Volume Z-score สูงสุด",
+                 "spike_hours": "ชั่วโมงที่ Z-score > 1.5", "texts": "ข้อความ"}).round(3).sort_values(
+        "Sentiment Score เฉลี่ย", ascending=False), hide_index=True, width="stretch")
+    st.caption("Volume Z-score คิดจากจำนวนข้อความที่พูดถึงสินทรัพย์นั้นเทียบ 24 ชั่วโมงก่อนหน้า (ชุมชนและแบบจำลองตามตัวกรอง) "
+               "ชั่วโมงที่ Z-score > 1.5 คือชั่วโมงที่ปริมาณสูงกว่าปกติ ตามเกณฑ์ของ proposal")

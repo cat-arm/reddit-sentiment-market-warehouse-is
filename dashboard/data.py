@@ -640,6 +640,50 @@ def ticker_period_stats(db_path, start, end, horizon):
           AND hour_utc BETWEEN ? AND ? GROUP BY ticker""" % (col, col), (start, end))
 
 
+HORIZON_LABELS = {"log_return": "Current Return", "1h": "1h", "2h": "2h", "3h": "3h", "6h": "6h", "12h": "12h"}
+
+
+def correlation_results(db_path):
+    """A1: Pearson and Spearman correlation of the ticker's own Sentiment Score (panel_Ticker) with the Current Return
+    ('log_return') and the future returns, per ticker.  p_value = raw, p_bh = Benjamini-Hochberg (EXTENSION).  NULL = not
+    enough data (n < 30).  Full-sample results: they do not follow the time filter."""
+    return _read(db_path, """
+        SELECT ticker, big_group, horizon, metric_name AS method, metric_value AS rho, p_value, p_value_bh AS p_bh,
+               n_samples AS n, status
+        FROM analysis_results WHERE analysis = 'correlation' AND panel_name = 'panel_Ticker' AND level = 'ticker'
+          AND predictor = 'sentiment_mean' AND metric_name IN ('pearson', 'spearman')""")
+
+
+def winrate_results(db_path):
+    """A2: Historical Win Rate (%) of the sign of the sentiment against the direction of the future return, the baseline
+    (always-up rate, %), the Binomial p-value and the number of hours, per ticker and horizon (panel_Ticker)."""
+    df = _read(db_path, """
+        SELECT ticker, big_group, horizon, metric_name, metric_value * 100.0 AS value, p_value, n_samples AS n
+        FROM analysis_results WHERE analysis = 'winrate' AND panel_name = 'panel_Ticker' AND level = 'ticker'
+          AND predictor = 'sign(sentiment_mean)' AND metric_name IN ('winrate', 'baseline_winrate')""")
+    win = df[df.metric_name == "winrate"].rename(columns={"value": "winrate"}).drop(columns="metric_name")
+    base = df[df.metric_name == "baseline_winrate"][["ticker", "horizon", "value"]].rename(columns={"value": "baseline"})
+    return win.merge(base, on=["ticker", "horizon"], how="left")
+
+
+def logistic_results(db_path):
+    """A3: Logistic Regression (TimeSeriesSplit 5 folds, gap 12) of the up/down of the future return: AUC, its spread over
+    the folds, standardized coefficients and the importance of each variable group, for all tickers pooled ('all') and
+    per asset class ('big_group'); panel_baseline = the random-direction yardstick.
+    -> DataFrame(panel, level, big_group, horizon, metric, value, n, status)."""
+    return _read(db_path, """
+        SELECT panel_name AS panel, level, big_group, horizon, metric_name AS metric, metric_value AS value,
+               n_samples AS n, status
+        FROM analysis_results WHERE analysis = 'logistic' AND panel_name IN ('panel_Ticker', 'panel_baseline')
+          AND level IN ('all', 'big_group')""")
+
+
+def significant_share(df, p="p_value", alpha=0.05):
+    """(tests with p < alpha, tests that have a p-value): rows without a p-value (not enough data) are not tests."""
+    ok = df[p].dropna()
+    return int((ok < alpha).sum()), int(len(ok))
+
+
 def signal_panel(db_path):
     """Ticker-hours with Reddit data (input of the on-demand signal engine, ~120 k rows)."""
     return _read(db_path, """

@@ -181,6 +181,16 @@ class SignalTests(unittest.TestCase):
         self.assertTrue(np.isnan(r.loc["signal_positive", "mean"]))
 
 
+class SignificantShareTests(unittest.TestCase):
+    def test_rows_without_a_p_value_are_not_tests(self):
+        df = pd.DataFrame({"p_value": [0.01, 0.2, np.nan, 0.05, 0.049]})
+        self.assertEqual(data.significant_share(df), (2, 4))            # 0.05 itself is not below alpha; NaN is no test
+
+    def test_another_column_and_alpha(self):
+        df = pd.DataFrame({"p_bh": [0.01, 0.2], "p_value": [0.5, 0.5]})
+        self.assertEqual(data.significant_share(df, "p_bh", 0.25), (2, 2))
+
+
 class VoteSharesTests(unittest.TestCase):
     def frame(self):
         times = pd.date_range("2026-03-01", periods=6, freq="h", tz="UTC")

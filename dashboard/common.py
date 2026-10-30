@@ -533,14 +533,19 @@ def multi_series_chart(df, x, y, series, title, height=300, bar=False, fmt=None,
 
 
 def dual_axis(df, x, left, right, left_title, right_title, height=300):
-    """Two series with independent y axes (e.g. close price vs sentiment_mean)."""
+    """Two series with independent y axes (e.g. close price vs sentiment_mean).  Hovering anywhere on the chart shows the
+    nearest period with BOTH values (a transparent point layer carries the tooltip, so the thin red line is not hard to hit)."""
     base = alt.Chart(df).encode(x=alt.X(x + ":T", title=None))
-    a = base.mark_line(color="#1f77b4").encode(
-        y=alt.Y(left + ":Q", title=left_title, scale=alt.Scale(zero=False)),
-        tooltip=[alt.Tooltip(x + ":T"), alt.Tooltip(left + ":Q", format=",.4g")])
-    b = base.mark_line(color="#d62728", opacity=0.8).encode(
-        y=alt.Y(right + ":Q", title=right_title), tooltip=[alt.Tooltip(right + ":Q", format=",.3f")])
-    return alt.layer(a, b).resolve_scale(y="independent").properties(height=height).interactive()
+    a = base.mark_line(color="#1f77b4").encode(y=alt.Y(left + ":Q", title=left_title, scale=alt.Scale(zero=False)))
+    b = base.mark_line(color="#d62728", opacity=0.8).encode(y=alt.Y(right + ":Q", title=right_title))
+    tip = [alt.Tooltip(x + ":T", title="เวลา"), alt.Tooltip(left + ":Q", title=left_title, format=",.4g"),
+           alt.Tooltip(right + ":Q", title=right_title, format="+.3f")]
+    pick = alt.selection_point(nearest=True, on="mouseover", fields=[x], empty=False, clear="mouseout")
+    hover_a = base.mark_circle(size=60, color="#1f77b4").encode(y=alt.Y(left + ":Q", scale=alt.Scale(zero=False)), tooltip=tip,
+                                                                opacity=alt.condition(pick, alt.value(1), alt.value(0))).add_params(pick)
+    hover_b = base.mark_circle(size=60, color="#d62728").encode(y=alt.Y(right + ":Q"), tooltip=tip,
+                                                                opacity=alt.condition(pick, alt.value(1), alt.value(0)))
+    return alt.layer(a, b, hover_a, hover_b).resolve_scale(y="independent").properties(height=height).interactive()
 
 
 def table(df, **kwargs):
