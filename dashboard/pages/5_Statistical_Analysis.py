@@ -210,13 +210,6 @@ def logistic_view():
     if coefs.empty:
         st.info("ไม่มีสัมประสิทธิ์ของ panel นี้ในขอบเขตที่เลือก")
         return
-    panel_auc = one[(one.metric == "auc") & (one.horizon != "log_return")].value.mean()
-    works = abs(panel_auc - 0.5) >= 0.02
-    if works:
-        st.success("AUC เฉลี่ยของ panel นี้ (1h–12h) = %.3f ห่างจาก 0.5 พอสมควร ตัวแปรที่ผลสม่ำเสมอข้าม Horizon อาจมีความหมาย" % panel_auc)
-    else:
-        st.warning("AUC เฉลี่ยของ panel นี้ (1h–12h) = %.3f ใกล้ 0.5 มาก คือโมเดลทายทิศทางราคาไม่ได้ดีกว่าเดา  "
-                   "สัมประสิทธิ์ด้านล่างจึงเป็นแค่เสียงรบกวนของข้อมูล ไม่ควรตีความว่าตัวแปรไหนดีหรือไม่ดี" % panel_auc)
     coefs = coefs.assign(ตัวแปร=coefs.column.map(data.variable_label), ช่วง=coefs.horizon.map(TARGET_LABEL),
                          กลุ่ม=coefs.column.map(lambda c: data.VARIABLE_GROUPS.get(data.VARIABLES.get(c, ("", ""))[1], "")),
                          effect=data.effect_points(coefs.value))
