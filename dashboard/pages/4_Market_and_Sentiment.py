@@ -219,12 +219,6 @@ if not ratios.empty:
     st.altair_chart(area, width="stretch")
     st.caption(caption)
 
-st.subheader("ปริมาณการกล่าวถึง")
-st.altair_chart(common.line(shown, "time", "reddit_volume", "Reddit Volume (ข้อความ)", "#ff7f0e", 200, bar=common.kind(st, "s_volume")),
-                width="stretch")
-st.altair_chart(common.line(shown, "time", "zscore", "Reddit Volume Z-score", "#d62728", 200, bar=common.kind(st, "s_z")),
-                width="stretch")
-
 st.subheader("ประเภทความรู้สึกส่วนใหญ่ (จำนวนชั่วโมง)")
 maj = series.majority_final_status.value_counts().rename_axis("ประเภท").reset_index(name="ชั่วโมง")
 common.table(maj, hide_index=True, width="stretch")
