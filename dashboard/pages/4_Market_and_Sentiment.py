@@ -124,21 +124,23 @@ buckets = data.sentiment_buckets(samples, column)
 if buckets.empty:
     st.info("ตัวอย่างน้อยเกินไปสำหรับแบ่งกลุ่มความรู้สึก (ต้องมีอย่างน้อย 50 ticker-ชั่วโมงที่มีทั้งข้อความและผลตอบแทน)")
 else:
-    names5 = ["กลุ่ม 1 (ต่ำสุด)", "กลุ่ม 2", "กลุ่ม 3", "กลุ่ม 4", "กลุ่ม 5 (สูงสุด)"]
-    buckets["กลุ่มความรู้สึก"] = [names5[int(b)] if len(buckets) == 5 else "กลุ่ม %d" % (int(b) + 1) for b in buckets.bucket]
-    buckets["ช่วงความรู้สึก"] = buckets.apply(lambda r: "%+.3f ถึง %+.3f" % (r.lo, r.hi), axis=1)
-    order = list(buckets["กลุ่มความรู้สึก"])
-    base = alt.Chart(buckets).encode(x=alt.X("กลุ่มความรู้สึก:N", sort=order, title="ระดับความรู้สึก แบ่งเป็นกลุ่มเท่าๆ กัน จากต่ำไปสูง"))
+    names5 = ["ลบมากสุด", "ค่อนไปทางลบ", "กลางๆ", "ค่อนไปทางบวก", "บวกมากสุด"]
+    buckets["ระดับความรู้สึก"] = [names5[int(b)] if len(buckets) == 5 else "กลุ่ม %d" % (int(b) + 1) for b in buckets.bucket]
+    buckets["ช่วงความรู้สึก"] = buckets.apply(lambda r: "Sentiment Score %+.2f ถึง %+.2f" % (r.lo, r.hi), axis=1)
+    buckets["ป้าย"] = buckets.apply(lambda r: "%s (%+.2f ถึง %+.2f)" % (r["ระดับความรู้สึก"], r.lo, r.hi), axis=1)
+    order = list(buckets["ป้าย"])
+    base = alt.Chart(buckets).encode(x=alt.X("ป้าย:N", sort=order, axis=alt.Axis(labelAngle=0, labelLimit=200), title="ระดับความรู้สึก (ช่วง Sentiment Score ของแต่ละกลุ่ม)"))
     bars = base.mark_bar(color="#1f77b4").encode(
         y=alt.Y("mean:Q", title="ผลตอบแทนเฉลี่ย (%)"),
-        tooltip=["กลุ่มความรู้สึก", "ช่วงความรู้สึก", alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","),
+        tooltip=["ระดับความรู้สึก", "ช่วงความรู้สึก", alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=","),
                  alt.Tooltip("mean:Q", title="ค่าเฉลี่ย (%)", format=".4f"), alt.Tooltip("ci_lo:Q", title="ช่วงเชื่อมั่น 95% ล่าง", format=".4f"),
                  alt.Tooltip("ci_hi:Q", title="ช่วงเชื่อมั่น 95% บน", format=".4f")])
     errors = base.mark_rule(color="#222222", strokeWidth=2).encode(y="ci_lo:Q", y2="ci_hi:Q")
     zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#555555").encode(y="y:Q")
     st.altair_chart(bars + errors + zero, width="stretch")
     paired = samples[["sentiment_mean", column]].dropna()
-    st.caption("แท่ง = ผลตอบแทนเฉลี่ยของแต่ละกลุ่มความรู้สึก เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าเส้นคลุมศูนย์ แปลว่าแยกจากศูนย์ไม่ได้  \n"
+    st.caption("วิธีอ่าน: เอาทุก ticker-ชั่วโมงที่มีข้อความมาเรียงตาม Sentiment Score จากลบสุดไปบวกสุด แล้วหั่นเป็น 5 กอง กองละเท่าๆ กัน (กองซ้ายสุด = 20%% ที่ลบที่สุด, ขวาสุด = 20%% ที่บวกที่สุด) ตัวเลขในวงเล็บคือช่วง Sentiment Score ของกองนั้น  \n"
+               "แท่ง = ผลตอบแทนเฉลี่ยของกองนั้น เส้นดำ = ช่วงเชื่อมั่น 95%% ถ้าเส้นคลุมศูนย์ แปลว่าแยกจากศูนย์ไม่ได้  \n"
                "Spearman ρ ระหว่างความรู้สึกกับผลตอบแทน = %+.3f (%s ticker-ชั่วโมง)  \n"
                "ใช้ผลตอบแทนแทนระดับราคา เพราะระดับราคาขึ้นลงตามแนวโน้มระยะยาว เทียบกับความรู้สึกตรงๆ จะหลอกตา"
                % (paired.sentiment_mean.corr(paired[column], method="spearman"), "{:,}".format(len(paired))))
