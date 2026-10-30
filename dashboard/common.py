@@ -532,20 +532,25 @@ def multi_series_chart(df, x, y, series, title, height=300, bar=False, fmt=None,
     return chart.properties(height=height).interactive()
 
 
-def dual_axis(df, x, left, right, left_title, right_title, height=300):
-    """Two series with independent y axes (e.g. close price vs sentiment_mean).  Hovering anywhere on the chart shows the
-    nearest period with BOTH values (a transparent point layer carries the tooltip, so the thin red line is not hard to hit)."""
+def dual_axis(df, x, left, right, left_title, right_title, height=300, left_color="#1f77b4", right_color="#d62728",
+              left_fmt=",.4g", right_fmt="+.3f"):
+    """Two series with independent y axes (e.g. close price vs sentiment_mean); each axis is coloured like its line.  Hovering
+    shows the nearest period with BOTH values: transparent point layers carry the tooltip and draw no axis of their own."""
     base = alt.Chart(df).encode(x=alt.X(x + ":T", title=None))
-    a = base.mark_line(color="#1f77b4").encode(y=alt.Y(left + ":Q", title=left_title, scale=alt.Scale(zero=False)))
-    b = base.mark_line(color="#d62728", opacity=0.8).encode(y=alt.Y(right + ":Q", title=right_title))
-    tip = [alt.Tooltip(x + ":T", title="เวลา"), alt.Tooltip(left + ":Q", title=left_title, format=",.4g"),
-           alt.Tooltip(right + ":Q", title=right_title, format="+.3f")]
+    left_axis = alt.Axis(title=left_title, titleColor=left_color, labelColor=left_color)
+    right_axis = alt.Axis(title=right_title, titleColor=right_color, labelColor=right_color)
+    scale = alt.Scale(zero=False)
+    a = base.mark_line(color=left_color).encode(y=alt.Y(left + ":Q", axis=left_axis, scale=scale))
+    b = base.mark_line(color=right_color, opacity=0.8).encode(y=alt.Y(right + ":Q", axis=right_axis, scale=scale))
+    tip = [alt.Tooltip(x + ":T", title="เวลา"), alt.Tooltip(left + ":Q", title=left_title, format=left_fmt),
+           alt.Tooltip(right + ":Q", title=right_title, format=right_fmt)]
     pick = alt.selection_point(nearest=True, on="mouseover", fields=[x], empty=False, clear="mouseout")
-    hover_a = base.mark_circle(size=60, color="#1f77b4").encode(y=alt.Y(left + ":Q", scale=alt.Scale(zero=False)), tooltip=tip,
-                                                                opacity=alt.condition(pick, alt.value(1), alt.value(0))).add_params(pick)
-    hover_b = base.mark_circle(size=60, color="#d62728").encode(y=alt.Y(right + ":Q"), tooltip=tip,
-                                                                opacity=alt.condition(pick, alt.value(1), alt.value(0)))
-    return alt.layer(a, b, hover_a, hover_b).resolve_scale(y="independent").properties(height=height).interactive()
+    opacity = alt.condition(pick, alt.value(1), alt.value(0))
+    hover_a = base.mark_circle(size=60, color=left_color).encode(y=alt.Y(left + ":Q", axis=None, scale=scale), tooltip=tip,
+                                                                 opacity=opacity).add_params(pick)
+    hover_b = base.mark_circle(size=60, color=right_color).encode(y=alt.Y(right + ":Q", axis=None, scale=scale), tooltip=tip,
+                                                                  opacity=opacity)
+    return alt.layer(a, b, hover_a, hover_b).resolve_scale(y="independent").properties(height=height)
 
 
 def table(df, **kwargs):

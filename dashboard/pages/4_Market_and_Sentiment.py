@@ -105,10 +105,22 @@ if shown.sentiment_mean.notna().sum() == 0:
     st.altair_chart(common.line(shown, "time", price_col, "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)",
                                 bar=common.kind(st, "s_close")), width="stretch")
 else:
-    st.altair_chart(common.dual_axis(shown, "time", price_col, "sentiment_mean",
-                                     "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)", "Sentiment Score"), width="stretch")
+    price_title = "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)"
+    st.altair_chart(common.dual_axis(shown, "time", price_col, "sentiment_mean", price_title, "Sentiment Score"), width="stretch")
     st.caption("เส้นน้ำเงิน = ราคาปิด  \nเส้นแดง = Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น) "
                "ช่วงที่เส้นแดงขาด = ไม่มีข้อความ ไม่ใช่ค่ากลาง")
+
+    ORANGE = "#ff7f0e"
+    st.subheader("%s: Reddit Volume Z-score เทียบค่าความรู้สึกเฉลี่ย" % label)
+    st.altair_chart(common.dual_axis(shown, "time", "zscore", "sentiment_mean", "Reddit Volume Z-score", "Sentiment Score",
+                                     left_color=ORANGE, left_fmt=".2f"), width="stretch")
+    st.caption("เส้นส้ม = Reddit Volume Z-score (ปริมาณข้อความเทียบ 24 ชั่วโมงก่อนหน้า)  \nเส้นแดง = Sentiment Score  "
+               "ถ้าคนพูดถึงมากผิดปกติแล้วความรู้สึกเปลี่ยน เส้นสองเส้นจะขยับไปด้วยกันหรือสวนกัน")
+
+    st.subheader("%s: ราคาปิดเทียบ Reddit Volume Z-score" % label)
+    st.altair_chart(common.dual_axis(shown, "time", price_col, "zscore", price_title, "Reddit Volume Z-score",
+                                     right_color=ORANGE, right_fmt=".2f"), width="stretch")
+    st.caption("เส้นน้ำเงิน = ราคาปิด  \nเส้นส้ม = Reddit Volume Z-score  ช่วงที่ปริมาณพุ่ง (เส้นส้มสูง) ราคาขยับตามหรือไม่")
 
 # ---- does higher sentiment go with a higher return?  every ticked ticker-hour with text is one sample
 st.subheader("ความรู้สึกยิ่งสูง ผลตอบแทนยิ่งสูงไหม")
@@ -168,38 +180,3 @@ if not ratios.empty:
         .properties(height=240))
     st.altair_chart(area, width="stretch")
     st.caption(caption)
-
-st.subheader("สินทรัพย์ใดมีความรู้สึกเชิงบวก/ลบมากที่สุดในช่วงนี้")
-hours = prices[["ticker", "hour_utc"]]
-by_ticker = per_ticker.rename(columns={"series": "ticker"}).merge(hours, on=["ticker", "hour_utc"])
-by_ticker = by_ticker[by_ticker.majority.isin(statuses) & by_ticker.sentiment_mean.notna()]
-if by_ticker.empty:
-    st.info("ไม่มีข้อความตามตัวกรองที่เลือก")
-else:
-    SPIKE_Z = 1.5                                                           # proposal: spike when Z-score > 1.5
-    rank = by_ticker.groupby("ticker").agg(mean_sentiment=("sentiment_mean", "mean"), pos_ratio=("pos_ratio", "mean"),
-                                           neg_ratio=("neg_ratio", "mean"), hours_with_text=("sentiment_mean", "size"),
-                                           texts=("texts", "sum"), max_z=("zscore", "max"),
-                                           spike_hours=("zscore", lambda s: int((s > SPIKE_Z).sum()))).reset_index().sort_values(
-        "mean_sentiment", ascending=False)
-    rank["สินทรัพย์"] = rank.ticker.map(lambda s: "%s · %s" % (s, names.get(s, "")))
-    rank["กลุ่ม"] = rank.ticker.map(dict(zip(q("tickers").ticker, q("tickers").big_group))).map(GROUP_LABELS)
-    common.table(rank[["สินทรัพย์", "กลุ่ม", "mean_sentiment", "pos_ratio", "neg_ratio", "max_z", "spike_hours", "hours_with_text",
-                       "texts"]].rename(
-        columns={"mean_sentiment": "Sentiment Score เฉลี่ย", "pos_ratio": "สัดส่วนบวก", "neg_ratio": "สัดส่วนลบ",
-                 "max_z": "Volume Z-score สูงสุด", "spike_hours": "ชั่วโมงที่ Z-score > 1.5",
-                 "hours_with_text": "ชั่วโมงที่มีข้อความ", "texts": "ข้อความ"}).round(3), hide_index=True,
-        width="stretch", height=330)
-    # the same by asset class: the texts-weighted Sentiment Score and the Z-score peak of the class
-    by_ticker = by_ticker.assign(group=by_ticker.ticker.map(dict(zip(q("tickers").ticker, q("tickers").big_group))).map(GROUP_LABELS),
-                                 weighted=by_ticker.sentiment_mean * by_ticker.texts)
-    groups_table = by_ticker.groupby("group").agg(assets=("ticker", "nunique"), weighted=("weighted", "sum"), texts=("texts", "sum"),
-                                                  max_z=("zscore", "max"),
-                                                  spike_hours=("zscore", lambda s: int((s > SPIKE_Z).sum()))).reset_index()
-    groups_table["Sentiment Score เฉลี่ย"] = groups_table.weighted / groups_table.texts
-    common.table(groups_table[["group", "assets", "Sentiment Score เฉลี่ย", "max_z", "spike_hours", "texts"]].rename(
-        columns={"group": "กลุ่มสินทรัพย์", "assets": "จำนวนสินทรัพย์", "max_z": "Volume Z-score สูงสุด",
-                 "spike_hours": "ชั่วโมงที่ Z-score > 1.5", "texts": "ข้อความ"}).round(3).sort_values(
-        "Sentiment Score เฉลี่ย", ascending=False), hide_index=True, width="stretch")
-    st.caption("Volume Z-score คิดจากจำนวนข้อความที่พูดถึงสินทรัพย์นั้นเทียบ 24 ชั่วโมงก่อนหน้า (ชุมชนและแบบจำลองตามตัวกรอง) "
-               "ชั่วโมงที่ Z-score > 1.5 คือชั่วโมงที่ปริมาณสูงกว่าปกติ ตามเกณฑ์ของ proposal")
