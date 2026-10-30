@@ -279,6 +279,22 @@
 
 **กระทบโค้ด** `dashboard/common.py` (`sidebar`, `_time_filter`, `_source_filter`, `_asset_filter`, `selected_sources`, `selected_tickers`, `tickers_restricted`, `kind`, `multi_series_chart`), `dashboard/data.py` (ฟังก์ชันรับ `source_ids` และหลาย Ticker: `mention_series`, `mention_series_by_ticker`, `ticker_volume_series`, `ticker_zscore`, `volume_by_source`), หน้า 1–4, `app.py`; ทดสอบ `tests/test_dashboard_filters.py`, `test_dashboard_smoke.py`, `scripts/dashboard_kpi_check.py`.
 
+## 14) ตัวกรองของระบบ 7.5 ตามมิติ และตารางความรู้สึกแยกตามชุมชน — ผู้ใช้สั่ง 2026-10-30
+
+**(ก) proposal** ตารางที่ 17: แดชบอร์ด 1 (Market and Sentiment) ใช้มิติ DimTime, DimTicker, DimSentimentSource, DimMajoritySentiment; แดชบอร์ด 2 (Ranking and Detection Configuration) ใช้ DimTime, DimTicker, DimDetectionConfig, DimMajoritySentiment; DimSentimentSource = แพลตฟอร์ม › ชื่อชุมชน › แบบจำลองที่ใช้ (ตัวอย่าง Reddit, r/wallstreetbets, VADER+FinBERT)
+
+**(ข) ที่ทำ** (ผู้ใช้ให้ใช้ design เดิมของตัวกรอง)
+- ตัวกรองหน้า 4–6 เป็นบล็อกตามมิติเหล่านี้ เรียง เวลา › หลักทรัพย์ › [แหล่งข้อมูลความรู้สึก] › [เกณฑ์การตรวจจับ] › [ประเภทความรู้สึกส่วนใหญ่]; หลักทรัพย์ติ๊กได้หลายตัว (ติ๊กกลุ่ม = ติ๊กทั้งกลุ่ม) เหมือนหน้า 1–3; ทุกช่องติ๊กทั้งหมดตอนแรก และไม่ติ๊กเลย = ไม่มีข้อมูล (การ์ดเป็น 0)
+- DimDetectionConfig (Z-score Threshold, Sentiment Threshold, Horizon) ย้ายจากหน้าหลักของหน้า Ranking and Signals มาไว้แถบข้างเป็นแถบเลื่อน/ปุ่มเลือก (ไม่จำกัดเฉพาะค่าใน `configs/detection.yaml` ที่คำนวณล่วงหน้า 30 ชุด เพราะหน้าตรวจจับใหม่ตามค่าที่ตั้งทันที); หน้า Hot Events ใช้แถบเดียวกันสำหรับเกณฑ์ของส่วนขยาย (Z-score, ความรู้สึก, ข้อความขั้นต่ำ)
+- DimMajoritySentiment กรองตามประเภทความรู้สึกส่วนใหญ่ **ของชั่วโมงนั้น** (ผลรวมสุดท้ายของ 7.3): หน้า Market and Sentiment ชั่วโมงที่ไม่ติ๊กไม่นับความรู้สึก (ราคายังแสดง); หน้า Ranking and Signals และ Hot Events ไม่นับสัญญาณ/เหตุการณ์ของชั่วโมงนั้น; ตารางจัดอันดับ Win Rate/Spearman มาจากการวิเคราะห์เต็มช่วงของ 7.4 จึงกรองได้เฉพาะตามหลักทรัพย์
+- **ตารางใหม่ `reddit_hourly_community`** (ส่วนขยายของ P1, `etl/reddit_hourly_community.py`, step 33): `reddit_hourly` เดิมรวมทุกชุมชนไว้แล้ว ตัวกรองชุมชนจึงไม่มีผลถ้าไม่เก็บแยก ตารางใหม่เก็บผลรวมต่อ Ticker × ชั่วโมง × ชุมชน (จำนวนข้อความ, ผลรวม final_sentiment, จำนวน positive/negative/neutral) แล้วคำนวณ KPI ตารางที่ 15 ใหม่ตามชุมชนที่ติ๊ก: Sentiment Score = ผลรวม ÷ จำนวนข้อความ, Momentum = ต่างจากชั่วโมงก่อน, Z-score เทียบ 24 ชั่วโมงก่อนไม่รวมชั่วโมงปัจจุบัน, ประเภทส่วนใหญ่ = ที่พบบ่อยสุด (เท่ากัน: neutral › positive › negative) **ตรวจแล้ว:** รวมชุมชนกลับได้เท่า `reddit_hourly` ครบ 296,842 ชั่วโมง (ต่าง 0 แถว) และค่า KPI ที่คำนวณใหม่ตรงกับที่เก็บไว้ (ต่างไม่เกิน 3e-13)
+- แบบจำลอง VADER+FinBERT เป็นค่าเดียวของ DimSentimentSource จึงแสดงเป็นช่องที่ติ๊กไว้และกดไม่ได้
+- เลือกหลาย Ticker ที่หน้า Market and Sentiment = รวมข้อความของทุกตัวเป็นชุดเดียว (ข้อความที่พูดถึงหลายตัวนับซ้ำ) ราคาเป็นดัชนี (ค่าแรกของช่วง = 100, เฉลี่ยข้ามตัว); ส่วนประเภทส่วนใหญ่เทียบผลตอบแทนอนาคตนับทีละ Ticker-ชั่วโมง
+
+**(ค) เหตุผลและข้อจำกัด** เพื่อให้ตัวกรองทุกอันมีผลต่อเนื้อหาจริง ไม่ใช่แค่แสดง; การคำนวณใหม่จากตารางผลรวมเป็นวิธีเดียวที่ไม่ต้องรันการวิเคราะห์ความรู้สึกซ้ำ; ตารางใหม่เพิ่มขนาดฐานข้อมูลเล็กน้อย (559,223 แถว); ไม่ได้ทดสอบในเบราว์เซอร์จริง
+
+**กระทบโค้ด** `etl/reddit_hourly_community.py`, `dashboard/common.py` (บล็อกตัวกรองใหม่, ตัดตัวเลือกเลือกตัวเดียว), `dashboard/data.py` (`sentiment_hourly`, `sentiment_frame`), หน้า 4–6, ทดสอบ `tests/test_dashboard_filters.py`, `tests/test_reddit_hourly_community.py`, `scripts/dashboard_kpi_check.py`.
+
 ## สรุปก่อนใช้
 
 1. ทั้ง 7 ข้อมีโค้ดและรันแล้ว (ข้อ 3–4 รันเมื่อ 2026-10-10: ผลจริงคือไม่พบความสามารถในการทำนาย — เขียนในรายงานตามนั้น ห้ามอ้างความได้เปรียบ)

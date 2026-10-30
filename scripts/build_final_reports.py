@@ -434,6 +434,8 @@ def build_summary(D):
          ["ตัวกรองร่วมที่แถบข้างเรียงตามมิติ: เวลา (ช่วงวันที่ ค่าเริ่มต้นย้อนหลัง 1 ปี + ความละเอียดกราฟ) › แหล่งข้อมูล (ติ๊กชุมชนและโพสต์/ความคิดเห็น ติ๊กทั้งหมดตอนแรก เฉพาะหน้า 1–2) › หลักทรัพย์ (ติ๊กกลุ่ม แล้วติ๊ก Ticker ติ๊กทั้งหมดตอนแรก; หน้า 1–2 ติ๊กได้หลายตัว); ปุ่มสลับเส้น/แท่งอยู่ที่แต่ละกราฟ; ปรับ Z-score / Sentiment / Horizon แล้วคำนวณสัญญาณใหม่ทันที, มีป้ายระบุว่าไม่ใช่คำแนะนำการลงทุน"]),
         ("24–30", "ตรวจและทดสอบ (S5, 8.4)", "proposal coverage, เทียบ neutral band, rule validation, super quality/spike, สร้างรายงานสรุป, ความแม่น ±0.10 + confusion matrix, ทดสอบ dashboard", "`scripts/check_proposal_coverage.py`, `neutral_band_sensitivity.py`, `rule_validation.py`, `super_signal_sensitivity.py`, `build_final_reports.py`, `rule_validation_extras.py`, `dashboard_kpi_check.py`",
          ["รายละเอียดอยู่ไฟล์ที่ 2"]),
+        ("33", "ความรู้สึกแยกตามชุมชน", "ตาราง reddit_hourly_community (ผลรวมต่อ Ticker × ชั่วโมง × ชุมชน) ให้ตัวกรอง DimSentimentSource ของหน้า Market and Sentiment ทำงานจริง", "`etl/reddit_hourly_community.py`",
+         ["559,223 แถว; รวมชุมชนแล้วเท่ากับ `reddit_hourly` ครบ 296,842 ชั่วโมง (ต่าง 0 แถว)"]),
         ("31", "ตารางและกราฟสำหรับลงเล่ม", "สร้าง 9 ตาราง CSV และ 5 กราฟจากฐานข้อมูล", "`scripts/make_book_tables.py`", ["`output/tables/t1..t9*.csv`, `output/figures/book_*.png`"]),
     ]
     L += ["## ขั้นตอนต่อขั้นตอน", ""]

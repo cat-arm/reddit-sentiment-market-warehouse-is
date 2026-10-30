@@ -13,6 +13,7 @@ Rules (proposal 7.5, TASKS D0):
 import sqlite3
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from etl.reddit_features import volume_features
@@ -402,6 +403,48 @@ def overview_series(db_path, ticker, start, end):
     return to_time(df)
 
 
+def sentiment_hourly(db_path, tickers, start, end, communities):
+    """Per ticker-hour sums of the texts of the chosen communities (reddit_hourly_community), from 24 hours before
+    `start` (the Z-score needs them).  Recombine with `sentiment_frame`."""
+    tf, symbols = _only(tickers, "ticker")
+    marks = ",".join("?" * len(communities))
+    return _read(db_path, """
+        SELECT ticker, hour_utc, SUM(texts) AS texts, SUM(sentiment_sum) AS sentiment_sum, SUM(pos_n) AS pos_n,
+               SUM(neg_n) AS neg_n, SUM(neu_n) AS neu_n
+        FROM reddit_hourly_community
+        WHERE hour_utc BETWEEN ? AND ? AND subreddit IN (%s)%s GROUP BY ticker, hour_utc"""
+                 % (marks, tf), (start - 86400, end, *communities, *symbols))
+
+
+def sentiment_frame(sent, start, end, combined=False):
+    """KPIs of table 15 per series and hour on the full hourly grid start..end, from the sums of `sentiment_hourly`.
+    Series = each ticker, or one series 'รวม' (all the tickers summed) when `combined`.  An hour without text has
+    texts = 0 and NULL sentiment / ratios / majority / momentum (never 0).  Rules as in the proposal:
+    sentiment_mean = sum(final_sentiment) / texts, momentum = this hour - previous hour (both need text), Volume Z-score
+    over the 24 hours before (current hour excluded), majority = most frequent status (ties: neutral, positive, negative)."""
+    cols = ["texts", "sentiment_sum", "pos_n", "neg_n", "neu_n"]
+    out_cols = ["series", "hour_utc", "texts", "sentiment_mean", "pos_ratio", "neg_ratio", "neu_ratio", "majority",
+                "zscore", "momentum"]
+    if sent.empty:
+        return pd.DataFrame(columns=out_cols)
+    if combined:
+        sent = sent.assign(ticker="รวม").groupby(["ticker", "hour_utc"], as_index=False)[cols].sum()
+    grid = pd.Index(range(int(start) - 86400, int(end) + 3600, 3600), name="hour_utc")
+    wide = {c: sent.pivot_table(index="hour_utc", columns="ticker", values=c, aggfunc="sum").reindex(grid) for c in cols}
+    texts = wide["texts"].fillna(0)
+    z, _ = volume_features(texts)
+    has = texts > 0
+    mean = wide["sentiment_sum"] / texts.where(has)
+    counts = np.stack([wide["neu_n"].fillna(0).to_numpy(), wide["pos_n"].fillna(0).to_numpy(), wide["neg_n"].fillna(0).to_numpy()])
+    names = np.array(["neutral", "positive", "negative"], dtype=object)           # argmax takes the first maximum = the tie rule
+    majority = pd.DataFrame(np.where(has.to_numpy(), names[counts.argmax(axis=0)], None), index=grid, columns=texts.columns)
+    frames = {"texts": texts, "sentiment_mean": mean, "pos_ratio": wide["pos_n"] / texts.where(has),
+              "neg_ratio": wide["neg_n"] / texts.where(has), "neu_ratio": wide["neu_n"] / texts.where(has),
+              "majority": majority, "zscore": z, "momentum": mean - mean.shift(1)}
+    long = pd.concat({k: v.stack(future_stack=True) for k, v in frames.items()}, axis=1).rename_axis(["hour_utc", "series"]).reset_index()
+    return long[(long.hour_utc >= start) & (long.hour_utc <= end)][out_cols].reset_index(drop=True)
+
+
 def sentiment_by_ticker(db_path, start, end):
     """Which assets are most positive / negative in the range (mean of hourly sentiment_mean, hours with text only)."""
     return _read(db_path, """
@@ -474,7 +517,7 @@ def hot_events(db_path, start, end, z_min, s_min, min_texts):
     that followed.  Descriptive history only; hours without a computable return keep NULL."""
     return _read(db_path, """
         SELECT ticker, big_group, hour_utc, sentiment_mean, reddit_volume, reddit_volume_zscore_24 AS zscore,
-               future_return_1h, future_return_2h, future_return_3h, future_return_6h, future_return_12h
+               majority_final_status, future_return_1h, future_return_2h, future_return_3h, future_return_6h, future_return_12h
         FROM merged_hourly_panel
         WHERE scope = 'ticker' AND variant = 'all' AND has_reddit_data = 1 AND reddit_volume >= ?
           AND reddit_volume_zscore_24 > ? AND ABS(sentiment_mean) >= ? AND hour_utc BETWEEN ? AND ?

@@ -21,7 +21,7 @@ from dashboard import common  # noqa: E402
 from dashboard.common import q
 
 common.setup("Reddit Sentiment × Securities Price", "🏠")
-_, start, end, groups = common.sidebar(need_ticker=False)
+_, start, end, groups = common.sidebar()
 
 info = q("data_range")
 by_group = q("overview_filtered", start, end, tuple(groups))          # follows the date range and the asset classes

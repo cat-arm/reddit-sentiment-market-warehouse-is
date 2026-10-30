@@ -27,7 +27,7 @@ reddit-sentiment-market-warehouse/
   etl/                        ✅  T1–T5, S1–S5, M1, P1–P4, Fact loaders (ดูตารางข้อ 3)
   analysis/                   ✅  correlation, winrate, logistic, evaluate, signals, results_store, figure_style (สี/คำอธิบายของ heatmap)
   dashboard/                  ✅  Streamlit หน้าแรก + 6 หน้า (หน้า 6 Hot Events = ส่วนขยาย; data.py = ชั้น query อ่านอย่างเดียว)
-  steps/                      ✅  ตัวเรียกที่มีเลขลำดับ 00–32 (เริ่มที่ 01) ดู steps/README.md
+  steps/                      ✅  ตัวเรียกที่มีเลขลำดับ 00–33 (เริ่มที่ 01) ดู steps/README.md
   scripts/                    ✅  ตรวจ/ทดสอบ/สรุปผล: system_tests, dashboard_kpi_check, rule_validation(+extras), neutral_band, super_signal, make_book_tables, build_final_reports ฯลฯ
   reports/                    —   (ใช้ scripts/make_book_tables.py แทน → output/tables, output/figures/book_*)
   docs/                       ✅  benchmark_finbert.md, METHOD_DECISIONS_NOT_IN_PROPOSAL.md, USER_MANUAL_TH.md (§8.5)
@@ -69,6 +69,7 @@ reddit-sentiment-market-warehouse/
 | 7.3 QA | S5 | `etl/sentiment_qa.py` | `sentiment_qa` | ✅ รันแล้ว 2026-10-10 |
 | 7.3 ซ่อมป้าย neutral band | — | `scripts/recompute_status_band.py` | แก้ `vader_status` 771 แถว | ✅ 2026-10-10 |
 | 7.4 สรุปรายชั่วโมง | P1, P2 | `etl/reddit_hourly.py`, `etl/reddit_features.py` | `reddit_hourly`, `reddit_hourly_features` | ✅ รันแล้ว 2026-10-10 |
+| 7.5 ความรู้สึกแยกตามชุมชน (DimSentimentSource) | P1b | `etl/reddit_hourly_community.py` (step 33), `tests/test_reddit_hourly_community.py` | `reddit_hourly_community` (559,223 แถว; รวมชุมชนแล้วเท่ากับ `reddit_hourly` ทุกชั่วโมง) | ✅ 2026-10-30 |
 | 7.4 merge + 9 panel | P3, P4 | `etl/merge_panel.py`, `etl/build_panels.py` | `merged_hourly_panel`, `panels` | ✅ รันแล้ว 2026-10-10 |
 | 7.4 Correlation | A1 | `analysis/correlation.py`, `analysis/results_store.py` | `analysis_results` + `output/figures/a1_*.png` | ✅ รันแล้ว 2026-10-10 |
 | 7.4 Win Rate | A2 | `analysis/winrate.py` | `analysis_results` + `output/figures/a2_*.png` (`winrate_*` ใน fact = W3 ยังไม่ทำ) | ✅ รันแล้ว 2026-10-10 |

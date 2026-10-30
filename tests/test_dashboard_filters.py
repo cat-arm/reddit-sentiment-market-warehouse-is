@@ -10,39 +10,53 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
-SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # only these tables are split by source
-MULTI_PAGES = SOURCE_PAGES | {"pages/3_Price_and_Return.py"}                   # these take several tickers
-SINGLE_PAGES = {"pages/4_Market_and_Sentiment.py"}                            # one ticker; the others draw no ticker list
+SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # system 7.1: DimSource filter
+SENTIMENT_PAGE = "pages/4_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
+DETECTION_PAGES = {"pages/5_Ranking_and_Signals.py": ["s_z", "s_s", "s_h"], "pages/6_Hot_Events.py": ["h_z", "h_s", "h_n"]}
+MAJORITY_PAGES = {SENTIMENT_PAGE, *DETECTION_PAGES}
+COUNT_PAGES = SOURCE_PAGES | {"pages/3_Price_and_Return.py"}                  # first card = a count that follows the ticks
 TIME_KEYS = ["f_range", "f_gran"]
 COMMUNITIES = ["r/wallstreetbets", "r/stocks", "r/investing", "r/StockMarket", "r/options", "r/CryptoCurrency"]
 SOURCE_KEYS = ["f_src_" + c for c in COMMUNITIES] + ["f_type_Post", "f_type_Comment"]
+SENTIMENT_KEYS = ["f_ss_" + c for c in COMMUNITIES] + ["f_ss_model"]
+MAJORITY_KEYS = ["f_maj_positive", "f_maj_negative", "f_maj_neutral"]
 GROUP_KEYS = ["f_group_stock_etf", "f_group_futures", "f_group_crypto"]
 TICKERS = ["AAPL", "AMC", "AMD", "BITO", "BRK-B", "COIN", "GME", "HOOD", "IBIT", "IWM", "JNJ", "JPM", "KO", "MARA", "MSFT",
            "MSTR", "NVDA", "PLTR", "QQQ", "SPY", "TSLA", "XOM", "CL=F", "ES=F", "GC=F", "NG=F", "NQ=F", "RTY=F",
            "BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD", "SOL-USD", "XRP-USD"]
+PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
+         "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Signals.py", "pages/6_Hot_Events.py"]
+MULTI_PAGES = set(PAGES[1:])                                                  # every dashboard takes several tickers
 
 
 def tick_only(at, keep):
-    """Tick exactly the tickers in `keep` on pages 1-2 (every other box is unticked), then rerun."""
+    """Tick exactly the tickers in `keep` (every other box is unticked), then rerun."""
     for symbol in TICKERS:
         try:
             at.sidebar.checkbox(key="f_tk_" + symbol).set_value(symbol in keep)
         except KeyError:
             pass                                                     # its class is unticked: the box is not drawn
     return at.run()
-PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
-         "pages/4_Market_and_Sentiment.py", "pages/5_Ranking_and_Signals.py", "pages/6_Hot_Events.py"]
 
 
 def expected_keys(page):
-    """Sidebar order: time (DimTime) first, then source (DimSource), then asset (DimTicker)."""
-    asset = GROUP_KEYS + (["f_tk_" + s for s in TICKERS] if page in MULTI_PAGES else ["f_ticker"] if page in SINGLE_PAGES else [])
-    return TIME_KEYS + (SOURCE_KEYS if page in SOURCE_PAGES else []) + asset
+    """Sidebar order: time, [source 7.1], asset, [sentiment source], [detection config], [majority status]."""
+    keys = list(TIME_KEYS)
+    if page in SOURCE_PAGES:
+        keys += SOURCE_KEYS
+    keys += GROUP_KEYS + (["f_tk_" + s for s in TICKERS] if page in MULTI_PAGES else [])
+    if page == SENTIMENT_PAGE:
+        keys += SENTIMENT_KEYS
+    keys += DETECTION_PAGES.get(page, [])
+    if page in MAJORITY_PAGES:
+        keys += MAJORITY_KEYS
+    return keys
 
 
 def sidebar_order(at):
     """Keys of the sidebar widgets in the order they are drawn."""
-    return [b.key for b in at.sidebar.children.values() if getattr(b, "key", None)]
+    return [b.key for b in at.sidebar.children.values() if getattr(b, "key", None)
+            and b.key not in ("f_tk_all", "f_tk_none")]
 
 
 def sidebar_signature(at):
@@ -69,15 +83,12 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(order, expected_keys(page), "%s sidebar order" % page)
 
     def test_a_choice_holds_on_every_page(self):
-        chosen = dict(f_group_crypto=False, f_ticker="QQQ", f_range=(dt.date(2026, 8, 3), dt.date(2026, 8, 9)),
-                      f_gran="รายเดือน")
+        chosen = dict(f_group_crypto=False, f_range=(dt.date(2026, 8, 3), dt.date(2026, 8, 9)), f_gran="รายเดือน")
         for page in PAGES:
             at = self.run_page(page, **chosen)
             self.assertEqual(len(at.exception), 0, "%s raised %s" % (page, [e.value for e in at.exception]))
             self.assertFalse(at.sidebar.checkbox(key="f_group_crypto").value, page)
             self.assertTrue(at.sidebar.checkbox(key="f_group_stock_etf").value, page)
-            if page in SINGLE_PAGES:
-                self.assertEqual(at.sidebar.radio(key="f_ticker").value, "QQQ", page)
             self.assertEqual(at.sidebar.radio(key="f_gran").value, "รายเดือน", page)
             self.assertEqual(tuple(at.sidebar.date_input(key="f_range").value),
                              (dt.date(2026, 8, 3), dt.date(2026, 8, 9)), page)
@@ -103,7 +114,7 @@ class FilterTests(unittest.TestCase):
 
     def test_several_tickers_and_classes_change_the_numbers(self):
         """Pages 1-2: everything ticked = every ticker; ticking fewer narrows the numbers; unticking a class drops its tickers."""
-        for page in MULTI_PAGES:
+        for page in COUNT_PAGES:
             at = self.run_page(page)
             full = at.metric[0].value
             at = tick_only(at, ["TSLA", "NVDA"])
@@ -160,6 +171,39 @@ class FilterTests(unittest.TestCase):
                 at.sidebar.checkbox(key=key).set_value(False)
             at = at.run()
             self.assertEqual(len(at.exception), 0, "%s: %s" % (page, [e.value for e in at.exception]))
+
+    def test_system_75_dimension_filters_change_the_numbers(self):
+        """DimSentimentSource, DimMajoritySentiment and DimDetectionConfig are real filters, not decoration."""
+        at = self.run_page(SENTIMENT_PAGE)
+        full = [m.value for m in at.metric]
+        at.sidebar.checkbox(key="f_ss_r/wallstreetbets").set_value(False).run()
+        no_wsb = [m.value for m in at.metric]
+        self.assertNotEqual(no_wsb[1], full[1], "Sentiment Score follows the communities")
+        at.sidebar.checkbox(key="f_ss_r/wallstreetbets").set_value(True)
+        at.sidebar.checkbox(key="f_maj_neutral").set_value(False).run()
+        self.assertNotEqual(at.metric[0].value, full[0], "hours with a neutral majority lose their sentiment")
+        for key in ("f_ss_" + c for c in COMMUNITIES):
+            at.sidebar.checkbox(key=key).set_value(False)
+        at = at.run()
+        self.assertTrue(all(m.value == "0" for m in at.metric), "no community ticked = nothing")
+        # ranking and signals: thresholds and majority statuses change the detected signals
+        page = "pages/5_Ranking_and_Signals.py"
+        at = self.run_page(page)
+        base = at.metric[0].value
+        at.sidebar.slider(key="s_z").set_value(3.0).run()
+        self.assertNotEqual(at.metric[0].value, base, "Z-score Threshold changes the signals")
+        at.sidebar.slider(key="s_z").set_value(1.5)
+        at.sidebar.checkbox(key="f_maj_positive").set_value(False).run()
+        self.assertNotEqual(at.metric[0].value, base, "majority status changes the signals")
+        for key in MAJORITY_KEYS:
+            at.sidebar.checkbox(key=key).set_value(False)
+        self.assertTrue(all(m.value == "0" for m in at.run().metric))
+        page = "pages/6_Hot_Events.py"
+        at = self.run_page(page)
+        base = at.metric[0].value
+        at.sidebar.slider(key="h_z").set_value(3.5).run()
+        self.assertNotEqual(at.metric[0].value, base, "Z-score Threshold changes the events")
+        self.assertEqual(len(at.exception), 0)
 
     def test_price_page_follows_the_ticked_tickers(self):
         """One ticker, a few (one line each) and many (their average) all render, and the numbers follow the ticks."""
@@ -221,7 +265,7 @@ class FilterTests(unittest.TestCase):
         at = tick_only(at, ["TSLA"])
         self.assertEqual(len(at.exception), 0)
         state = {"f_src_r/options": False, "f_type_Post": False, "f_tk_TSLA": True, "f_tk_SPY": False}
-        other = AppTest.from_file(str(ROOT / "dashboard" / "pages/4_Market_and_Sentiment.py"), default_timeout=90)
+        other = AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=90)
         for key, value in state.items():
             other.session_state[key] = value
         other = other.run()                                         # page without the widgets: the values go to shadow keys
@@ -241,12 +285,6 @@ class FilterTests(unittest.TestCase):
                     at = self.run_page(page, f_gran=level, f_range=rng)
                     self.assertEqual(len(at.exception), 0, "%s / %s / %s raised %s" % (
                         page, level, rng, [e.value for e in at.exception]))
-
-    def test_ticker_outside_chosen_groups_falls_back_to_a_valid_one(self):
-        at = self.run_page("pages/4_Market_and_Sentiment.py", f_group_stock_etf=False, f_group_futures=False, f_ticker="SPY")
-        self.assertEqual(len(at.exception), 0)
-        self.assertIn(at.sidebar.radio(key="f_ticker").value, ["BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD",
-                                                                    "SOL-USD", "XRP-USD"])
 
 
 class DesignTests(unittest.TestCase):

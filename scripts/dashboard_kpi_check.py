@@ -195,6 +195,27 @@ def run(db_path):
         multi_px = data.price_series_for(db_path, pick, start, end)
         e = c.q("SELECT COUNT(*) FROM market_hourly_features WHERE ticker IN (%s) AND CAST(strftime('%%s', hour_bucket) AS INTEGER) BETWEEN ? AND ?" % marks, (start, end))[0][0]
         c.check("3 Price and Return (หลาย Ticker)", "%s: จำนวนแท่งราคาของที่ติ๊ก" % wname, len(multi_px), e)
+        # market and sentiment page: the community table recombined equals the stored KPIs, one community equals a direct count
+        everyone = tuple(src.subreddit.unique())
+        sent = data.sentiment_hourly(db_path, pick, start, end, everyone)
+        frame = data.sentiment_frame(sent, start, end)
+        stored = data._read(db_path, "SELECT ticker AS series, hour_utc, sentiment_mean AS sm, reddit_volume_zscore_24 AS z, sentiment_momentum_1h AS mo, "
+                                     "majority_final_status AS maj FROM merged_hourly_panel WHERE scope = 'ticker' AND variant = 'all' AND ticker IN (%s) "
+                                     "AND hour_utc BETWEEN ? AND ?" % marks, (start, end))
+        both = stored.merge(frame, on=["series", "hour_utc"])
+        c.check("4 Market and Sentiment (ชุมชน)", "%s: Sentiment Score จากตารางชุมชนรวมกัน = ค่าที่เก็บไว้ (ต่างสูงสุด)" % wname,
+                float((both.sm - both.sentiment_mean).abs().max()), 0.0, 1e-9)
+        c.check("4 Market and Sentiment (ชุมชน)", "%s: Volume Z-score ตรงกับค่าที่เก็บไว้ (ต่างสูงสุด)" % wname,
+                float((both.z - both.zscore).abs().max()), 0.0, 1e-9)
+        c.check("4 Market and Sentiment (ชุมชน)", "%s: Sentiment Momentum ตรงกับค่าที่เก็บไว้ (ต่างสูงสุด)" % wname,
+                float((both.mo - both.momentum).abs().max()), 0.0, 1e-9)
+        c.check("4 Market and Sentiment (ชุมชน)", "%s: ประเภทความรู้สึกส่วนใหญ่ตรงกับค่าที่เก็บไว้ (ชั่วโมงที่ต่าง)" % wname,
+                int((both.maj.fillna("-") != both.majority.fillna("-")).sum()), 0)
+        wsb = data.sentiment_hourly(db_path, ("TSLA",), start, end, ("r/wallstreetbets",))
+        direct = c.q("SELECT COUNT(*) FROM ticker_mentions m JOIN processed_text p ON p.src_rowid = m.src_rowid WHERE m.ticker = 'TSLA' "
+                     "AND p.subreddit = 'wallstreetbets' AND p.created_utc >= ? AND p.created_utc < ?", (start, end + 3600))[0][0]
+        c.check("4 Market and Sentiment (ชุมชน)", "%s TSLA r/wallstreetbets: จำนวนข้อความ = นับตรงจาก ticker_mentions" % wname,
+                int(wsb[wsb.hour_utc >= start].texts.sum()), direct)
         ticks = data.mention_ranking(db_path, start, end)
         groups = ticks.groupby("big_group").mentions.sum()
         exp_g = {r[0]: r[1] for r in c.q(

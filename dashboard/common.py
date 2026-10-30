@@ -37,8 +37,12 @@ DISCLAIMER = ("ข้อมูลย้อนหลังจาก Academic Torr
 GROUP_LABELS = {"stock_etf": "หุ้น/ETF", "futures": "ฟิวเจอร์ส", "crypto": "คริปโต"}
 GROUP_COLORS = {"stock_etf": "#1f77b4", "futures": "#ff7f0e", "crypto": "#2ca02c"}   # blue, orange, green
 GROUP_DOTS = {"stock_etf": "🔵", "futures": "🟠", "crypto": "🟢"}   # same colours inside the sidebar list
-DEFAULT_TICKER = "SPY"
 TYPE_KEYS = ["f_type_Post", "f_type_Comment"]
+STATUSES = ("positive", "negative", "neutral")                  # DimMajoritySentiment
+MAJORITY_KEYS = ["f_maj_" + s for s in STATUSES]
+SIGNAL_KEYS = ["s_z", "s_s", "s_h"]                             # DimDetectionConfig on the Ranking and Signals page
+EVENT_KEYS = ["h_z", "h_s", "h_n"]                              # the same idea on the Hot Events page
+SENTIMENT_MODEL = "VADER+FinBERT"                               # DimSentimentSource.ModelUsed (one value)
 DEFAULT_RANGE_DAYS = 365
 
 
@@ -132,6 +136,73 @@ def tickers_restricted():
     return len(selected_tickers()) < len(q("tickers"))
 
 
+def _sentiment_key(name):
+    return "f_ss_" + name
+
+
+def sentiment_source_keys():
+    return [_sentiment_key(c) for c in dict.fromkeys(q("sources").subreddit)]
+
+
+def selected_communities():
+    """Communities kept by the DimSentimentSource filter ('r/wallstreetbets', ...); nothing ticked = nothing."""
+    return tuple(c for c in dict.fromkeys(q("sources").subreddit) if st.session_state.get(_sentiment_key(c), True))
+
+
+def selected_statuses():
+    """Majority statuses kept by the DimMajoritySentiment filter; nothing ticked = nothing."""
+    return tuple(s for s in STATUSES if st.session_state.get("f_maj_" + s, True))
+
+
+def _sentiment_source_filter():
+    """DimSentimentSource: platform (Reddit) > community > model (VADER+FinBERT, the only one)."""
+    st.sidebar.markdown("**แหล่งข้อมูลความรู้สึก (DimSentimentSource)**")
+    for key in sentiment_source_keys():
+        st.session_state.setdefault(key, True)
+    st.sidebar.caption("แพลตฟอร์ม: Reddit › ชุมชน")
+    for community in dict.fromkeys(q("sources").subreddit):
+        st.sidebar.checkbox(community, key=_sentiment_key(community))
+    st.sidebar.caption("แบบจำลองที่ใช้")
+    st.session_state["f_ss_model"] = True
+    st.sidebar.checkbox(SENTIMENT_MODEL, disabled=True, key="f_ss_model")
+
+
+def _majority_filter():
+    """DimMajoritySentiment: the majority status of the hour (final result of 7.3), every box ticked at first."""
+    st.sidebar.markdown("**ประเภทความรู้สึกส่วนใหญ่ (DimMajoritySentiment)**")
+    for key in MAJORITY_KEYS:
+        st.session_state.setdefault(key, True)
+    for status in STATUSES:
+        st.sidebar.checkbox(status, key="f_maj_" + status)
+
+
+def _detection_filter(kind):
+    """DimDetectionConfig: Z-score Threshold, Sentiment Threshold and Horizon (kind 'signals'), or the thresholds and
+    the minimum number of texts of the Hot Events page (kind 'events')."""
+    state = st.session_state
+    st.sidebar.markdown("**เกณฑ์การตรวจจับสัญญาณ (DimDetectionConfig)**")
+    if kind == "signals":
+        state.setdefault("s_z", 1.5)
+        state.setdefault("s_s", 0.30)
+        state.setdefault("s_h", "1h")
+        st.sidebar.caption("Z-score Threshold (ปริมาณต้องเกิน)")
+        st.sidebar.slider("Z-score Threshold", 0.5, 4.0, step=0.1, key="s_z", label_visibility="collapsed")
+        st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่)")
+        st.sidebar.slider("Sentiment Threshold", 0.0, 1.0, step=0.05, key="s_s", label_visibility="collapsed")
+        st.sidebar.caption("Horizon (กรอบเวลาของสถิติย้อนหลัง)")
+        st.sidebar.radio("Horizon", list(data.HORIZONS), key="s_h", horizontal=True, label_visibility="collapsed")
+    else:
+        state.setdefault("h_z", 2.0)
+        state.setdefault("h_s", 0.50)
+        state.setdefault("h_n", 3)
+        st.sidebar.caption("Z-score Threshold (ปริมาณต้องเกิน)")
+        st.sidebar.slider("Z-score Threshold", 1.5, 4.0, step=0.1, key="h_z", label_visibility="collapsed")
+        st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่)")
+        st.sidebar.slider("Sentiment Threshold", 0.05, 0.90, step=0.05, key="h_s", label_visibility="collapsed")
+        st.sidebar.caption("ข้อความขั้นต่ำในชั่วโมงนั้น")
+        st.sidebar.slider("ข้อความขั้นต่ำ", 1, 20, key="h_n", label_visibility="collapsed")
+
+
 def _source_filter():
     """The DimSource part of the sidebar: platform (fixed: Reddit) > communities > content type, every box ticked."""
     src = q("sources")
@@ -204,16 +275,17 @@ def _ticker_boxes(options, label):
         st.sidebar.checkbox(label(symbol), key=_ticker_key(symbol))
 
 
-def _asset_filter(universe, multi, need_ticker):
-    """The DimTicker part of the sidebar: asset class > ticker.  Returns (ticker or None, groups).
-    multi=True (pages 1-2): one tick box per ticker.  Otherwise one ticker, picked from the same list (radio buttons);
-    need_ticker=False: the page does not use a ticker, so the list is not drawn."""
+def _asset_filter(universe, multi):
+    """The DimTicker part of the sidebar: asset class > ticker.  Returns (None, groups).
+    multi=True: one tick box per ticker (every page of the dashboards); otherwise only the asset classes (home page)."""
     st.sidebar.markdown("**หลักทรัพย์ (DimTicker)**")
     st.sidebar.caption("กลุ่มสินทรัพย์")
     # One tick box per asset class (instead of a multiselect whose chips are all the same colour): the coloured dot is
     # the colour this class has in every chart.
+    for key in GROUP_LABELS:
+        st.session_state.setdefault("f_group_" + key, True)
     groups = [key for key in GROUP_LABELS
-              if st.sidebar.checkbox(GROUP_DOTS[key] + " " + GROUP_LABELS[key], value=True, key="f_group_" + key,
+              if st.sidebar.checkbox(GROUP_DOTS[key] + " " + GROUP_LABELS[key], key="f_group_" + key,
                                      on_change=_group_toggled, args=(key,))]
     # nothing ticked = nothing shown; the ticker list then offers every ticker, so a choice can be built one by one
     pool = universe[universe.big_group.isin(groups)] if groups else universe
@@ -224,21 +296,17 @@ def _asset_filter(universe, multi, need_ticker):
     if multi:
         _ticker_boxes(options, label)
         return None, groups
-    if not need_ticker:
-        return None, groups
-    default = DEFAULT_TICKER if DEFAULT_TICKER in options else options[0]
-    if st.session_state.get("f_ticker") not in options:       # the old choice may have left the chosen groups
-        st.session_state["f_ticker"] = default
-    st.sidebar.caption("สัญลักษณ์หลักทรัพย์")
-    ticker = st.sidebar.radio("สัญลักษณ์หลักทรัพย์", options, key="f_ticker", format_func=label, label_visibility="collapsed")
-    return ticker, groups
+    return None, groups                                      # the home page: asset classes only
 
 
-def sidebar(need_ticker=True, assets=True, sources=False, multi=False):
+def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=None, majority=False):
     """Draw the central filter (time first, then source, then asset); returns (ticker or None, start_epoch, end_epoch,
     groups).  assets=False: the asset filter is NOT drawn and all classes are used.  sources=True: the source filter
     is drawn too (read it with `selected_sources()`).  multi=True: several tickers can be chosen (read them with
     `selected_tickers()`; the returned ticker is None).
+    System 7.5 pages add: sentiment=True (DimSentimentSource, `selected_communities()`), detection='signals' / 'events'
+    (DimDetectionConfig, values in session state s_z / s_s / s_h or h_z / h_s / h_n) and majority=True
+    (DimMajoritySentiment, `selected_statuses()`).
     Streamlit would forget the values of widgets a page does not draw, so they are kept in shadow keys and restored on
     the next page that draws them."""
     info = q("data_range")
@@ -247,16 +315,21 @@ def sidebar(need_ticker=True, assets=True, sources=False, multi=False):
     s_keys = source_keys()
     group_keys = ["f_group_" + k for k in GROUP_LABELS]
     t_keys = ticker_keys()
-    _restore(["f_ticker"] + t_keys + group_keys + s_keys)
+    ss_keys = sentiment_source_keys()
+    _restore(t_keys + group_keys + s_keys + ss_keys + MAJORITY_KEYS + SIGNAL_KEYS + EVENT_KEYS)
     if not sources:
         _keep(s_keys)
+    if not sentiment:
+        _keep(ss_keys)
+    if not majority:
+        _keep(MAJORITY_KEYS)
+    if detection != "signals":
+        _keep(SIGNAL_KEYS)
+    if detection != "events":
+        _keep(EVENT_KEYS)
     if not assets:
-        _keep(["f_ticker"] + t_keys + group_keys)
-    elif multi:
-        _keep(["f_ticker"])
-    elif not need_ticker:
-        _keep(["f_ticker"] + t_keys)
-    else:
+        _keep(t_keys + group_keys)
+    elif not multi:
         _keep(t_keys)
     start_day, end_day = _time_filter(info)
     if sources:
@@ -265,7 +338,16 @@ def sidebar(need_ticker=True, assets=True, sources=False, multi=False):
     ticker, groups = None, list(GROUP_LABELS)
     if assets:
         st.sidebar.divider()
-        ticker, groups = _asset_filter(universe, multi, need_ticker)
+        ticker, groups = _asset_filter(universe, multi)
+    if sentiment:
+        st.sidebar.divider()
+        _sentiment_source_filter()
+    if detection:
+        st.sidebar.divider()
+        _detection_filter(detection)
+    if majority:
+        st.sidebar.divider()
+        _majority_filter()
     return ticker, epoch(start_day), epoch(end_day, end_of_day=True), groups
 
 

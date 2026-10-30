@@ -39,6 +39,7 @@
 | 30 | `30_dashboard_kpi_check.py` | ทดสอบ dashboard: ตัวเลขบนหน้าจอเทียบ SQL ตรง (8.4) -> output/reports/dashboard_kpi_check.md | `scripts/dashboard_kpi_check.py` |
 | 31 | `31_make_book_tables.py` | ตารางและกราฟสำหรับลงเล่ม -> output/tables/*.csv, output/figures/book_*.png | `scripts/make_book_tables.py` |
 | 32 | `32_z_sentiment_grid.py` | (ส่วนขยาย) win rate เมื่อ Z-score 1.5/2.0/2.5 × |ความรู้สึก| 0.05/0.30/0.50/0.80 แยก explore/hold-out -> output/reports/z_sentiment_grid.md | `scripts/z_sentiment_grid.py` |
+| 33 | `33_reddit_hourly_community.py` | ความรู้สึกรายชั่วโมงต่อ Ticker แยกตามชุมชน -> reddit_hourly_community (DimSentimentSource ของหน้า Market and Sentiment); ตรวจว่ารวมชุมชนแล้วเท่ากับ reddit_hourly | `etl/reddit_hourly_community.py` |
 | 27 | `27_super_signal_sensitivity.py` | (ส่วนขยาย) ทดสอบ panel ที่เข้มขึ้น super quality ≥ 0.50 / super spike z > 2.0 -> output/reports/super_signal_sensitivity.md | `scripts/super_signal_sensitivity.py` |
 | 28 | `28_build_final_reports.py` | สร้างเอกสารสรุป 3 ไฟล์ -> output/reports/final/ | `scripts/build_final_reports.py` |
 
