@@ -46,9 +46,7 @@ TARGET_LABEL = {"log_return": "Current Return", "1h": "1h", "2h": "2h", "3h": "3
 BASE = {"Spearman": ("spearman_rho", "spearman_p", "spearman_bh", "+.3f", [-0.1, 0.1], "n"),
         "Pearson": ("pearson_rho", "pearson_p", "pearson_bh", "+.3f", [-0.1, 0.1], "n"),
         "Win Rate": ("winrate", "win_p", "win_bh", ".1f", [40, 60], "win_n")}
-VIEWS = [("Spearman ค่าสหสัมพันธ์", "Spearman", False), ("Spearman p-value", "Spearman", True),
-         ("Pearson ค่าสหสัมพันธ์", "Pearson", False), ("Pearson p-value", "Pearson", True),
-         ("Win Rate (%)", "Win Rate", False), ("Win Rate p-value", "Win Rate", True)]
+VIEWS = ["Spearman", "Pearson", "Win Rate"]                                          # one switch: the cell shows the value AND its p-value
 groups_chosen = sorted({group_of[t] for t in tickers})
 
 prices = q("price_series_for", tickers, start, end)
@@ -114,50 +112,48 @@ def asset_label(ticker):
     return "%s (%s)" % (ticker, GROUP_LABELS[group_of[ticker]])
 
 
-def heatmap(stat, view):
-    """Ticker x horizon heat map of one view (the value of a measure or its p-value): the value and n in every cell, a star when the
-    Benjamini-Hochberg p < 0.05; the asset class is written in brackets after the ticker."""
-    label, measure, as_p = next(v for v in VIEWS if v[0] == view)
+def heatmap(stat, measure):
+    """Ticker x horizon heat map of one measure.  Every cell: the value (the colour and the big number, a star when the Benjamini-Hochberg
+    p < 0.05) and under it its p-value; the number of samples n is in the tooltip."""
     value, p_col, bh_col, fmt, domain, n_col = BASE[measure]
     d = stat[stat.ticker.isin(tickers)].copy()
     d["ช่วง"] = d.target.map(TARGET_LABEL)
-    d["value"] = d[p_col] if as_p else d[value]
+    d["value"] = d[value]
     d["p"] = d[p_col]
     d["bh"] = d[bh_col]
+    d["n_used"] = d[n_col]
     d["asset"] = [asset_label(t) for t in d.ticker]
-    show_fmt = ".3f" if as_p else fmt
-    d["label"] = [("" if pd.isna(v) else ("{:%s}" % show_fmt).format(v) + ("★" if b < 0.05 else "")) for v, b in zip(d.value, d.bh)]
-    d["nlabel"] = ["" if pd.isna(v) else "n=%s" % "{:,}".format(int(n)) for v, n in zip(d.value, d[n_col])]
+    d["label"] = [("" if pd.isna(v) else ("{:%s}" % fmt).format(v) + ("★" if b < 0.05 else "")) for v, b in zip(d.value, d.bh)]
+    d["plabel"] = ["" if pd.isna(v) else ("p<0.001" if pp < 0.001 else "p=%.3f" % pp) for v, pp in zip(d.value, d.p)]
     order = [TARGET_LABEL[t] for t in data.STAT_TARGETS]
     chart = alt.Chart(d).encode(x=alt.X("ช่วง:O", sort=order, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
                                 y=alt.Y("asset:N", sort=[asset_label(t) for t in ORDER], title=None, axis=alt.Axis(labelLimit=220)))
     valid = "isValid(datum.value)"
-    scale = (alt.Scale(domain=[0, 0.5], scheme="greens", reverse=True, clamp=True) if as_p
-             else alt.Scale(domain=domain, scheme="redyellowgreen", clamp=True))
     rect = chart.mark_rect().transform_filter(valid).encode(
-        color=alt.Color("value:Q", title=label, scale=scale),
-        tooltip=["ticker", "ช่วง", alt.Tooltip("value:Q", title=label, format=show_fmt), alt.Tooltip("p:Q", title="p-value", format=".4f"),
-                 alt.Tooltip("bh:Q", title="p-value (BH)", format=".4f"), alt.Tooltip("nlabel:N", title="จำนวนตัวอย่าง")])
+        color=alt.Color("value:Q", title=measure + (" (%)" if measure == "Win Rate" else " ค่าสหสัมพันธ์"),
+                        scale=alt.Scale(domain=domain, scheme="redyellowgreen", clamp=True)),
+        tooltip=["asset", "ช่วง", alt.Tooltip("value:Q", title=measure, format=fmt), alt.Tooltip("p:Q", title="p-value", format=".4f"),
+                 alt.Tooltip("bh:Q", title="p-value (BH)", format=".4f"), alt.Tooltip("n_used:Q", title="จำนวนตัวอย่าง", format=",")])
     text = chart.mark_text(fontSize=11, dy=-6, color="#222222").transform_filter(valid).encode(text="label:N")
-    count = chart.mark_text(fontSize=9, dy=8, color="#555555").transform_filter(valid).encode(text="nlabel:N")
-    return (rect + text + count).properties(height=max(120, 34 * len(ORDER) + 30))
+    ptext = chart.mark_text(fontSize=9, dy=8, color="#444444").transform_filter(valid).encode(text="plabel:N")
+    return (rect + text + ptext).properties(height=max(120, 34 * len(ORDER) + 30))
 
 
 def panel_view(stat, key):
-    """The content of one panel: the switch between the values and their p-values, and the heat map."""
+    """The content of one panel: the switch between the three measures and the heat map."""
     if stat.empty or stat.n.fillna(0).sum() == 0:
         st.info("ไม่มีข้อมูลเพียงพอสำหรับ panel นี้ตามตัวกรองที่เลือก (ต้องมีอย่างน้อย 30 ชั่วโมงต่อคู่ ลองขยายช่วงเวลาหรือลดเกณฑ์)")
         return
-    view = st.radio("แสดง", [v[0] for v in VIEWS], horizontal=True, key="p5_measure_" + key, label_visibility="collapsed")
-    label, measure, as_p = next(v for v in VIEWS if v[0] == view)
+    measure = st.radio("แสดง", VIEWS, horizontal=True, key="p5_measure_" + key, label_visibility="collapsed")
     if stat[stat.ticker.isin(tickers)][BASE[measure][0]].notna().sum() == 0:
         st.info("ไม่มีค่า %s ของสินทรัพย์ที่เลือกใน panel นี้ (ข้อมูลน้อยกว่า 30 ชั่วโมงต่อคู่)" % measure)
         return
-    common.show(heatmap(stat, view))
-    st.caption("%s  ★ = p-value ที่ปรับด้วย Benjamini-Hochberg < 0.05  ช่องว่าง = ข้อมูลน้อยกว่า 30 ชั่วโมง ไม่ใช่ 0  "
+    common.show(heatmap(stat, measure))
+    st.caption("ตัวเลขใหญ่ในแต่ละช่อง = %s  ตัวเล็กข้างล่าง = p-value ของค่านั้น (ต่ำกว่า 0.05 = น่าสนใจ)  ★ = p-value ที่ปรับด้วย Benjamini-Hochberg < 0.05  "
+               "ช่องว่าง = ข้อมูลน้อยกว่า 30 ชั่วโมง ไม่ใช่ 0  ชี้เมาส์ที่ช่องเพื่อดูจำนวนตัวอย่าง  "
                "Current Return = ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) 1h–12h = ผลตอบแทนล่วงหน้า"
-               % ("สี = p-value (เขียวเข้ม = ต่ำ = น่าสนใจ)" if as_p else
-                  ("สี = %s (แดง ต่ำ เขียว สูง; 50 = เดา)" % label if measure == "Win Rate" else "สี = ค่าสหสัมพันธ์ (แดง ลบ เขียว บวก; 0 = ไม่เกี่ยวกัน)")))
+               % ("Win Rate (%) สี: แดง ต่ำ เขียว สูง 50 = เดา" if measure == "Win Rate" else
+                  "ค่าสหสัมพันธ์ %s สี: แดง ลบ เขียว บวก 0 = ไม่เกี่ยวกัน" % measure))
 
 
 def logistic_view():

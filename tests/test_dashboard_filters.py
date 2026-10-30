@@ -211,10 +211,10 @@ class FilterTests(unittest.TestCase):
         self.assertEqual([m.label for m in at.metric], ["Historical Win Rate", "Spearman p-value", "Pearson p-value", "Logistic AUC"])
         full = [m.value for m in at.metric]
         self.assertRegex(full[0], r"^\d+\.\d%$")
-        for view in at.radio(key="p5_measure_all").options:                                 # values and p-values of the three measures
+        for view in at.radio(key="p5_measure_all").options:                                 # the three measures (value and p-value in one cell)
             at.radio(key="p5_measure_all").set_value(view).run()
             self.assertEqual(len(at.exception), 0, "%s: %s" % (view, [e.value for e in at.exception]))
-        self.assertEqual(len(at.radio(key="p5_measure_all").options), 6)
+        self.assertEqual(at.radio(key="p5_measure_all").options, ["Spearman", "Pearson", "Win Rate"])
         self.assertNotIn("ρ", "".join(at.radio(key="p5_measure_all").options))                 # the Greek rho looks like the p of p-value
         for scope in at.radio(key="p5_scope").options:                                       # the Logistic Regression is a section below the tabs
             at.radio(key="p5_scope").set_value(scope).run()
