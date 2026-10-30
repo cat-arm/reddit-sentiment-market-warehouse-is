@@ -179,6 +179,15 @@ class MaskThresholdsTests(unittest.TestCase):
         pd.testing.assert_frame_equal(frame, self.frame())
 
 
+class PanelNameTests(unittest.TestCase):
+    def test_every_variant_and_family_names_a_stored_panel(self):
+        names = {data.panel_name(v, f) for v in data.PANEL_VARIANTS for f in data.PANEL_FAMILIES}
+        self.assertEqual(names, set(data.STORED_PANELS))                 # nine panels, the baseline once
+        self.assertEqual(data.panel_name("all", "Ticker"), "panel_Ticker")
+        self.assertEqual(data.panel_name("spike", "global"), "panel_global_spike")
+        self.assertEqual(data.panel_name("baseline", "global"), "panel_baseline")
+
+
 class StatTableTests(unittest.TestCase):
     def samples(self, n=200, seed=0, slope=0.0):
         rng = np.random.default_rng(seed)
@@ -192,9 +201,8 @@ class StatTableTests(unittest.TestCase):
         p = np.array([0.01, 0.04, 0.03, np.nan, 0.20])
         adj = data.bh_adjust(p)
         self.assertTrue(np.isnan(adj[3]))
-        # sorted: 0.01 (rank 1), 0.03 (2), 0.04 (3), 0.20 (4) of 4 tests -> 0.04, 0.06, 0.0533.., 0.20 then monotone from the top
-        self.assertAlmostEqual(adj[0], 0.04)
-        self.assertAlmostEqual(adj[2], 0.16 / 3)
+        self.assertAlmostEqual(adj[0], 0.04)               # 0.01 * 4 tests / rank 1
+        self.assertAlmostEqual(adj[2], 0.16 / 3)           # 0.03 and 0.04 both end at 0.0533 (the minimum from the top)
         self.assertAlmostEqual(adj[1], 0.16 / 3)
         self.assertAlmostEqual(adj[4], 0.20)
         self.assertTrue((adj[~np.isnan(adj)] >= p[~np.isnan(p)]).all())
@@ -228,12 +236,53 @@ class StatTableTests(unittest.TestCase):
         self.assertEqual(row.n, 50)                                 # the NaN rows are gone (the zeros stay in the correlation)
         self.assertEqual(row.win_n, 40)                             # the zeros are not a direction
 
-    def test_the_panel_subsets(self):
-        df = pd.DataFrame({"sentiment_mean": [0.02, 0.1, -0.4, 0.6], "zscore": [2.0, 0.1, 1.6, -1.0]})
-        self.assertEqual(len(data.panel_subset(df, "all")), 4)
-        self.assertEqual(list(data.panel_subset(df, "strong").index), [1, 2, 3])
-        self.assertEqual(list(data.panel_subset(df, "quality").index), [2, 3])
-        self.assertEqual(list(data.panel_subset(df, "spike").index), [0, 2])
+
+class PanelSamplesTests(unittest.TestCase):
+    H = 3600
+
+    def frames(self):
+        hours = [i * self.H for i in range(6)]
+        base = pd.DataFrame({"series": ["AAA"] * 6, "hour_utc": hours, "sentiment_mean": [0.5, -0.4, 0.02, 0.6, np.nan, 0.3],
+                             "zscore": [2.0, 0.1, 3.0, 1.0, np.nan, 1.6], "majority": ["positive", "negative", "neutral", "positive", None, "positive"]})
+        returns = pd.DataFrame({"ticker": ["AAA"] * 6 + ["BBB"] * 6, "hour_utc": hours * 2, "log_return": np.arange(12.0)})
+        return base, returns
+
+    def test_every_filter_removes_hours(self):
+        base, returns = self.frames()
+        every = data.panel_samples(base, None, returns, "Ticker", "all", ("positive", "negative", "neutral"), 0.0, 0.0)
+        self.assertEqual(list(every.hour_utc), [0, 3600, 7200, 10800, 18000])               # the hour without text is gone, never 0
+        self.assertEqual(len(data.panel_samples(base, None, returns, "Ticker", "all", ("positive",), 0.0, 0.0)), 3)    # majority status
+        self.assertEqual(len(data.panel_samples(base, None, returns, "Ticker", "all", ("positive", "negative", "neutral"), 1.5, 0.0)), 3)  # Z > 1.5
+        self.assertEqual(len(data.panel_samples(base, None, returns, "Ticker", "all", ("positive", "negative", "neutral"), 0.0, 0.3)), 4)  # |s| >= 0.3
+
+    def test_the_spike_variant_needs_a_z_score_above_1_5(self):
+        base, returns = self.frames()
+        spike = data.panel_samples(base, None, returns, "Ticker", "spike", ("positive", "negative", "neutral"), 0.0, 0.0)
+        self.assertEqual(list(spike.hour_utc), [0, 7200, 18000])
+
+    def test_strong_uses_the_sentiment_of_the_strong_texts_and_the_z_score_of_all_texts(self):
+        base, returns = self.frames()
+        own = base.assign(sentiment_mean=[0.7, np.nan, np.nan, 0.8, np.nan, 0.5])           # the clear texts only: hours 1 and 2 have none
+        strong = data.panel_samples(base, own, returns, "Ticker", "strong", ("positive", "negative", "neutral"), 0.0, 0.0)
+        self.assertEqual(list(strong.hour_utc), [0, 10800, 18000])
+        self.assertEqual(list(strong.sentiment_mean), [0.7, 0.8, 0.5])
+        self.assertEqual(list(strong.zscore), [2.0, 1.0, 1.6])                              # Z-score of ALL the texts of the hour
+
+    def test_global_gives_the_same_market_hour_to_every_ticker(self):
+        base, returns = self.frames()
+        market = base.assign(series="ALL")
+        out = data.panel_samples(market, None, returns, "global", "all", ("positive", "negative", "neutral"), 0.0, 0.0)
+        self.assertEqual(sorted(out.ticker.unique()), ["AAA", "BBB"])
+        for _, part in out.groupby("ticker"):
+            self.assertEqual(list(part.sentiment_mean), [0.5, -0.4, 0.02, 0.6, 0.3])
+
+    def test_baseline_is_a_fixed_random_direction(self):
+        base, returns = self.frames()
+        market = base.assign(series="ALL")
+        first = data.panel_samples(market, None, returns, "global", "baseline", ("positive", "negative", "neutral"), 0.0, 0.0)
+        again = data.panel_samples(market, None, returns, "global", "baseline", ("positive", "negative", "neutral"), 0.0, 0.0)
+        self.assertEqual(set(first.sentiment_mean), {-1.0, 1.0})
+        self.assertEqual(list(first.sentiment_mean), list(again.sentiment_mean))            # reproducible
 
 
 class SignificantShareTests(unittest.TestCase):

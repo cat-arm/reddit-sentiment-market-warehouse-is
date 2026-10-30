@@ -405,18 +405,31 @@ def overview_series(db_path, ticker, start, end):
     return to_time(df)
 
 
-def sentiment_hourly(db_path, tickers, start, end, communities, model="VADER+FinBERT"):
+def sentiment_hourly(db_path, tickers, start, end, communities, model="VADER+FinBERT", variant="all"):
     """Per ticker-hour sums of the texts of the chosen communities (reddit_hourly_community) scored by `model`
     ('VADER+FinBERT' = the final sentiment, 'VADER' or 'FinBERT'), from 24 hours before `start` (the Z-score needs
-    them).  Recombine with `sentiment_frame`."""
+    them).  `variant` = which texts enter the hour ('all', 'strong' = |score| >= 0.05, 'quality' = |score| >= 0.30; filtered per
+    text).  Recombine with `sentiment_frame`."""
     tf, symbols = _only(tickers, "ticker")
     marks = ",".join("?" * len(communities))
     return _read(db_path, """
         SELECT ticker, hour_utc, SUM(texts) AS texts, SUM(sentiment_sum) AS sentiment_sum, SUM(pos_n) AS pos_n,
                SUM(neg_n) AS neg_n, SUM(neu_n) AS neu_n
         FROM reddit_hourly_community
-        WHERE model = ? AND hour_utc BETWEEN ? AND ? AND subreddit IN (%s)%s GROUP BY ticker, hour_utc"""
-                 % (marks, tf), (model, start - 86400, end, *communities, *symbols))
+        WHERE model = ? AND variant = ? AND hour_utc BETWEEN ? AND ? AND subreddit IN (%s)%s GROUP BY ticker, hour_utc"""
+                 % (marks, tf), (model, variant, start - 86400, end, *communities, *symbols))
+
+
+def global_hourly(db_path, start, end, communities, model="VADER+FinBERT", variant="all"):
+    """The same sums for EVERY text of the market (not only those that mention a ticker), from 24 hours before `start`, as one
+    series with the ticker name 'ALL' (reddit_hourly_global).  Recombine with `sentiment_frame`."""
+    marks = ",".join("?" * len(communities))
+    return _read(db_path, """
+        SELECT 'ALL' AS ticker, hour_utc, SUM(texts) AS texts, SUM(sentiment_sum) AS sentiment_sum, SUM(pos_n) AS pos_n,
+               SUM(neg_n) AS neg_n, SUM(neu_n) AS neu_n
+        FROM reddit_hourly_global
+        WHERE model = ? AND variant = ? AND hour_utc BETWEEN ? AND ? AND subreddit IN (%s) GROUP BY hour_utc"""
+                 % marks, (model, variant, start - 86400, end, *communities))
 
 
 def sentiment_frame(sent, start, end, combined=False):
@@ -642,17 +655,19 @@ def ticker_period_stats(db_path, start, end, horizon):
 HORIZON_LABELS = {"log_return": "Current Return", "1h": "1h", "2h": "2h", "3h": "3h", "6h": "6h", "12h": "12h"}
 
 
-STAT_TARGETS = ("log_return", "1h", "2h", "3h", "6h", "12h")      # Current Return, then the future returns of the proposal
-STAT_COLUMN = {"log_return": "log_return", **{h: "future_return_" + h for h in HORIZONS}}
-STAT_COLUMNS = ["ticker", "target", "n", "spearman_rho", "spearman_p", "spearman_bh", "pearson_rho", "pearson_p", "pearson_bh",
-                "win_n", "win_hits", "winrate", "win_p", "win_bh"]
-PANEL_SUBSETS = {"all": "ทุกข้อความที่พูดถึงสินทรัพย์", "strong": "ความรู้สึกชัดเจน (|s| ≥ 0.05)",
-                 "quality": "ความรู้สึกคุณภาพ (|s| ≥ 0.30)", "spike": "ปริมาณพุ่ง (Z-score > 1.5)"}
-STORED_PANELS = {"panel_Ticker": "Ticker: ข้อความที่พูดถึงสินทรัพย์นั้น", "panel_Ticker_strong": "Ticker strong (|s| ≥ 0.05)",
-                 "panel_Ticker_quality": "Ticker quality (|s| ≥ 0.30)", "panel_Ticker_spike": "Ticker spike (Z > 1.5)",
-                 "panel_global": "Global: ความรู้สึกทั้งตลาด", "panel_global_strong": "Global strong",
-                 "panel_global_quality": "Global quality", "panel_global_spike": "Global spike",
-                 "panel_baseline": "Baseline: ทิศทางสุ่ม (ไว้เทียบ)"}
+PANEL_VARIANTS = {"all": "ทุกข้อความ", "strong": "ความรู้สึกชัดเจน (|s| ≥ 0.05)", "quality": "ความรู้สึกคุณภาพ (|s| ≥ 0.30)",
+                  "spike": "ปริมาณพุ่ง (Z-score > 1.5)", "baseline": "Baseline ทิศทางสุ่ม"}
+PANEL_FAMILIES = {"Ticker": "เฉพาะข้อความที่พูดถึงสินทรัพย์นั้นโดยตรง", "global": "ข้อความทั้งตลาด (ความรู้สึกรวม ใช้กับทุกสินทรัพย์)"}
+STORED_PANELS = {"panel_Ticker": "Ticker", "panel_Ticker_strong": "Ticker strong", "panel_Ticker_quality": "Ticker quality",
+                 "panel_Ticker_spike": "Ticker spike", "panel_global": "Global", "panel_global_strong": "Global strong",
+                 "panel_global_quality": "Global quality", "panel_global_spike": "Global spike", "panel_baseline": "Baseline"}
+
+
+def panel_name(variant, family="Ticker"):
+    """`analysis_results` name of the panel of a variant (a key of PANEL_VARIANTS) and a family ('Ticker' or 'global')."""
+    if variant == "baseline":
+        return "panel_baseline"
+    return "panel_%s%s" % (family, "" if variant == "all" else "_" + variant)
 
 
 def bh_adjust(p):
@@ -668,25 +683,48 @@ def bh_adjust(p):
     return out
 
 
-def panel_subset(samples, name, z="zscore", sentiment="sentiment_mean"):
-    """The hours of one live panel: 'all' = every hour with text, 'strong' = |Sentiment Score| >= 0.05,
-    'quality' = |Sentiment Score| >= 0.30, 'spike' = Reddit Volume Z-score > 1.5 (the fixed values of the proposal)."""
-    if name == "strong":
-        return samples[samples[sentiment].abs() >= 0.05]
-    if name == "quality":
-        return samples[samples[sentiment].abs() >= 0.30]
-    if name == "spike":
-        return samples[samples[z] > 1.5]
+def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, seed=42, spike_z=1.5):
+    """The ticker-hours of ONE panel of the proposal (table 12), live, after every filter of the dashboard.
+    `base` = `sentiment_frame` of ALL the texts of the family (series = the tickers for the family 'Ticker', the one series 'ALL'
+    for 'global'); `own` = the same for the texts of the variant ('strong' / 'quality'), else None; `returns` = DataFrame(ticker,
+    hour_utc, log_return, future_return_*).
+    The predictor is the Sentiment Score of the variant's texts (per-text filter, as in `reddit_hourly`); the Volume Z-score and the
+    majority status are always those of ALL the texts of the hour.  An hour is kept when its majority status is in `statuses`, it passes
+    `threshold_mask` (Z-score above `z_min`, |predictor| at least `s_min`; 0 = off) and has a predictor; the variant 'spike' also
+    needs a Z-score above `spike_z` (that ticker's own volume, or the volume of the whole market for 'global').  'global' uses the
+    same market-wide hour for every ticker.  'baseline' = the rows of the global panel with a random direction (+1 / -1, fixed seed)
+    instead of the sentiment: the 'no signal' yardstick.  -> DataFrame(ticker, hour_utc, sentiment_mean, zscore, returns...)."""
+    b = base[["series", "hour_utc", "zscore", "majority", "sentiment_mean"]].rename(columns={"series": "ticker"})
+    if own is not None and variant in ("strong", "quality"):
+        v = own[["series", "hour_utc", "sentiment_mean"]].rename(columns={"series": "ticker", "sentiment_mean": "predictor"})
+        b = b.drop(columns="sentiment_mean").merge(v, on=["ticker", "hour_utc"], how="left").rename(columns={"predictor": "sentiment_mean"})
+    keep = b.majority.isin(statuses) & threshold_mask(b, z_min, s_min) & b.sentiment_mean.notna()
+    if variant == "spike":
+        keep &= b.zscore > spike_z
+    b = b[keep]
+    if family == "global" or variant == "baseline":
+        samples = returns.merge(b.drop(columns="ticker"), on="hour_utc")
+    else:
+        samples = returns.merge(b, on=["ticker", "hour_utc"])
+    if variant == "baseline":
+        samples = samples.sort_values(["ticker", "hour_utc"]).reset_index(drop=True)
+        samples["sentiment_mean"] = np.random.default_rng(seed).choice([-1.0, 1.0], size=len(samples))
     return samples
 
 
+STAT_TARGETS = ("log_return", "1h", "2h", "3h", "6h", "12h")      # Current Return, then the future returns of the proposal
+STAT_COLUMN = {"log_return": "log_return", **{h: "future_return_" + h for h in HORIZONS}}
+STAT_COLUMNS = ["ticker", "target", "n", "spearman_rho", "spearman_p", "spearman_bh", "pearson_rho", "pearson_p", "pearson_bh",
+                "win_n", "win_hits", "winrate", "win_p", "win_bh"]
+
+
 def stat_table(samples, min_n=30, sentiment="sentiment_mean"):
-    """A1 / A2 computed live on the ticker-hours of the page: per ticker and target (the Current Return and the future returns
-    1h .. 12h) the Spearman and Pearson correlation of the Sentiment Score with the return and the Historical Win Rate (share of
-    hours in which the sign of the sentiment equals the direction of the return), each with its p-value (Binomial against 50%
-    for the win rate) and the Benjamini-Hochberg p-value over the tickers.  Pairs with a NULL are dropped (never 0); a return of
-    exactly 0 or a sentiment of exactly 0 is not a direction; fewer than `min_n` pairs -> NaN.
-    `samples` has `ticker`, the sentiment column and `log_return`, `future_return_1h` .. `future_return_12h`.
+    """A1 / A2 computed live on the ticker-hours of a panel: per ticker and target (the Current Return and the future returns
+    1h .. 12h) the Spearman and Pearson correlation of the predictor with the return and the Historical Win Rate (share of hours in
+    which the sign of the predictor equals the direction of the return), each with its p-value (Binomial against 50% for the win
+    rate) and the Benjamini-Hochberg p-value over the tickers.  Pairs with a NULL are dropped (never 0); a return of exactly 0 or a
+    predictor of exactly 0 is not a direction; fewer than `min_n` pairs -> NaN.
+    `samples` has `ticker`, the predictor column and `log_return`, `future_return_1h` .. `future_return_12h`.
     -> DataFrame(STAT_COLUMNS), one row per ticker and target (target = a key of STAT_TARGETS)."""
     rows = []
     for ticker, part in samples.groupby("ticker"):
@@ -707,10 +745,10 @@ def stat_table(samples, min_n=30, sentiment="sentiment_mean"):
                     row.update(win_n=len(directional), win_hits=hits, winrate=100.0 * hits / len(directional),
                                win_p=float(stats.binomtest(hits, len(directional), 0.5).pvalue))
             rows.append(row)
-    out = pd.DataFrame(rows, columns=STAT_COLUMNS[:2] + STAT_COLUMNS[2:])
+    out = pd.DataFrame(rows, columns=STAT_COLUMNS)
     if out.empty:
         return out
-    for method, p_col, bh_col in (("spearman", "spearman_p", "spearman_bh"), ("pearson", "pearson_p", "pearson_bh"), ("win", "win_p", "win_bh")):
+    for p_col, bh_col in (("spearman_p", "spearman_bh"), ("pearson_p", "pearson_bh"), ("win_p", "win_bh")):
         out[bh_col] = out.groupby("target")[p_col].transform(lambda s: pd.Series(bh_adjust(s.to_numpy()), index=s.index))
     return out
 

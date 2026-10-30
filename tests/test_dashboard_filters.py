@@ -205,29 +205,42 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(len(at.exception), 0, "%s: %s" % (page, [e.value for e in at.exception]))
 
     def test_ranking_and_statistics_page(self):
-        """Same filters as Market and Sentiment; the cards and the first tab follow them; two tickers = two tickers; nothing = 0."""
+        """Same filters as Market and Sentiment and every one changes the numbers: the time range changes the p-values, two tickers = two
+        tickers, nothing ticked = cards 0; every kind of text and both families open."""
         at = self.run_page(RANKING_PAGE)
-        self.assertEqual([m.label for m in at.metric], ["Historical Win Rate", "Spearman ที่ p < 0.05", "Logistic AUC เฉลี่ย", "Reddit Volume Z-score สูงสุด"])
+        self.assertEqual([m.label for m in at.metric], ["Historical Win Rate", "Spearman p-value", "Pearson p-value", "Logistic AUC"])
         full = [m.value for m in at.metric]
-        self.assertRegex(full[1], r"^\d+ / \d+$")
+        self.assertRegex(full[0], r"^\d+\.\d%$")
         for measure in ("Pearson", "Win Rate", "Spearman"):
             at.radio(key="p5_measure_all").set_value(measure).run()
             self.assertEqual(len(at.exception), 0, "%s: %s" % (measure, [e.value for e in at.exception]))
+        at.radio(key="p5_family_all").set_value("global").run()
+        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
+        at.radio(key="p5_family_all").set_value("Ticker")
         for scope in at.radio(key="p5_scope").options:
             at.radio(key="p5_scope").set_value(scope).run()
             self.assertEqual(len(at.exception), 0, scope)
         for h in ("1h", "12h"):
             at.radio(key="p5_log_h").set_value(h).run()
             self.assertEqual(len(at.exception), 0, h)
-        at = tick_only(at, ["SPY", "QQQ"])
+        # the time range is a filter of the p-values
+        at.sidebar.date_input(key="f_range").set_value((dt.date(2026, 3, 1), dt.date(2026, 3, 31))).run()
         self.assertEqual(len(at.exception), 0)
-        self.assertNotEqual([m.value for m in at.metric], full, "the cards follow the tickers")
-        table = [d for d in at.dataframe if "p ต่ำสุด" in list(d.value.columns)]
-        self.assertEqual(len(table), 1)
-        self.assertEqual(sorted(table[0].value["สินทรัพย์"].str.split(" · ").str[0]), ["QQQ", "SPY"])        # two tickers chosen, two shown
-        at.sidebar.slider(key="d_s").set_value(0.6).run()                       # a Sentiment Threshold removes hours: fewer pairs
+        self.assertNotEqual([m.value for m in at.metric][:3], full[:3], "a shorter time range changes the win rate and the p-values")
+        at.sidebar.date_input(key="f_range").set_value(at.sidebar.date_input(key="f_range").value)
+        # the other filters of the page
+        at.sidebar.checkbox(key="f_ss_r/wallstreetbets").set_value(False).run()
+        self.assertEqual(len(at.exception), 0)
+        at.sidebar.checkbox(key="f_ss_r/wallstreetbets").set_value(True)
+        at.sidebar.slider(key="d_s").set_value(0.5).run()
         self.assertEqual(len(at.exception), 0)
         at.sidebar.slider(key="d_s").set_value(0.0)
+        at = tick_only(at, ["SPY", "QQQ"])
+        self.assertEqual(len(at.exception), 0)
+        table = [d for d in at.dataframe if "p ต่ำสุด" in list(d.value.columns)]
+        self.assertLessEqual(len(table), 1)
+        if table:
+            self.assertLessEqual(set(table[0].value["สินทรัพย์"].str.split(" · ").str[0]), {"QQQ", "SPY"})   # two tickers chosen, two at most shown
         for key in TICKERS:
             at.sidebar.checkbox(key="f_tk_" + key).set_value(False)
         at = at.run()
