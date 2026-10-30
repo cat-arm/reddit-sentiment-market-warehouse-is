@@ -534,8 +534,8 @@ def multi_series_chart(df, x, y, series, title, height=300, bar=False, fmt=None,
 
 def dual_axis(df, x, left, right, left_title, right_title, height=300, left_color="#1f77b4", right_color="#d62728",
               left_fmt=",.4g", right_fmt="+.3f"):
-    """Two series with independent y axes (e.g. close price vs sentiment_mean); each axis is coloured like its line.  Hovering
-    shows the nearest period with BOTH values: transparent point layers carry the tooltip and draw no axis of their own."""
+    """Two series with independent y axes (e.g. close price vs sentiment_mean); each axis is coloured like its line.  Pointing at
+    any point of either line shows that period with BOTH values; the helper layers draw no axis of their own."""
     base = alt.Chart(df).encode(x=alt.X(x + ":T", title=None))
     left_axis = alt.Axis(title=left_title, titleColor=left_color, labelColor=left_color)
     right_axis = alt.Axis(title=right_title, titleColor=right_color, labelColor=right_color)
@@ -544,13 +544,11 @@ def dual_axis(df, x, left, right, left_title, right_title, height=300, left_colo
     b = base.mark_line(color=right_color, opacity=0.8).encode(y=alt.Y(right + ":Q", axis=right_axis, scale=scale))
     tip = [alt.Tooltip(x + ":T", title="เวลา"), alt.Tooltip(left + ":Q", title=left_title, format=left_fmt),
            alt.Tooltip(right + ":Q", title=right_title, format=right_fmt)]
-    pick = alt.selection_point(nearest=True, on="mouseover", fields=[x], empty=False, clear="mouseout")
-    opacity = alt.condition(pick, alt.value(1), alt.value(0))
-    hover_a = base.mark_circle(size=60, color=left_color).encode(y=alt.Y(left + ":Q", axis=None, scale=scale), tooltip=tip,
-                                                                 opacity=opacity).add_params(pick)
-    hover_b = base.mark_circle(size=60, color=right_color).encode(y=alt.Y(right + ":Q", axis=None, scale=scale), tooltip=tip,
-                                                                  opacity=opacity)
-    return alt.layer(a, b, hover_a, hover_b).resolve_scale(y="independent").properties(height=height)
+    # every data point of each line carries an invisible, larger circle with the tooltip: point at any spot of either line and the
+    # values of that period (both lines) appear.  No "nearest point" logic, so the tooltip always belongs to the point under the mouse.
+    hit_a = base.mark_circle(size=150, opacity=0).encode(y=alt.Y(left + ":Q", axis=None, scale=scale), tooltip=tip)
+    hit_b = base.mark_circle(size=150, opacity=0).encode(y=alt.Y(right + ":Q", axis=None, scale=scale), tooltip=tip)
+    return alt.layer(a, b, hit_a, hit_b).resolve_scale(y="independent").properties(height=height)
 
 
 def table(df, **kwargs):
