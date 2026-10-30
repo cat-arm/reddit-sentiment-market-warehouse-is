@@ -474,7 +474,7 @@ def zero_rule():
 
 def zero_rule_x():
     """The solid grey vertical line at 0 (the same rule as `zero_rule`, for bars that go left and right)."""
-    return alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(color="#555555").encode(x="x:Q")
+    return alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(color="#555555").encode(x=alt.X("x:Q", scale=alt.Scale(nice=False)))
 
 
 def ref_rule(*levels):

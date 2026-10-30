@@ -222,13 +222,15 @@ def logistic_view():
         lambda c: data.VARIABLE_GROUPS.get(data.VARIABLES.get(c, ("", ""))[1], "")))
     summary["ทิศทางเดียวกัน"] = ["%d/%d Horizon" % (s, h) for s, h in zip(summary.same_sign, summary.horizons)]
     st.write("สรุป: แต่ละตัวแปรมีผลต่อโอกาสที่ราคาจะขึ้นกี่จุดเปอร์เซ็นต์ (เฉลี่ย Horizon 1h–12h)")
+    pad = max(summary.effect.abs().max(), 0.5) * 1.45                                       # room at both ends for the label after the bar
+    x_scale = alt.Scale(domain=[-pad, pad], nice=False)
     bars = alt.Chart(summary).encode(y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
     layer = bars.mark_bar().encode(
-        x=alt.X("effect:Q", title="เปลี่ยนโอกาสที่ราคาขึ้น (จุดเปอร์เซ็นต์) เมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน"),
+        x=alt.X("effect:Q", title="เปลี่ยนโอกาสที่ราคาขึ้น (จุดเปอร์เซ็นต์) เมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน", scale=x_scale),
         color=alt.condition(alt.datum.effect > 0, alt.value("#2ca02c"), alt.value("#d62728")),
         tooltip=["ตัวแปร", "กลุ่ม", alt.Tooltip("effect:Q", title="ผลเฉลี่ย (จุด%)", format="+.2f"), "ทิศทางเดียวกัน"])
-    tag_up = bars.mark_text(fontSize=10, color="#444444", align="left", dx=6).transform_filter("datum.effect > 0").encode(x="effect:Q", text="ทิศทางเดียวกัน:N")
-    tag_down = bars.mark_text(fontSize=10, color="#444444", align="right", dx=-6).transform_filter("datum.effect <= 0").encode(x="effect:Q", text="ทิศทางเดียวกัน:N")
+    tag_up = bars.mark_text(fontSize=10, color="#444444", align="left", dx=6).transform_filter("datum.effect > 0").encode(x=alt.X("effect:Q", scale=x_scale), text="ทิศทางเดียวกัน:N")
+    tag_down = bars.mark_text(fontSize=10, color="#444444", align="right", dx=-6).transform_filter("datum.effect <= 0").encode(x=alt.X("effect:Q", scale=x_scale), text="ทิศทางเดียวกัน:N")
     common.show((layer + tag_up + tag_down + common.zero_rule_x()).properties(height=28 * len(summary) + 40))
     st.caption("วิธีอ่าน: แท่งเขียว = ตัวแปรสูงขึ้นแล้วโอกาสที่ราคาขึ้นสูงขึ้น แท่งแดง = ต่ำลง  ความยาว = กี่จุดเปอร์เซ็นต์ (เช่น −2 = โอกาสขึ้นลดจาก 50% เหลือราว 48%)  "
                "ข้อความท้ายแท่ง = ใน Horizon 1h–12h ทั้ง 5 ช่วง มีกี่ช่วงที่ทิศทางตรงกับค่าเฉลี่ย (5/5 = ทิศทางเดียวกันตลอด)  "
