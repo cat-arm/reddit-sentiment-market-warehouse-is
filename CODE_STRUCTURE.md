@@ -79,9 +79,9 @@ reddit-sentiment-market-warehouse/
 | 7.4 กลุ่มสินทรัพย์ + สรุปผล | A4, A5 | `analysis/evaluate.py` (รวม A4 ไว้ในไฟล์เดียว) | `evaluation_*` + `output/reports/a5_evaluation.md` | ✅ รันแล้ว 2026-10-10 |
 | 7.5 โหลด Fact ของ 7.5 | F1 | `etl/load_fact_market_sentiment.py` | `FactMarketSentiment` (250,253 แถว) | ✅ รันแล้ว 2026-10-10 |
 | 7.6 ตรวจจับสัญญาณ | G1–G3 | `analysis/signals.py`, `configs/detection.yaml` | `signal_events`, `signal_summary`, view `v_signal_list` (= ตาราง 18) | ✅ รันแล้ว 2026-10-11 |
-| 7.5 dashboard | D0, D3, D4 | `dashboard/app.py`, `dashboard/data.py`, `dashboard/common.py`, `dashboard/pages/4_*.py`, `5_*.py` | — | ✅ รันแล้ว 2026-10-11 (เปิดด้วย `streamlit run dashboard/app.py`) |
+| 7.5 dashboard | D0, D3, D4 | `dashboard/app.py` (เมนูแท็บ), `dashboard/home.py`, `dashboard/data.py`, `dashboard/common.py`, `dashboard/pages/4_*.py`, `5_*.py` | — | ✅ รันแล้ว 2026-10-11 (เปิดด้วย `streamlit run dashboard/app.py`) |
 | ลำดับรัน + ตรวจ proposal | — | `steps/00_*.py` ถึง `26_*.py` (ตัวเรียกมีเลขลำดับ), `scripts/check_proposal_coverage.py` | `output/reports/proposal_coverage.md` | ✅ 2026-10-11 |
-| ตัวเลข/กราฟลงเล่ม | — | `scripts/make_book_tables.py` (step 31) | `output/tables/t1..t9_*.csv`, `output/figures/book_*.png` | ✅ ร่างแรก 2026-10-25 (ผู้ใช้ปรับรูปแบบต่อ) |
+| ตัวเลข/กราฟลงเล่ม | — | `scripts/make_book_tables.py` (step 31) | `output/tables/t1..t11_*.csv` (t10, t11 = ตัวอย่างตรวจกฎรวมผล ไม่มีข้อความ Reddit), `output/figures/book_*.png` | ✅ ร่างแรก 2026-10-25 (ผู้ใช้ปรับรูปแบบต่อ) |
 | ทดสอบ (§8.4) | Q1–Q4 | `tests/` | รายงานผลเทสต์ | บางส่วน |
 | คู่มือผู้ใช้ (§8.5) | Q5 | `docs/USER_MANUAL_TH.md` | — | ✅ 2026-10-25 |
 

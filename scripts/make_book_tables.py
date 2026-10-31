@@ -12,6 +12,8 @@ Figures -> output/figures/book_*.png
   t7_panel_results          per panel: cells with BH p < 0.05 (Spearman, win rate), mean win rate, mean AUC
   t8_asset_class_results    pooled win rate / Spearman / AUC per asset class and horizon (panel_Ticker)
   t9_signal_counts          detected signals per configuration and type
+  t10_rule_validation_sample the stratified sample of the rule validation (7.3 step 5) with the label counts, no Reddit texts
+  t11_rule_validation_examples one example row per rule group (scores and label, no text)
 
 Usage:  python scripts/make_book_tables.py [--db output/reddit.sqlite3]
 """
@@ -33,6 +35,17 @@ TABLES = ROOT / "output" / "tables"
 FIGURES = ROOT / "output" / "figures"
 RERUN = "python steps/31_make_book_tables.py"
 HORIZONS = ("1h", "2h", "3h", "6h", "12h")
+MODEL_TH = {"vader": "VADER", "finbert": "FinBERT", "final": "ผลสุดท้าย"}
+LABEL_TH = {"positive": "เชิงบวก", "neutral": "เป็นกลาง", "negative": "เชิงลบ"}
+METHOD_TH = {"same_direction": "ทั้งสองตัวเห็นตรงกัน คะแนนต่างกันไม่เกิน 0.50 ใช้ค่าเฉลี่ย",
+             "same_direction_far": "ทั้งสองตัวเห็นตรงกัน แต่คะแนนต่างกันเกิน 0.50 ใช้ค่าที่ใกล้ศูนย์กว่า",
+             "both_neutral": "ทั้งสองตัวเป็นกลาง ใช้ค่าเฉลี่ย",
+             "small_conflict_rule_agrees": "ตัวหนึ่งเป็นกลาง อีกตัวมีทิศทาง คำสำคัญตรงกับทิศทางนั้น ใช้คะแนนของตัวที่มีทิศทาง",
+             "small_conflict_rule_clash": "ตัวหนึ่งเป็นกลาง อีกตัวมีทิศทาง คำสำคัญขัดแย้งหรือผสม กำหนดเป็น 0",
+             "small_conflict_no_rule": "ตัวหนึ่งเป็นกลาง อีกตัวมีทิศทาง ไม่มีคำสำคัญ ใช้คะแนนของตัวที่มีทิศทาง",
+             "hard_conflict_rule": "ทิศตรงข้ามกัน มีคำสำคัญ ใช้คะแนนของตัวที่ตรงกับคำสำคัญ",
+             "hard_conflict_no_rule": "ทิศตรงข้ามกัน ไม่มีคำสำคัญ กำหนดเป็น 0",
+             "hard_conflict_mixed_zero": "ทิศตรงข้ามกัน คำสำคัญเป็นสัญญาณผสม กำหนดเป็น 0"}
 
 
 def save(name, frame, what, sources="output/reddit.sqlite3 อ่านอย่างเดียว"):
@@ -55,6 +68,44 @@ def figure(name, build):
     fig.savefig(FIGURES / name, dpi=150)
     plt.close(fig)
     print("figure ", name)
+
+
+VALIDATION = ROOT / "output" / "reports" / "rule_validation"
+STRATA_ORDER = ["same_direction", "same_direction_far", "both_neutral", "small_conflict_keyword", "small_conflict_no_keyword",
+                "hard_conflict_keyword", "hard_conflict_no_keyword"]
+SPLIT_TH = {"tune": "ชุดปรับกฎ", "test": "ชุดทดสอบ"}
+SIGNAL_TH = {"positive": "เชิงบวก", "negative": "เชิงลบ", "mixed": "ผสม", "none": "ไม่พบ"}
+
+
+def rule_validation_sample():
+    """t10 / t11: the stratified sample of the rule validation (proposal 7.3 step 5) WITHOUT the Reddit texts.
+    Reads the key and the labels the developer filled in; skipped when those files are not there."""
+    key_path, sheet_path = VALIDATION / "sample_key.csv", VALIDATION / "labeling_sheet.csv"
+    if not (key_path.exists() and sheet_path.exists()):
+        print("skip   t10/t11: no sample in", VALIDATION)
+        return
+    key = pd.read_csv(key_path)
+    labels = pd.read_csv(sheet_path, encoding="utf-8-sig", usecols=["sample_id", "human_label"])      # the texts are never read
+    sample = key.merge(labels, on="sample_id")
+    sample["label"] = sample.human_label.str.strip().str.lower().map(LABEL_TH)
+    sample["stratum"] = pd.Categorical(sample.stratum, STRATA_ORDER, ordered=True)
+    sizes = sample.groupby("stratum", observed=True).agg(population=("stratum_population", "first"), n=("sample_id", "size"),
+                                                         tune=("split", lambda s: int((s == "tune").sum())), test=("split", lambda s: int((s == "test").sum())))
+    counts = pd.crosstab(sample.stratum, sample.label).reindex(columns=list(LABEL_TH.values()), fill_value=0)
+    t10 = sizes.join(counts).reset_index()
+    t10.loc[len(t10)] = ["รวม", int(t10.population.sum()), int(t10.n.sum()), int(t10.tune.sum()), int(t10.test.sum()),
+                         *[int(t10[c].sum()) for c in LABEL_TH.values()]]
+    save("t10_rule_validation_sample", t10.rename(columns={
+        "stratum": "กลุ่มกฎ", "population": "จำนวนข้อความทั้งหมดของกลุ่ม", "n": "จำนวนตัวอย่าง", "tune": "ชุดปรับกฎ", "test": "ชุดทดสอบ"}),
+         "ตัวอย่างที่สุ่มเพื่อตรวจกฎรวมผล แยกตามกลุ่มกฎ พร้อมจำนวนป้ายความรู้สึกที่ผู้พัฒนาติด (ไม่มีข้อความ Reddit)",
+         "output/reports/rule_validation/sample_key.csv + labeling_sheet.csv (อ่านเฉพาะป้าย)")
+    first = sample.sort_values("sample_id").groupby("stratum", observed=True).head(1).sort_values("stratum")
+    example = pd.DataFrame({"รหัสตัวอย่าง": first.sample_id, "ชุด": first.split.map(SPLIT_TH), "กลุ่มกฎ": first.stratum.astype(str),
+                            "คะแนน VADER": first.vader_score.round(3), "คะแนน FinBERT": first.finbert_score.round(3),
+                            "คำสำคัญ": first.rule_signal.map(SIGNAL_TH), "คะแนนสุดท้าย": first.final_sentiment.round(3),
+                            "ป้ายผู้พัฒนา": first.label})
+    save("t11_rule_validation_examples", example, "ตัวอย่างข้อมูลที่สุ่มได้กลุ่มละ 1 รายการ (คะแนนและป้าย ไม่มีข้อความ Reddit)",
+         "output/reports/rule_validation/sample_key.csv + labeling_sheet.csv (อ่านเฉพาะป้าย)")
 
 
 def main(argv=None):
@@ -80,10 +131,15 @@ def main(argv=None):
         frame["share_pct"] = (100.0 * frame.n / frame.n.sum()).round(2)
         dist.append(frame)
     dist = pd.concat(dist)[["model", "label", "n", "share_pct"]]
-    save("t2_sentiment_distribution", dist, "จำนวนและสัดส่วน positive/neutral/negative ของ VADER, FinBERT และผลสุดท้าย (เกณฑ์ ±0.05)")
+    save("t2_sentiment_distribution", dist.assign(model=dist.model.map(MODEL_TH), label=dist.label.map(LABEL_TH)).rename(columns={
+        "model": "วิธี", "label": "ประเภทความรู้สึก", "n": "จำนวนข้อความ", "share_pct": "ร้อยละ"}),
+         "จำนวนและสัดส่วนความรู้สึกเชิงบวก เป็นกลาง และเชิงลบ ของ VADER, FinBERT และผลสุดท้าย (เกณฑ์ ±0.05)")
     method = sql("SELECT final_method, COUNT(*) AS n, SUM(is_ambiguous) AS ambiguous FROM sentiment_item GROUP BY 1 ORDER BY 2 DESC")
     method["share_pct"] = (100.0 * method.n / method.n.sum()).round(2)
-    save("t3_final_method", method, "จำนวนข้อความแยกตามกฎที่ใช้รวมผล VADER+FinBERT (final_method) และจำนวนที่กำกวม")
+    method.insert(1, "คำอธิบายกฎ", method.final_method.map(METHOD_TH))
+    save("t3_final_method", method.rename(columns={"final_method": "กฎที่ใช้ (final_method)", "n": "จำนวนข้อความ",
+                                                   "ambiguous": "จำนวนที่ตัดสินไม่ได้ (is_ambiguous = 1)", "share_pct": "ร้อยละ"}),
+         "จำนวนข้อความแยกตามกฎที่ใช้รวมผล VADER และ FinBERT (final_method) และจำนวนที่ระบบตัดสินไม่ได้")
 
     mentions = sql("SELECT m.ticker, k.AssetClass AS big_group, COUNT(DISTINCT m.src_rowid) AS texts, SUM(m.mention_count) AS mentions "
                    "FROM ticker_mentions m JOIN DimTicker k ON k.TickerSymbol = m.ticker GROUP BY m.ticker ORDER BY texts DESC")
@@ -127,14 +183,22 @@ def main(argv=None):
     sig = sql("SELECT z_threshold, s_threshold, signal_type, SUM(n_signals) AS n_signals FROM signal_summary GROUP BY 1, 2, 3 ORDER BY 1, 2, 3")
     save("t9_signal_counts", sig, "จำนวนสัญญาณเชิงข้อมูลที่ตรวจพบ แยกชุดเกณฑ์และประเภทสัญญาณ")
 
+    rule_validation_sample()
+
     # ---------------- figures
     def f_dist(plt):
-        fig, ax = plt.subplots(figsize=(7, 3.6))
+        fig, ax = plt.subplots(figsize=(8, 3.8))
         piv = dist.pivot(index="model", columns="label", values="share_pct").reindex(["vader", "finbert", "final"])[["positive", "neutral", "negative"]]
+        piv = piv.rename(index=MODEL_TH, columns=LABEL_TH)
         piv.plot.barh(stacked=True, ax=ax, color=["#1a9850", "#bdbdbd", "#b2182b"])
-        ax.set_xlabel("ร้อยละของข้อความ (เกณฑ์ neutral ±0.05)")
+        for bar_group in ax.containers:                                  # the share in % on every part of a bar
+            ax.bar_label(bar_group, fmt="%.1f%%", label_type="center", fontsize=9, color="black")
+        ax.set_xlabel("ร้อยละของข้อความ (เกณฑ์ความรู้สึกเป็นกลาง ±0.05)")
         ax.set_ylabel("")
-        ax.set_title("สัดส่วนความรู้สึกของแต่ละวิธี (22 ล้านข้อความ)")
+        ax.set_xlim(0, 100)
+        ax.invert_yaxis()                                                 # VADER on top, the final result at the bottom
+        ax.set_title("สัดส่วนประเภทความรู้สึกของแต่ละวิธี (22 ล้านข้อความ)")
+        ax.legend(title="ประเภทความรู้สึก", loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=3, frameon=False)
         return fig
     figure("book_sentiment_distribution.png", f_dist)
 
