@@ -32,7 +32,7 @@
 | 23 | `23_run_dashboard.py` | เปิด Streamlit dashboard | `dashboard/app.py` |
 | 24 | `24_check_proposal_coverage.py` | ตรวจว่า DB + dashboard ตอบ proposal ครบ -> output/reports/proposal_coverage.md | `scripts/check_proposal_coverage.py` |
 | 25 | `25_neutral_band_sensitivity.py` | เทียบสัดส่วนความรู้สึกที่เกณฑ์ neutral 0.05 กับ 0.10 -> output/reports/neutral_band_sensitivity.md (S5) | `scripts/neutral_band_sensitivity.py` |
-| 26 | `26_rule_validation.py` | `sample` สุ่มข้อความให้ติดป้ายเอง / `evaluate` เทียบความแม่น VADER, FinBERT, รวมผล (S5) | `scripts/rule_validation.py` |
+| 26 | `26_rule_validation.py` | `sample` สุ่มคอมเมนต์ให้ติดป้ายเอง / `score` คะแนนข้อความ 3 แบบ A/B/C / `evaluate` เทียบความแม่น VADER, FinBERT, รวมผล, รูปแบบข้อความ (S5) | `scripts/rule_validation.py` |
 | 27 | `27_super_signal_sensitivity.py` | (ส่วนขยาย) ทดสอบ panel ที่เข้มขึ้น super quality ≥ 0.50 / super spike z > 2.0 -> output/reports/super_signal_sensitivity.md | `scripts/super_signal_sensitivity.py` |
 | 28 | `28_build_final_reports.py` | สร้างเอกสารสรุป 3 ไฟล์ (ส่วนที่เกิน proposal / การทดสอบและสมมติฐาน / สรุปผลสุดท้าย) -> output/reports/final/ | `scripts/build_final_reports.py` |
 | 29 | `29_rule_validation_extras.py` | ความแม่นที่เกณฑ์ neutral ±0.10 เทียบป้ายที่ติดเอง + confusion matrix (S5) -> output/reports/rule_validation/band_and_confusion.md | `scripts/rule_validation_extras.py` |
