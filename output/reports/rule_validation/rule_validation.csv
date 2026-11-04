@@ -1,0 +1,19 @@
+# ไฟล์นี้คืออะไร: จำนวนข้อความที่แต่ละวิธีตอบถูก แยกตามกลุ่มกฎและชุด tune/test (ข้อมูลชุดเดียวกับ rule_validation.md)
+# สร้างเมื่อ: 2026-11-04 22:32 (เวลาเครื่อง) โดยสคริปต์ scripts/rule_validation.py evaluate
+# ข้อมูลที่ใช้: labeling_sheet.csv + sample_key.csv
+# สร้างใหม่ด้วยคำสั่ง: python steps/26_rule_validation.py evaluate
+stratum,split,n,vader_correct,finbert_correct,final_correct
+both_neutral,test,25,16,16,16
+both_neutral,tune,25,17,17,17
+hard_conflict_keyword,test,25,13,10,18
+hard_conflict_keyword,tune,25,10,11,16
+hard_conflict_no_keyword,test,25,5,8,12
+hard_conflict_no_keyword,tune,25,4,9,12
+same_direction,test,25,12,12,12
+same_direction,tune,25,12,12,12
+same_direction_far,test,25,9,9,9
+same_direction_far,tune,25,9,9,9
+small_conflict_keyword,test,25,5,8,10
+small_conflict_keyword,tune,25,6,6,9
+small_conflict_no_keyword,test,50,18,24,16
+small_conflict_no_keyword,tune,50,20,21,22

@@ -23,7 +23,7 @@
 - `sentiment_mean = NULL` (ไม่มีข้อความ) ≠ `0` (neutral) — ห้าม `fillna(0)`
 - ชื่อตาราง/คอลัมน์ star schema ต้องตรงรูปที่ 2–4 ของ proposal (DDL อยู่ที่ TASKS W2) เพราะต้องอ้างในรายงาน
 - ไม่เอาชื่อผู้ใช้ Reddit (`author`) ไปใช้วิเคราะห์หรือโชว์บนแดชบอร์ด
-- ถามก่อนติดตั้งแพ็กเกจใหญ่ หรือดาวน์โหลดโมเดล/ข้อมูลจากเน็ต; อย่า commit `data/`, `output/`, `old_code/` (โน้ตบุ๊ก MVP เก่า มีข้อความ Reddit จริงฝังอยู่ใน output — อยู่ใน `.gitignore` แล้ว)
+- ถามก่อนติดตั้งแพ็กเกจใหญ่ หรือดาวน์โหลดโมเดล/ข้อมูลจากเน็ต; อย่า commit `data/`, `output/`, `old_code/` (ยกเว้น `output/reports/rule_validation/` + `output/figures/s5_confusion_matrices.png` ที่ผู้ใช้สั่งให้ push ได้ 2026-11-04 — เป็นผลทดสอบรอบใหม่เท่านั้น; ชีตติดป้ายมีข้อความ Reddit จริง 400 คอมเมนต์ (ไม่มี author); `output/reports/_backup_*` ยังห้าม) (โน้ตบุ๊ก MVP เก่า มีข้อความ Reddit จริงฝังอยู่ใน output — อยู่ใน `.gitignore` แล้ว)
 
 ## คำสั่ง (Windows / PowerShell)
 

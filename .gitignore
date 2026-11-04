@@ -12,7 +12,15 @@ data/
 *.db-*
 *.sqlite
 *.sqlite3
-output/
+output/*
+# Exception: the 2026-11-04 rule-validation test (new one only) is tracked so it can go to GitHub.
+# The old test backup (output/reports/_backup_*) stays ignored.
+!output/reports/
+output/reports/*
+!output/reports/rule_validation/
+!output/figures/
+output/figures/*
+!output/figures/s5_confusion_matrices.png
 *.jsonl
 
 # Old Colab MVP notebook: cell outputs embed real scraped Reddit post text.
