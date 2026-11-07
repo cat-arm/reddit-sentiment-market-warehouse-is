@@ -112,10 +112,10 @@ def main(argv=None):
                           % (len(labelled), skipped), "scripts/rule_validation_extras.py",
                           "python steps/29_rule_validation_extras.py",
                           "labeling_sheet.csv + sample_key.csv (คะแนนที่เก็บไว้ เอากฎมาคำนวณใหม่ ไม่รันโมเดล ไม่แตะฐานข้อมูล)"), "",
-             "ตัวเลขรวมถ่วงน้ำหนักตามจำนวนข้อความจริงของแต่ละกลุ่มกฎ เหมือน rule_validation.md; ตัวอย่างน้อย (ชุดละ 105 ข้อความ) ผลเป็นแนวโน้ม ไม่ใช่การทดสอบนัยสำคัญ", ""]
+             "ตัวเลขรวมถ่วงน้ำหนักตามจำนวนข้อความจริงของแต่ละกลุ่มกฎ เหมือน rule_validation.md; ตัวอย่างน้อย (ชุดละ ~200 ข้อความ) ผลเป็นแนวโน้ม ไม่ใช่การทดสอบนัยสำคัญ", ""]
     rows = []
     lines += ["## ความแม่น: ±0.05 เทียบ ±0.10", "", "| ชุด | วิธี | ±0.05 | ±0.10 | ต่าง (จุด) |", "|---|---|---|---|---|"]
-    for split, label in (("tune", "tune"), ("test", "test"), (None, "ทั้ง 210")):
+    for split, label in (("tune", "tune"), ("test", "test"), (None, "ทั้งหมด")):
         a, b = weighted(labelled, split, BANDS[0]), weighted(labelled, split, BANDS[1])
         for method in ("vader", "finbert", "final"):
             lines.append("| %s | %s | %.1f%% | %.1f%% | %+.1f |" % (label, names[method], 100 * a[method], 100 * b[method], 100 * (b[method] - a[method])))

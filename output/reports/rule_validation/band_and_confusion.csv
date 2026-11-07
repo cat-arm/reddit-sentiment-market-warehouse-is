@@ -1,0 +1,14 @@
+# ไฟล์นี้คืออะไร: ความแม่นถ่วงน้ำหนักที่เกณฑ์ ±0.05 และ ±0.10 (ข้อมูลชุดเดียวกับ band_and_confusion.md)
+# สร้างเมื่อ: 2026-11-04 22:32 (เวลาเครื่อง) โดยสคริปต์ scripts/rule_validation_extras.py
+# ข้อมูลที่ใช้: labeling_sheet.csv + sample_key.csv
+# สร้างใหม่ด้วยคำสั่ง: python steps/29_rule_validation_extras.py
+split,method,accuracy_band_0.05,accuracy_band_0.10
+tune,vader,0.4424,0.4184
+tune,finbert,0.4740,0.5062
+tune,final,0.4968,0.4675
+test,vader,0.4241,0.4354
+test,finbert,0.4835,0.4996
+test,final,0.4443,0.4366
+ทั้งหมด,vader,0.4333,0.4269
+ทั้งหมด,finbert,0.4788,0.5029
+ทั้งหมด,final,0.4706,0.4520

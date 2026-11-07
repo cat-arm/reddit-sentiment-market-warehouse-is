@@ -123,7 +123,7 @@ def analyse_panel(panel_name, df, meta):
             metrics, status, n = fit_one(part, target, gmap)
             common = dict(meta, panel_name=panel_name, level=level, ticker=ticker, big_group=big_group,
                           predictor="+".join(gmap), target=target, horizon=horizon, n_samples=n, status=status,
-                          p_value=None)
+                          p_value=None, p_value_bh=None)
             if metrics is None:
                 rows.append(dict(common, metric_name="auc", metric_value=float("nan")))
                 continue

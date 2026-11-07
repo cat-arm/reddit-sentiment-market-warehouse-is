@@ -67,7 +67,7 @@ reddit-sentiment-market-warehouse/
 | รูป A1/A2: สีแดง-เขียว + n ทุกช่อง + คำอธิบาย panel | A1, A2 | `analysis/figure_style.py` (ใช้โดย `analysis/correlation.py`, `analysis/winrate.py`) | `output/figures/a1_*.png`, `a2_*.png` | ✅ 2026-10-25 |
 | 7.3 keyword + แก้ conflict | S3, S4 | `etl/resolve_sentiment.py`, `configs/sentiment.yaml` | `sentiment_item` (final_sentiment/status/method + `is_ambiguous`) | ✅ รันแล้ว 2026-10-10; ปรับตาม proposal ฉบับอนุมัติ 2026-10-24 (`same_direction_far`, `is_ambiguous`, `--migrate`) |
 | 7.3 ตรวจเกณฑ์ neutral 0.05 เทียบ 0.10 | S5 | `scripts/neutral_band_sensitivity.py` (step 25), `scripts/rule_validation_extras.py` (step 29: ความแม่นเทียบป้าย + confusion matrix) | `output/reports/neutral_band_sensitivity.md/.csv`, `output/reports/rule_validation/band_and_confusion.md`, `output/figures/s5_confusion_matrices.png` | ✅ 2026-10-25 |
-| 7.3 ตรวจกฎรวมผลด้วยตัวอย่างติดป้ายเอง | S5 | `scripts/rule_validation.py sample/evaluate` (step 26) | `output/reports/rule_validation/` | ✅ ผู้ใช้ติดป้ายแล้ว 2026-10-25 |
+| 7.3 ตรวจกฎรวมผลด้วยตัวอย่างติดป้ายเอง | S5 | `scripts/rule_validation.py sample/score/evaluate` (step 26) | `output/reports/rule_validation/` (400 คอมเมนต์ รอบ 2026-11-04: เทียบกฎรวมผล + รูปแบบข้อความ A/B/C/cascade = **ส่วนขยาย**; ผลรอบ 210 ข้อความเก่าอยู่ใน `_backup_2026-11-04/`) | ✅ 2026-11-04 ติดป้ายครบ 400 + `evaluate` เสร็จ (คงกฎเดิมและรูปแบบ B) |
 | 7.3 QA | S5 | `etl/sentiment_qa.py` | `sentiment_qa` | ✅ รันแล้ว 2026-10-10 |
 | 7.3 ซ่อมป้าย neutral band | — | `scripts/recompute_status_band.py` | แก้ `vader_status` 771 แถว | ✅ 2026-10-10 |
 | 7.4 สรุปรายชั่วโมง | P1, P2 | `etl/reddit_hourly.py`, `etl/reddit_features.py` | `reddit_hourly`, `reddit_hourly_features` | ✅ รันแล้ว 2026-10-10 |
