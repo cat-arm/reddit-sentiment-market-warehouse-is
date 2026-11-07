@@ -35,7 +35,7 @@ def panel_note(panel_name):
 
 
 def cell_labels(values, counts, p_adjusted, value_text):
-    """'value*' + newline + 'n=count' for every cell; '*' = Benjamini-Hochberg p < 0.05; 'n/a' where nothing was computed."""
+    """'value*' + newline + 'n=count' for every cell; '*' = raw p < 0.05 (not adjusted); 'n/a' where nothing was computed."""
     rows = []
     for vrow, nrow, prow in zip(values, counts, p_adjusted):
         row = []

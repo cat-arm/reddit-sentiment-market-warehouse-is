@@ -14,6 +14,8 @@ Figures -> output/figures/book_*.png
   t9_signal_counts          detected signals per configuration and type
   t10_rule_validation_sample the stratified sample of the rule validation (7.3 step 5) with the label counts, no Reddit texts
   t11_rule_validation_examples one example row per rule group (scores and label, no text)
+  t12_relationship_key_numbers the single numbers quoted in the text of 7.4 (BH minimum, share of small correlations,
+                              win-rate extremes, AUC ranges, lag vs current count), each with its definition
 
 Usage:  python scripts/make_book_tables.py [--db output/reddit.sqlite3]
 """
@@ -108,6 +110,46 @@ def rule_validation_sample():
          "output/reports/rule_validation/sample_key.csv + labeling_sheet.csv (อ่านเฉพาะป้าย)")
 
 
+def relationship_key_numbers(sql):
+    """t12: the single numbers quoted in the text of 7.4, read from analysis_results (BH = extension, see METHOD_DECISIONS 15)."""
+    r = sql("SELECT analysis, panel_name, level, predictor, horizon, metric_name, metric_value, p_value_bh, n_samples "
+            "FROM analysis_results WHERE status = 'ok'")
+    cor = r[(r.analysis == "correlation") & (r.metric_name == "spearman")]
+    tk = cor[(cor.panel_name == "panel_Ticker") & (cor.level == "ticker") & (cor.predictor == "sentiment_mean")]
+    fut, cur = tk[tk.horizon != "log_return"], tk[tk.horizon == "log_return"]
+    win = r[(r.analysis == "winrate") & (r.metric_name == "winrate") & (r.panel_name == "panel_Ticker") & (r.level == "ticker")
+            & (r.predictor == "sign(sentiment_mean)")]
+    far = win[(win.metric_value < 0.46) | (win.metric_value > 0.54)]
+    big = win[win.n_samples >= 1000]
+    auc, std = r[r.metric_name == "auc"], r[r.metric_name == "auc_std"]
+    pooled_future = lambda d, baseline: d[(d.level == "all") & (d.horizon != "log_return") & ((d.panel_name == "panel_baseline") == baseline)]
+    current = auc[(auc.level == "all") & (auc.horizon == "log_return") & (auc.panel_name != "panel_baseline")]
+    lag = cor[(cor.level == "all") & (cor.horizon != "log_return") & (cor.panel_name != "panel_baseline")
+              & cor.predictor.isin(["sentiment_mean", "sentiment_lag_1h"])].pivot_table(
+        index=["panel_name", "horizon"], columns="predictor", values="metric_value")
+    rows = [
+        ("panel_Ticker Spearman: ช่องผลตอบแทนอนาคต", len(fut), "จำนวนช่อง (Ticker x กรอบเวลา 5 ช่วง) ที่คำนวณได้"),
+        ("panel_Ticker Spearman: ช่องอนาคตที่ |rho| < 0.1", "%d (%.1f%%)" % ((fut.metric_value.abs() < 0.1).sum(), 100 * (fut.metric_value.abs() < 0.1).mean()), "จำนวนและร้อยละ"),
+        ("panel_Ticker Spearman: ช่องอนาคตที่ผ่าน BH < 0.05", int((fut.p_value_bh < 0.05).sum()), "จำนวนช่องที่มีดอกจัน"),
+        ("panel_Ticker Spearman: ค่า p ที่ปรับด้วย BH ต่ำสุดของช่องอนาคต", round(fut.p_value_bh.min(), 4), "ค่าต่ำสุดจากทุกช่องอนาคต"),
+        ("panel_Ticker Spearman: ช่อง Current Return ที่ผ่าน BH < 0.05", int((cur.p_value_bh < 0.05).sum()), "จำนวนช่องที่มีดอกจัน"),
+        ("panel_Ticker Spearman: Current Return ที่เป็นบวก", "%d จาก %d" % ((cur.metric_value > 0).sum(), len(cur)), "จำนวนสินทรัพย์"),
+        ("panel_Ticker Win Rate: ช่วงของ Win Rate", "%.1f%% ถึง %.1f%%" % (100 * win.metric_value.min(), 100 * win.metric_value.max()), "ต่ำสุดถึงสูงสุดของทุกช่อง"),
+        ("panel_Ticker Win Rate: ช่องที่ผ่าน BH < 0.05", int((win.p_value_bh < 0.05).sum()), "จำนวนช่องที่มีดอกจัน"),
+        ("panel_Ticker Win Rate: ช่องที่ต่ำกว่า 46% หรือสูงกว่า 54%", len(far), "จำนวนช่อง"),
+        ("panel_Ticker Win Rate: จำนวนเหตุการณ์สูงสุดของช่องเหล่านั้น", int(far.n_samples.max()), "จำนวนเหตุการณ์"),
+        ("panel_Ticker Win Rate: ช่องที่มีเหตุการณ์ตั้งแต่ 1,000", len(big), "จำนวนช่อง"),
+        ("panel_Ticker Win Rate: ช่วงของ Win Rate ในช่องเหล่านั้น", "%.1f%% ถึง %.1f%%" % (100 * big.metric_value.min(), 100 * big.metric_value.max()), "ต่ำสุดถึงสูงสุด"),
+        ("Logistic: AUC ระดับรวม กรอบอนาคต (ไม่รวม baseline)", "%.3f ถึง %.3f" % (pooled_future(auc, False).metric_value.min(), pooled_future(auc, False).metric_value.max()), "ต่ำสุดถึงสูงสุดของ 8 กลุ่ม x 5 กรอบเวลา"),
+        ("Logistic: AUC ระดับรวม กรอบอนาคต ของ panel_baseline", "%.4f ถึง %.4f" % (pooled_future(auc, True).metric_value.min(), pooled_future(auc, True).metric_value.max()), "ต่ำสุดถึงสูงสุด"),
+        ("Logistic: ส่วนเบี่ยงเบนมาตรฐานของ AUC ข้าม 5 รอบ (เฉลี่ย)", round(pooled_future(std, False).metric_value.mean(), 4), "เฉลี่ยของ 8 กลุ่ม x 5 กรอบเวลา ระดับรวม"),
+        ("Logistic: AUC ของ Current Return ระดับรวม (ไม่รวม baseline)", "%.3f ถึง %.3f" % (current.metric_value.min(), current.metric_value.max()), "ต่ำสุดถึงสูงสุดของ 8 กลุ่ม"),
+        ("Q3: ช่องที่ความรู้สึก lag 1 ชั่วโมงมี |rho| สูงกว่าชั่วโมงปัจจุบัน", "%d จาก %d" % ((lag.sentiment_lag_1h.abs() > lag.sentiment_mean.abs()).sum(), len(lag)), "8 กลุ่ม x 5 กรอบเวลา ระดับรวม ไม่รวม baseline"),
+        ("Q3: |rho| สูงสุดในการเปรียบเทียบข้างต้น", round(lag.abs().max().max(), 4), "ค่าสัมบูรณ์สูงสุดของสหสัมพันธ์ในช่องเหล่านั้น"),
+    ]
+    return pd.DataFrame(rows, columns=["รายการ", "ค่า", "คำอธิบาย"])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--db", default=str(DEFAULT_DB))
@@ -183,6 +225,9 @@ def main(argv=None):
     sig = sql("SELECT z_threshold, s_threshold, signal_type, SUM(n_signals) AS n_signals FROM signal_summary GROUP BY 1, 2, 3 ORDER BY 1, 2, 3")
     save("t9_signal_counts", sig, "จำนวนสัญญาณเชิงข้อมูลที่ตรวจพบ แยกชุดเกณฑ์และประเภทสัญญาณ")
 
+    save("t12_relationship_key_numbers", relationship_key_numbers(sql),
+         "ตัวเลขเดี่ยวที่อ้างในข้อความของระบบ 7.4 (ค่า p ต่ำสุดหลังปรับ BH, ช่วง Win Rate, ช่วง AUC, จำนวนช่อง lag เทียบปัจจุบัน) พร้อมนิยาม")
+
     rule_validation_sample()
 
     # ---------------- figures
@@ -192,7 +237,7 @@ def main(argv=None):
         piv = piv.rename(index=MODEL_TH, columns=LABEL_TH)
         piv.plot.barh(stacked=True, ax=ax, color=["#1a9850", "#bdbdbd", "#b2182b"])
         for bar_group in ax.containers:                                  # the share in % on every part of a bar
-            ax.bar_label(bar_group, fmt="%.1f%%", label_type="center", fontsize=9, color="black")
+            ax.bar_label(bar_group, fmt="%.2f%%", label_type="center", fontsize=9, color="black")
         ax.set_xlabel("ร้อยละของข้อความ (เกณฑ์ความรู้สึกเป็นกลาง ±0.05)")
         ax.set_ylabel("")
         ax.set_xlim(0, 100)

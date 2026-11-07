@@ -15,7 +15,7 @@ Definitions (documented decisions, see docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md 
               winrate - baseline_winrate tells whether it is above or below chance.
   guard       fewer than MIN_N = 30 events -> status 'insufficient_data', winrate/p-value stay NULL (never 0)
 Each (panel, group, horizon, predictor) stores two rows: metric 'winrate' (with the p-value) and
-'baseline_winrate' (the p0 used).  BH adjustment (extension) is added across tickers like in A1.
+'baseline_winrate' (the p0 used).  p-values are raw (not adjusted for the number of tests), like in A1.
 Same caveats as A1: autocorrelated hours and overlapping horizons make p-values descriptive.
 
 Usage:  python -m analysis.winrate [--db output/reddit.sqlite3] [--no-figures]
@@ -87,9 +87,9 @@ def analyse_panel(panel_name, df, base, meta):
                 rate, p, status = evaluate(wins, events, p0)
                 common = dict(meta, panel_name=panel_name, level=level, ticker=ticker, big_group=big_group,
                               predictor=predictor, target=target, horizon=horizon, n_samples=events, status=status)
-                rows.append(dict(common, metric_name="winrate", metric_value=rate, p_value=p, p_value_bh=None))
+                rows.append(dict(common, metric_name="winrate", metric_value=rate, p_value=p))
                 rows.append(dict(common, metric_name="baseline_winrate",
-                                 metric_value=p0 if status == "ok" else float("nan"), p_value=None, p_value_bh=None))
+                                 metric_value=p0 if status == "ok" else float("nan"), p_value=None))
     return rows
 
 
@@ -108,14 +108,14 @@ def heatmaps(rows, out_dir=FIGURES):
     for panel, part in frame.groupby("panel_name"):
         order = part.drop_duplicates("ticker").sort_values(["big_group", "ticker"])["ticker"].tolist()
         value = part.pivot(index="ticker", columns="horizon", values="metric_value").reindex(index=order, columns=cols)
-        sig = part.pivot(index="ticker", columns="horizon", values="p_value_bh").reindex(index=order, columns=cols)
+        sig = part.pivot(index="ticker", columns="horizon", values="p_value").reindex(index=order, columns=cols)
         size = part.pivot(index="ticker", columns="horizon", values="n_samples").reindex(index=order, columns=cols)
         labels = figure_style.cell_labels(value.to_numpy(float), size.to_numpy(float), sig.to_numpy(float), lambda v: "%.1f" % (100 * v))
         fig, ax = plt.subplots(figsize=(8, 0.42 * len(order) + 2.6))
         sns.heatmap(value, annot=labels, fmt="", cmap=figure_style.colormap(), center=0.5, vmin=0.45, vmax=0.55, linewidths=0.3,
                     cbar_kws={"label": "win rate (แดง < 50%, เขียว > 50%; สีเต็มที่ 45% / 55%)"}, ax=ax, annot_kws={"fontsize": 6})
         ax.set_title("%s - win rate %% (%s)\n%s\n"
-                     "(* = BH p < 0.05 เทียบ baseline; n = จำนวนครั้งที่มีสัญญาณและราคาขยับ)"
+                     "(* = p < 0.05 เทียบ baseline (ไม่ปรับ จึงคาดว่าราว 5% ของช่องผ่านโดยบังเอิญ); n = จำนวนครั้งที่มีสัญญาณและราคาขยับ)"
                      % (panel, part.predictor.iloc[0], figure_style.panel_note(panel)), fontsize=8)
         ax.set_xlabel("")
         ax.set_ylabel("")
@@ -143,7 +143,6 @@ def run(db_path=DEFAULT_DB, figures=True):
         for name, df in panels.items():
             rows += analyse_panel(name, df, base, meta)
             print("%-22s analysed" % name, flush=True)
-        results_store.add_bh([r for r in rows if r["metric_name"] == "winrate"])
         results_store.replace(db, "winrate", rows)
         if figures:
             print("heatmaps:", len(heatmaps(rows)))

@@ -11,8 +11,8 @@ For every panel, at three levels (each of the 34 tickers / each Big_Group / all 
                                          so it describes co-movement, NOT prediction
                future_return_1h/2h/3h/6h/12h   the forward returns (the real question)
 Rules: pairs with a NULL on either side are dropped (never filled with 0); fewer than MIN_N=30 pairs ->
-status 'insufficient_data'; a constant column -> 'constant'.  Benjamini-Hochberg p-values (extension) are added
-within each (panel, level, predictor, target, method) family.
+status 'insufficient_data'; a constant column -> 'constant'.  p-values are raw (not adjusted for the number of tests): with
+34 tickers x 6 targets about 5% of the cells are expected to pass p < 0.05 by chance alone (method decision 2026-11-01).
 Caveats to quote in the report: hourly data are autocorrelated and future returns of different horizons overlap,
 so p-values are descriptive, not exact; in the global panels every ticker shares the same market-wide sentiment.
 
@@ -76,13 +76,13 @@ def analyse_panel(panel_name, df, meta):
                 for metric, value, p in (("pearson", pr, pp), ("spearman", sr, sp)):
                     rows.append(dict(meta, panel_name=panel_name, level=level, ticker=ticker, big_group=big_group,
                                      predictor=predictor, target=target, horizon=results_store.HORIZONS[target],
-                                     metric_name=metric, metric_value=value, p_value=p, p_value_bh=None,
+                                     metric_name=metric, metric_value=value, p_value=p,
                                      n_samples=n, status=status))
     return rows
 
 
 def heatmaps(rows, out_dir=FIGURES):
-    """One PNG per panel x method: tickers (grouped by Big_Group) x targets, star = BH-adjusted p < 0.05."""
+    """One PNG per panel x method: tickers (grouped by Big_Group) x targets, star = raw p < 0.05."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -97,7 +97,7 @@ def heatmaps(rows, out_dir=FIGURES):
         order = part.drop_duplicates("ticker").sort_values(["big_group", "ticker"])["ticker"].tolist()
         cols = list(results_store.HORIZONS.values())
         value = part.pivot(index="ticker", columns="horizon", values="metric_value").reindex(index=order, columns=cols)
-        sig = part.pivot(index="ticker", columns="horizon", values="p_value_bh").reindex(index=order, columns=cols)
+        sig = part.pivot(index="ticker", columns="horizon", values="p_value").reindex(index=order, columns=cols)
         size = part.pivot(index="ticker", columns="horizon", values="n_samples").reindex(index=order, columns=cols)
         labels = figure_style.cell_labels(value.to_numpy(float), size.to_numpy(float), sig.to_numpy(float), lambda v: "%.3f" % v)
         fig, ax = plt.subplots(figsize=(9.5, 0.42 * len(order) + 2.6))
@@ -105,7 +105,7 @@ def heatmaps(rows, out_dir=FIGURES):
                     center=0, vmin=-0.3, vmax=0.3, linewidths=0.3, cbar_kws={"label": "%s (แดง = ติดลบ, เขียว = บวก)" % method},
                     ax=ax, annot_kws={"fontsize": 6})
         ax.set_title("%s - %s correlation ของ %s กับผลตอบแทน\n%s\n"
-                     "(* = BH p < 0.05; Current Return = ผลตอบแทนของชั่วโมงเดียวกัน; n = จำนวนแถว ชั่วโมง x สินทรัพย์ ที่ใช้คำนวณ)"
+                     "(* = p < 0.05 (ไม่ปรับ จึงคาดว่าราว 5% ของช่องผ่านโดยบังเอิญ); Current Return = ผลตอบแทนของชั่วโมงเดียวกัน; n = จำนวนแถว ชั่วโมง x สินทรัพย์ ที่ใช้คำนวณ)"
                      % (panel, method, part.predictor.iloc[0], figure_style.panel_note(panel)), fontsize=8)
         ax.set_xlabel("")
         ax.set_ylabel("")
@@ -130,7 +130,6 @@ def run(db_path=DEFAULT_DB, figures=True):
             df = pd.read_sql_query("SELECT %s FROM panels WHERE panel_name = ?" % ", ".join(cols), db, params=(panel_name,))
             rows += analyse_panel(panel_name, df, meta)
             print("%-22s rows=%d  analysed" % (panel_name, len(df)), flush=True)
-        results_store.add_bh(rows)
         results_store.replace(db, "correlation", rows)
         if figures:
             print("heatmaps:", len(heatmaps(rows)))
