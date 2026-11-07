@@ -190,4 +190,30 @@ if not ratios.empty:
     common.show(area, width="stretch")
     st.caption(caption)
 
+# ---- which asset is the most positive / negative?  (management question 2 of 7.3): one row per ticked ticker
+st.subheader("สินทรัพย์ใดมีความรู้สึกเป็นบวกหรือลบมากที่สุด")
+if one:
+    st.info("เลือกหลักทรัพย์ตัวเดียว จึงไม่มีอะไรให้เรียงอันดับ ติ๊กหลายตัวเพื่อเทียบกัน")
+else:
+    has_text = per_ticker.dropna(subset=["sentiment_mean"])
+    weight = has_text.texts
+    ranked = has_text.assign(
+        s=has_text.sentiment_mean * weight, p=has_text.pos_ratio * weight, n=has_text.neg_ratio * weight, w=weight
+    ).groupby("series", as_index=False)[["s", "p", "n", "w"]].sum()
+    ranked = ranked[ranked.w > 0].assign(sentiment=lambda d: d.s / d.w, pos=lambda d: 100 * d.p / d.w, neg=lambda d: 100 * d.n / d.w)
+    min_texts = st.number_input("จำนวนข้อความขั้นต่ำต่อสินทรัพย์ (น้อยกว่านี้ไม่นำมาเรียงอันดับ)", min_value=0, value=1000, step=100,
+                                key="s_rank_min")
+    ranked = ranked[ranked.w >= min_texts].sort_values("sentiment", ascending=False)
+    if ranked.empty:
+        st.info("ไม่มีสินทรัพย์ที่มีข้อความถึงเกณฑ์ขั้นต่ำในช่วงนี้")
+    else:
+        groups = dict(zip(q("tickers").ticker, q("tickers").big_group))
+        ranked["กลุ่ม"] = ranked.series.map(lambda s: GROUP_LABELS.get(groups.get(s), ""))
+        ranked.insert(0, "อันดับ", range(1, len(ranked) + 1))
+        common.table(ranked[["อันดับ", "series", "กลุ่ม", "w", "sentiment", "pos", "neg"]].rename(columns={
+            "series": "สินทรัพย์", "w": "จำนวนข้อความ", "sentiment": "Sentiment Score เฉลี่ย", "pos": "เชิงบวก (%)",
+            "neg": "เชิงลบ (%)"}).round(3), hide_index=True, width="stretch", height=min(420, 60 + 36 * len(ranked)))
+        st.caption("เรียงจาก Sentiment Score เฉลี่ยสูงไปต่ำ เฉลี่ยถ่วงน้ำหนักด้วยจำนวนข้อความของแต่ละชั่วโมง นับเฉพาะข้อความที่พูดถึงสินทรัพย์นั้น "
+                   "ในชุมชน แบบจำลอง และประเภทเนื้อหาที่เลือก ชั่วโมงที่ไม่มีข้อความไม่นับ (ไม่ใช่ค่าเป็นกลาง)")
+
 # ---- DimDetectionConfig drill-down: the hours that meet the thresholds of the sidebar, and what the price did next

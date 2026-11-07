@@ -113,7 +113,7 @@ snap = snap.merge(rsi_zones, left_on="ticker", right_index=True, how="left")
 common.table(snap[["สินทรัพย์", "กลุ่ม", "last_close", "last_rsi", "over70", "under30", "current_return_pct", "mean_normalized_atr_pct",
                    "fr_1h", "fr_2h", "fr_3h", "fr_6h", "fr_12h"]].rename(columns={
     "last_close": "ราคาปิดล่าสุด (USD)", "last_rsi": "RSI ล่าสุด", "over70": "สัดส่วน RSI > 70", "under30": "สัดส่วน RSI < 30",
-    "current_return_pct": "Current Return รวม (%)", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)",
+    "current_return_pct": "Current Return รวมทั้งช่วง (%)", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)",
     "fr_1h": "ผลตอบแทน 1h (%)", "fr_2h": "2h (%)", "fr_3h": "3h (%)", "fr_6h": "6h (%)", "fr_12h": "12h (%)"}).round(4),
     hide_index=True, width="stretch", height=min(420, 60 + 36 * len(snap)))
 st.caption("ผลตอบแทนล่วงหน้าคือค่าเฉลี่ยของแต่ละกรอบเวลาในช่วงที่เลือก ช่องที่ว่างหมายถึงไม่มีแท่งราคาครบตามกรอบเวลา (หุ้นและ ETF ที่ 12h ไม่มีเลย เพราะตลาดปิดกลางคืน)")

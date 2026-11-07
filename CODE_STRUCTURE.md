@@ -28,7 +28,7 @@ reddit-sentiment-market-warehouse/
   analysis/                   ✅  correlation, winrate, logistic, evaluate, signals, results_store, figure_style (สี/คำอธิบายของ heatmap)
   dashboard/                  ✅  Streamlit หน้าแรก + 7 หน้า (หน้า 5 Statistical Analysis (แดชบอร์ดที่ 2 ตามตารางที่ 17), หน้า 6 Lead and Lag) (หน้า 7 Hot Events = ส่วนขยาย; data.py = ชั้น query อ่านอย่างเดียว)
   steps/                      ✅  ตัวเรียกที่มีเลขลำดับ 00–33 (เริ่มที่ 01) ดู steps/README.md
-  scripts/                    ✅  ตรวจ/ทดสอบ/สรุปผล: system_tests, dashboard_kpi_check, rule_validation(+extras), neutral_band, super_signal, make_book_tables, build_final_reports ฯลฯ
+  scripts/                    ✅  ตรวจ/ทดสอบ/สรุปผล: system_tests, dashboard_kpi_check, rule_validation(+extras), neutral_band, super_signal, make_book_tables, dashboard_answers, build_final_reports ฯลฯ
   reports/                    —   (ใช้ scripts/make_book_tables.py แทน → output/tables, output/figures/book_*)
   docs/                       ✅  benchmark_finbert.md, METHOD_DECISIONS_NOT_IN_PROPOSAL.md, USER_MANUAL_TH.md (§8.5)
   tests/                      ✅  มี 4 ไฟล์ (เสีย 9/18 บน Windows) + 1 ไฟล์ว่าง
@@ -81,7 +81,8 @@ reddit-sentiment-market-warehouse/
 | 7.6 ตรวจจับสัญญาณ | G1–G3 | `analysis/signals.py`, `configs/detection.yaml` | `signal_events`, `signal_summary`, view `v_signal_list` (= ตาราง 18) | ✅ รันแล้ว 2026-10-11 |
 | 7.5 dashboard | D0, D3, D4 | `dashboard/app.py` (เมนูแท็บ), `dashboard/home.py`, `dashboard/data.py`, `dashboard/common.py`, `dashboard/pages/4_*.py`, `5_*.py` | — | ✅ รันแล้ว 2026-10-11 (เปิดด้วย `streamlit run dashboard/app.py`) |
 | ลำดับรัน + ตรวจ proposal | — | `steps/00_*.py` ถึง `26_*.py` (ตัวเรียกมีเลขลำดับ), `scripts/check_proposal_coverage.py` | `output/reports/proposal_coverage.md` | ✅ 2026-10-11 |
-| ตัวเลข/กราฟลงเล่ม | — | `scripts/make_book_tables.py` (step 31) | `output/tables/t1..t11_*.csv` (t10, t11 = ตัวอย่างตรวจกฎรวมผล ไม่มีข้อความ Reddit), `output/figures/book_*.png` | ✅ ร่างแรก 2026-10-25 (ผู้ใช้ปรับรูปแบบต่อ) |
+| ตัวเลข/กราฟลงเล่ม | — | `scripts/make_book_tables.py` (step 31) | `output/tables/t1..t12_*.csv` (t10, t11 = ตัวอย่างตรวจกฎรวมผล ไม่มีข้อความ Reddit; t12 = ตัวเลขเดี่ยวที่อ้างในข้อความ 7.4), `output/figures/book_*.png` | ✅ ร่างแรก 2026-10-25 (ผู้ใช้ปรับรูปแบบต่อ) |
+| ตัวเลขที่ dashboard แสดง (ช่วงเต็ม) สำหรับย่อหน้าตอบคำถามผู้บริหาร 7.1–7.3 | — | `scripts/dashboard_answers.py` (เรียกฟังก์ชันของ `dashboard/data.py`) | `output/reports/dashboard_answers.md` | ✅ 2026-11-01 |
 | ทดสอบ (§8.4) | Q1–Q4 | `tests/` | รายงานผลเทสต์ | บางส่วน |
 | คู่มือผู้ใช้ (§8.5) | Q5 | `docs/USER_MANUAL_TH.md` | — | ✅ 2026-10-25 |
 
