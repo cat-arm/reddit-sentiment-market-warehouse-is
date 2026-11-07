@@ -83,6 +83,7 @@ reddit-sentiment-market-warehouse/
 | ลำดับรัน + ตรวจ proposal | — | `steps/00_*.py` ถึง `26_*.py` (ตัวเรียกมีเลขลำดับ), `scripts/check_proposal_coverage.py` | `output/reports/proposal_coverage.md` | ✅ 2026-10-11 |
 | ตัวเลข/กราฟลงเล่ม | — | `scripts/make_book_tables.py` (step 31) | `output/tables/t1..t12_*.csv` (t10, t11 = ตัวอย่างตรวจกฎรวมผล ไม่มีข้อความ Reddit; t12 = ตัวเลขเดี่ยวที่อ้างในข้อความ 7.4), `output/figures/book_*.png` | ✅ ร่างแรก 2026-10-25 (ผู้ใช้ปรับรูปแบบต่อ) |
 | ตัวเลขที่ dashboard แสดง (ช่วงเต็ม) สำหรับย่อหน้าตอบคำถามผู้บริหาร 7.1–7.3 | — | `scripts/dashboard_answers.py` (เรียกฟังก์ชันของ `dashboard/data.py`) | `output/reports/dashboard_answers.md` | ✅ 2026-11-01 |
+| คำถามผู้บริหาร 7.5 ข้อ 4 (ความรู้สึกส่วนใหญ่ vs ทิศทางผลตอบแทน) และ 7.6 ข้อ 1 (สินทรัพย์ที่เข้าเงื่อนไขสัญญาณ) — ใช้ในสไลด์พรีเซนต์ | — | `scripts/exec_answers_sys5_sys6.py` (อ่าน `merged_hourly_panel`, `signal_events`) | `output/reports/exec_answers_sys5_sys6.md` | ✅ 2026-11-07 |
 | ทดสอบ (§8.4) | Q1–Q4 | `tests/` | รายงานผลเทสต์ | บางส่วน |
 | คู่มือผู้ใช้ (§8.5) | Q5 | `docs/USER_MANUAL_TH.md` | — | ✅ 2026-10-25 |
 
