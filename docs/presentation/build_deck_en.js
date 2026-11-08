@@ -11,6 +11,8 @@ const ROOT = process.argv[2], CROPS = process.argv[3], OUT = process.argv[4];
 const NOTES = [];   // speaker notes: none attached in v4 (the Thai notes in notes_th.json were written for the v3 content and must be rewritten for these slides)
 let SLIDE_IDX = 0;
 const STORY = JSON.parse(fs.readFileSync(path.join(ROOT, "output", "reports", "deck_story_btc.json"), "utf8"));   // scripts/deck_story_btc.py
+const RULE = JSON.parse(fs.readFileSync(path.join(ROOT, "output", "reports", "deck_rule_test.json"), "utf8"));   // scripts/deck_charts.py
+const DECK_FIG = (f) => path.join(ROOT, "output", "figures", "deck", f);
 let SIZES = {};
 try { SIZES = JSON.parse(fs.readFileSync(path.join(CROPS, "sizes.json"), "utf8")); } catch (e) { /* no screenshots */ }
 
@@ -86,13 +88,18 @@ function shot(s, key, x, y, w, h, caption) {                    // real dashboar
   }
   if (caption) T(s, caption, { x, y: y + h + 0.1, w, h: 0.3, fontSize: 11, color: MUTE });
 }
+function pic(s, name, x, y, w, h) {                               // chart drawn as a PNG (Keynote does not show native charts); fitted into w x h
+  const buf = fs.readFileSync(DECK_FIG(name));
+  const iw = buf.readUInt32BE(16), ih = buf.readUInt32BE(20), r = Math.min(w / iw, h / ih);
+  s.addImage({ path: DECK_FIG(name), x: x + (w - iw * r) / 2, y: y + (h - ih * r) / 2, w: iw * r, h: ih * r, altText: name });
+}
 const chartCommon = { catAxisLabelColor: SOFT, valAxisLabelColor: MUTE, catAxisLabelFontFace: BODY, valAxisLabelFontFace: BODY,
   catAxisLabelFontSize: 13, valAxisLabelFontSize: 12, valGridLine: { color: EDGE, size: 0.5 }, catGridLine: { style: "none" }, dataLabelFontFace: BODY,
   dataLabelFontSize: 13, dataLabelColor: INK, legendFontFace: BODY, legendFontSize: 13, legendColor: SOFT, titleFontFace: BODY, titleFontSize: 15, titleColor: INK,
   catAxisLineShow: false, valAxisLineShow: false };
 function table(s, rows, opt) {
-  const hdr = rows[0].map((t) => ({ text: t, options: { bold: true, color: TEAL, fill: { color: BG2 } } }));
-  const body = rows.slice(1).map((r, i) => r.map((t, k) => ({ text: t, options: { color: k === 0 ? INK : SOFT, bold: k === 0, fill: { color: i % 2 ? BG2 : SURF } } })));
+  const hdr = rows[0].map((t, k) => ({ text: t, options: { bold: true, color: TEAL, fill: { color: BG2 }, align: (opt && opt.centerCols && k > 0) ? "center" : "left" } }));
+  const body = rows.slice(1).map((r, i) => r.map((t, k) => ({ text: t, options: { color: k === 0 ? INK : SOFT, bold: k === 0, fill: { color: i % 2 ? BG2 : SURF }, align: (opt && opt.centerCols && k > 0) ? "center" : "left" } })));
   s.addTable([hdr, ...body], Object.assign({ fontSize: 13, fontFace: BODY, color: SOFT, border: { type: "solid", pt: 0.5, color: EDGE },
     valign: "middle", margin: [0.05, 0.12, 0.05, 0.12] }, opt));
 }
@@ -100,6 +107,43 @@ function table(s, rows, opt) {
 function glow(s) {
   s.addShape(pres.shapes.OVAL, { x: 8.6, y: -2.2, w: 7.5, h: 7.5, fill: { color: TEAL, transparency: 90 }, line: { color: TEAL, width: 0, transparency: 100 } });
   s.addShape(pres.shapes.OVAL, { x: -3.0, y: 4.6, w: 7.0, h: 7.0, fill: { color: BLUE, transparency: 92 }, line: { color: BLUE, width: 0, transparency: 100 } });
+}
+
+// ---- charts drawn with shapes (render the same in PowerPoint, Keynote, Google Slides and Preview; native charts came out empty in some viewers)
+function hbars(s, x, y, w, h, rows, color, title, maxV, labelW) {
+  T(s, title, { x, y, w, h: 0.35, fontSize: 15, color: INK });
+  const lw = labelW || 2.2, vw = 1.5, bw = w - lw - vw, top = y + 0.6, rh = (h - 0.6) / rows.length;
+  rows.forEach((r, i) => {
+    const yy = top + i * rh, th = rh * 0.56, len = Math.max(0.04, bw * r[1] / maxV);
+    T(s, r[0], { x, y: yy, w: lw - 0.15, h: rh, fontSize: 14, color: SOFT, align: "right", valign: "middle" });
+    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: x + lw, y: yy + (rh - th) / 2, w: len, h: th, fill: { color }, line: { color, width: 0 }, rectRadius: 0.04, objectName: "Bar" });
+    T(s, fmt(r[1]), { x: x + lw + len + 0.1, y: yy, w: vw, h: rh, fontSize: 14, bold: true, color: INK, valign: "middle" });
+  });
+}
+function colChart(s, x, y, w, h, cats, series, maxV, title, dec) {
+  T(s, title, { x, y, w, h: 0.35, fontSize: 15, color: INK });
+  const px = x + 0.1, pw = w - 0.2, py = y + 0.75, ph = h - 0.75 - 1.0, y0 = py + ph, gw = pw / cats.length, k = series.length;
+  const bw = (gw * 0.76) / k, gap = (gw - bw * k) / 2;
+  s.addShape(pres.shapes.LINE, { x: px, y: y0, w: pw, h: 0, line: { color: EDGE, width: 1 } });
+  cats.forEach((c, ci) => {
+    series.forEach((se, si) => {
+      const v = se.values[ci], bh = Math.max(0.03, ph * v / maxV), bx = px + ci * gw + gap + si * bw;
+      s.addShape(pres.shapes.RECTANGLE, { x: bx + 0.03, y: y0 - bh, w: bw - 0.06, h: bh, fill: { color: se.color }, line: { color: se.color, width: 0 }, objectName: "Bar" });
+      T(s, v.toFixed(dec === undefined ? 1 : dec), { x: bx - 0.15, y: y0 - bh - 0.32, w: bw + 0.3, h: 0.3, fontSize: 13, bold: true, color: INK, align: "center" });
+    });
+    T(s, c, { x: px + ci * gw, y: y0 + 0.1, w: gw, h: 0.35, fontSize: 14, color: SOFT, align: "center" });
+  });
+  let lx = px;
+  series.forEach((se) => {
+    s.addShape(pres.shapes.RECTANGLE, { x: lx, y: y + h - 0.38, w: 0.2, h: 0.2, fill: { color: se.color }, line: { color: se.color, width: 0 } });
+    T(s, se.name, { x: lx + 0.28, y: y + h - 0.43, w: 2.4, h: 0.3, fontSize: 13, color: SOFT, valign: "middle" });
+    lx += 0.28 + 0.2 + se.name.length * 0.095 + 0.35;
+  });
+}
+function ruleRow(s, x, y, w, h, share, text, color) {
+  s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x, y, w, h, fill: { color: BG2 }, line: { color: EDGE, width: 0.5 }, rectRadius: 0.06, objectName: "RuleRow" });
+  T(s, share, { x: x + 0.12, y, w: 1.05, h, fontSize: 17, bold: true, color, valign: "middle" });
+  T(s, text, { x: x + 1.2, y, w: w - 1.3, h, fontSize: 12.5, color: SOFT, valign: "middle" });
 }
 
 // ---- small layout helpers used by the seven parts
@@ -293,10 +337,7 @@ function qslide(title, tag, rows) {
 {
   const s = newSlide("DARK", "4 Six systems");
   head(s, "System 1, Reddit warehouse: 22 million texts from six communities.", "4 Six systems  ·  System 1", AMBER);
-  const comm = [["wallstreetbets", 16130876], ["stocks", 1909932], ["CryptoCurrency", 1536115], ["StockMarket", 1063472], ["investing", 1013010], ["options", 375714]];
-  s.addChart(pres.charts.BAR, [{ name: "Texts", labels: comm.map((c) => "r/" + c[0]), values: comm.map((c) => c[1]) }], {
-    x: 0.5, y: 1.85, w: 7.0, h: 4.95, barDir: "bar", chartColors: [TEAL], showLegend: false, showTitle: true, title: "Texts per community (cleaned, scored)", showValue: true, dataLabelPosition: "outEnd",
-    dataLabelFormatCode: "#,##0", valAxisHidden: true, valGridLine: { style: "none" }, catAxisOrientation: "maxMin", valAxisMaxVal: 21000000, ...chartCommon });
+  pic(s, "communities.png", 0.5, 1.85, 7.2, 4.95);
   stat(s, 7.9, 1.95, 2.35, "22,029,119", "texts in total", TEAL, 24);
   stat(s, 10.4, 1.95, 2.3, "73.2%", "from wallstreetbets", AMBER, 34);
   card(s, 7.9, 3.9, 4.8, 2.9, "Source and dashboards", bl(["Academic Torrents monthly files, six communities, English only.", "275,242 posts and 21,753,877 comments.", "Dashboards: Reddit Volume and Ticker Mentions."]), { size: 12.5, headSize: 17, color: BLUE });
@@ -312,45 +353,75 @@ function qslide(title, tag, rows) {
 }
 {
   const s = newSlide("DARK", "4 Six systems");
-  head(s, "System 3, sentiment: two models, one merge rule.", "4 Six systems  ·  System 3", AMBER);
-  s.addChart(pres.charts.DOUGHNUT, [{ name: "Share", labels: ["Same direction", "One neutral, one directional", "Opposite directions"], values: [50.15, 37.59, 12.26] }], {
-    x: 0.5, y: 1.9, w: 6.0, h: 4.9, holeSize: 55, chartColors: [GREEN, AMBER, CORAL], showLegend: true, legendPos: "b", showPercent: true, showValue: false, dataLabelColor: BG, dataLabelFontSize: 15,
-    showTitle: false, dataBorder: { pt: 2, color: BG }, ...chartCommon, dataLabelColor: BG });
-  card(s, 6.9, 1.95, 5.8, 3.0, "Merge rule", bl(["Same direction: average the scores, or take the one closer to 0 if they differ by over 0.50.", "One neutral: use the directional model, unless a finance keyword disagrees (then 0).", "Opposite: a finance keyword decides, otherwise 0.", "Neutral band: ±0.05."]), { size: 11.5, headSize: 16 });
-  card(s, 6.9, 5.15, 5.8, 1.65, "Why two models", bl(["VADER is built for social media, FinBERT for financial text.", "2,714,134 texts (12.3%) cannot be decided: set to 0 and flagged."]), { size: 11.5, headSize: 16, color: BLUE });
+  head(s, "System 3, sentiment: ten rules settle every text.", "4 Six systems  ·  System 3", AMBER);
+  const rows = [["Case", "When", "Final score"],
+    ["1  Same direction", "Both positive or both negative, scores differ by 0.50 or less", "Average of the two"],
+    ["2  Same direction, far apart", "Same direction, scores differ by more than 0.50", "The one closer to 0"],
+    ["3  Both neutral (extension)", "Both models neutral", "Average of the two"],
+    ["4  One neutral, keyword agrees", "One model has a direction, a finance keyword agrees", "The directional score"],
+    ["5  One neutral, keyword clashes", "Keyword points the other way, or both ways", "0, undecided"],
+    ["6  One neutral, no keyword", "No finance keyword found", "The directional score"],
+    ["7  Opposite, keyword found", "Opposite directions, keyword positive or negative", "Score of the model that matches"],
+    ["8  Opposite, no keyword", "Opposite directions, no keyword", "0, undecided"],
+    ["9  Opposite, mixed keywords (extension)", "Opposite directions, keyword both ways", "0, undecided"],
+    ["10  One score only (extension)", "One model has no score", "The score that exists"]];
+  table(s, rows, { x: 0.5, y: 1.8, w: 12.35, colW: [4.1, 5.6, 2.65], fontSize: 12, rowH: 0.4 });
+  T(s, "Undecided texts are set to 0 and flagged is_ambiguous. Keywords such as bullish or buy calls are read only from the commenter's own text; a negation within 2 words cancels the word.", { x: 0.5, y: 6.75, w: 12.35, h: 0.6, fontSize: 12.5, color: SOFT });
+}
+{
+  const s = newSlide("DARK", "4 Six systems");
+  head(s, "System 3: the two models agree only half the time.", "4 Six systems  ·  System 3", AMBER);
+  pic(s, "agreement.png", 0.5, 1.85, 6.0, 4.95);
+  const g = RULE.per_group, M = (n) => (n >= 1e6 ? (n / 1e6).toFixed(2) + " million" : fmt(n));
+  card(s, 6.9, 1.95, 5.8, 4.85, "Texts per rule group", bl([
+    "Same direction: " + M(g.same_direction.population),
+    "Same direction, far apart: " + M(g.same_direction_far.population),
+    "Both neutral: " + M(g.both_neutral.population),
+    "One neutral, keyword: " + M(g.small_conflict_keyword.population),
+    "One neutral, no keyword: " + M(g.small_conflict_no_keyword.population),
+    "Opposite, keyword: " + M(g.hard_conflict_keyword.population),
+    "Opposite, no keyword: " + M(g.hard_conflict_no_keyword.population),
+    "Undecided in total: 2,714,134 (12.3%)"]), { size: 13, headSize: 17 });
 }
 {
   const s = newSlide("DARK", "4 Six systems");
   head(s, "System 3 result: overall sentiment is balanced, leaning slightly negative.", "4 Six systems  ·  System 3", AMBER);
-  s.addChart(pres.charts.BAR, [
-    { name: "VADER", labels: ["Positive", "Neutral", "Negative"], values: [38.81, 30.27, 30.92] },
-    { name: "FinBERT", labels: ["Positive", "Neutral", "Negative"], values: [17.25, 48.41, 34.35] },
-    { name: "Final sentiment", labels: ["Positive", "Neutral", "Negative"], values: [32.41, 32.86, 34.72] }], {
-    x: 0.5, y: 1.85, w: 7.6, h: 4.9, barDir: "col", chartColors: [MUTE, BLUE, TEAL], showLegend: true, legendPos: "b", showTitle: true, title: "Share of texts by class (%), neutral band ±0.05",
-    showValue: true, dataLabelPosition: "outEnd", dataLabelFormatCode: "0.0", valAxisHidden: true, valGridLine: { style: "none" }, valAxisMinVal: 0, valAxisMaxVal: 60, ...chartCommon });
+  pic(s, "final_shares.png", 0.5, 1.85, 7.6, 4.9);
   card(s, 8.5, 1.95, 4.2, 2.4, "Reading it", bl(["VADER leans positive, FinBERT leans neutral.", "The merged result is close to a third each."]), { size: 13.5, headSize: 17 });
   card(s, 8.5, 4.55, 4.2, 2.25, "Careful", bl(["The final neutral share includes the 12.32% undecided texts.", "Truly neutral texts are about 20.5%."]), { size: 13.5, headSize: 17, color: AMBER });
 }
 {
+  const B = RULE.variants.B.รวม, L = RULE.labels;
   const s = newSlide("DARK", "4 Six systems");
-  head(s, "System 3 test: against 210 hand labels the merge beats VADER, not FinBERT.", "4 Six systems  ·  System 3", AMBER);
-  s.addChart(pres.charts.BAR, [
-    { name: "VADER alone", labels: ["Tune set", "Test set", "All 210"], values: [40.6, 37.1, 38.8] },
-    { name: "FinBERT alone", labels: ["Tune set", "Test set", "All 210"], values: [56.4, 42.9, 49.6] },
-    { name: "Merge rule", labels: ["Tune set", "Test set", "All 210"], values: [47.3, 41.3, 44.3] }], {
-    x: 0.5, y: 1.85, w: 7.3, h: 4.4, barDir: "col", chartColors: [MUTE, BLUE, TEAL], showLegend: true, legendPos: "b", showTitle: true, title: "Accuracy against hand labels (%)",
-    showValue: true, dataLabelPosition: "outEnd", dataLabelFormatCode: "0.0", valAxisHidden: true, valGridLine: { style: "none" }, valAxisMinVal: 0, valAxisMaxVal: 70, ...chartCommon });
-  T(s, "One labeller. 105 texts per set. Accuracy is weighted by group size.", { x: 0.6, y: 6.4, w: 7.2, h: 0.4, fontSize: 13, color: MUTE });
-  card(s, 8.2, 1.95, 4.5, 2.35, "Method", bl(["7 rule groups, 30 texts each, split into a tune set and a test set.", "Labels were made without seeing any score."]), { size: 13, headSize: 17 });
-  card(s, 8.2, 4.5, 4.5, 2.3, "Result", bl(["On the test set the gap to FinBERT is 1.6 points, inside the sampling error.", "The rules stay as in the proposal."]), { size: 13, headSize: 17, color: BLUE });
+  head(s, "System 3 test, 400 hand labels: the merge rule matches FinBERT, beats VADER.", "4 Six systems  ·  System 3", AMBER);
+  pic(s, "overall_accuracy.png", 0.5, 1.85, 6.8, 4.5);
+  T(s, "One labeller. Accuracy is weighted by the size of each rule group.", { x: 0.6, y: 6.45, w: 6.8, h: 0.4, fontSize: 13, color: MUTE });
+  card(s, 7.6, 1.95, 5.1, 2.65, "Method", bl(["400 comments from the 7 rule groups, split into a tune half and a test half.", "Label = the commenter's stance, read with the post.", "Pre-set bar: change a rule only if the alternative wins by 5 points on tune and holds on test."]), { size: 11.5, headSize: 17 });
+  card(s, 7.6, 4.75, 5.1, 2.05, "Result", bl(["Merge " + B.final.toFixed(1) + "%, FinBERT " + B.finbert.toFixed(1) + "%, VADER " + B.vader.toFixed(1) + "%.", "No rule met the bar, so all rules stay."]), { size: 13, headSize: 17, color: BLUE });
 }
 {
+  const g = RULE.per_group;
+  const s = newSlide("DARK", "4 Six systems");
+  head(s, "System 3 test: the merge rule wins where the models clash and a keyword exists.", "4 Six systems  ·  System 3", AMBER);
+  pic(s, "per_rule_group.png", 0.5, 1.8, 12.3, 3.95);
+  sowhat(s, 0.6, 5.85, 12.1, 1.0, "Opposite directions with a keyword: merge " + g.hard_conflict_keyword.final.toFixed(0) + "% against " + g.hard_conflict_keyword.finbert.toFixed(0) + "% (FinBERT) and " + g.hard_conflict_keyword.vader.toFixed(0) + "% (VADER). Where the models agree, merge equals both. One neutral, no keyword: FinBERT " + g.small_conflict_no_keyword.finbert.toFixed(0) + "% looks better than merge " + g.small_conflict_no_keyword.final.toFixed(0) + "% but missed the pre-set bar.");
+}
+{
+  const V = RULE.variants, P = RULE.paired_vs_B;
+  const s = newSlide("DARK", "4 Six systems");
+  head(s, "System 3 test: sending the post title with the comment is the right input.", "4 Six systems  ·  System 3", AMBER);
+  pic(s, "text_variants.png", 0.5, 1.85, 6.8, 4.5);
+  card(s, 7.6, 1.95, 5.1, 2.45, "What was compared", bl(["A: the comment alone.", "B: post title + comment (used).", "C: B + the first 500 characters of the post body.", "Cascade: A, then B, then C if still neutral."]), { size: 12.5, headSize: 17 });
+  card(s, 7.6, 4.55, 5.1, 2.25, "Result", bl(["A cannot be told from B (p " + P.A.รวม.p.toFixed(2) + ").", "C is worse (p " + P.C.รวม.p.toFixed(3) + "), and so is the cascade (p " + P.cascade.รวม.p.toFixed(3) + ").", "B stays."]), { size: 13, headSize: 17, color: BLUE });
+}
+{
+  const bd = RULE.band;
   const s = newSlide("DARK", "4 Six systems");
   head(s, "System 3 test: a wider neutral band of ±0.10 does not help, so ±0.05 stays.", "4 Six systems  ·  System 3", AMBER);
-  stat(s, 0.6, 1.95, 3.9, "48.41% → 63.09%", "FinBERT texts called neutral, band ±0.05 against ±0.10.", AMBER, 30);
-  stat(s, 4.7, 1.95, 3.9, "44.3% → 42.4%", "Merge-rule accuracy on all 210 labels.", CORAL, 30);
-  stat(s, 8.8, 1.95, 3.9, "8.69%", "of texts (1,914,518) change final class between the two bands.", BLUE, 40);
-  card(s, 0.6, 4.0, 6.0, 2.8, "What changes", bl(["FinBERT puts far more texts in neutral at ±0.10.", "The final class shares move only a little.", "Undecided texts fall from 12.32% to 8.49%."]), { size: 14, color: TEAL });
+  stat(s, 0.6, 1.95, 3.9, bd.FinBERT.b05.toFixed(1) + "% → " + bd.FinBERT.b10.toFixed(1) + "%", "FinBERT accuracy on the 400 labels, band ±0.05 against ±0.10.", BLUE, 30);
+  stat(s, 4.7, 1.95, 3.9, bd.รวมผล.b05.toFixed(1) + "% → " + bd.รวมผล.b10.toFixed(1) + "%", "Merge-rule accuracy on the 400 labels.", CORAL, 30);
+  stat(s, 8.8, 1.95, 3.9, "48.41% → 63.09%", "FinBERT texts called neutral, across all 22 million texts.", AMBER, 28);
+  card(s, 0.6, 4.0, 6.0, 2.8, "What changes", bl(["FinBERT puts far more texts in neutral at ±0.10.", "The merge rule gets worse.", "1,914,518 texts (8.69%) change final class."]), { size: 14, color: TEAL });
   card(s, 6.8, 4.0, 5.9, 2.8, "Decision", bl(["Keep ±0.05, the band the VADER authors recommend.", "The band is a parameter, so it can be changed later."]), { size: 15, color: BLUE });
 }
 {
