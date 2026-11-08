@@ -118,6 +118,26 @@ def overview_counts(db_path):
                (SELECT COUNT(DISTINCT ticker) FROM merged_hourly_panel WHERE scope = 'ticker') AS tickers""").iloc[0]
 
 
+def reddit_inventory(db_path):
+    """Home page: texts that got a sentiment score, per community (whole data set, not filtered):
+    columns subreddit, posts, comments (from `reddit_hourly_global`, the final model, variant 'all')."""
+    return _read(db_path, """
+        SELECT subreddit, SUM(CASE WHEN content_type = 'Post' THEN texts ELSE 0 END) AS posts,
+               SUM(CASE WHEN content_type = 'Comment' THEN texts ELSE 0 END) AS comments
+        FROM reddit_hourly_global WHERE model = 'VADER+FinBERT' AND variant = 'all'
+        GROUP BY subreddit ORDER BY SUM(texts) DESC""")
+
+
+def ticker_inventory(db_path):
+    """Home page: rows per asset (whole data set, not filtered): `price_rows` = hours with a price,
+    `joined_rows` = those hours that also have a Reddit sentiment (at least one text mentioning the asset).
+    An hour without text has no sentiment (NULL, not 0), so it is not counted as joined."""
+    return _read(db_path, """
+        SELECT ticker, big_group, COUNT(*) AS price_rows, SUM(sentiment_mean IS NOT NULL) AS joined_rows
+        FROM merged_hourly_panel WHERE scope = 'ticker' AND variant = 'all'
+        GROUP BY ticker, big_group""")
+
+
 # ------------------------------------------------------------------------------------------------ D1: Reddit volume
 def total_volume_series(db_path, start, end, source_ids=None):
     """Reddit_volume of proposal table 3: ALL posts and comments per hour (6 communities), split Post / Comment,

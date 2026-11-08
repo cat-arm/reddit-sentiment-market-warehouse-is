@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # streamlit only adds dashboard/ to the path
 
+import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from dashboard import common  # noqa: E402
@@ -51,6 +52,39 @@ if not by_group.empty:
         hide_index=True, width="stretch")
 st.caption("ช่วงข้อมูลทั้งหมด (ไม่ขึ้นกับตัวกรอง)  \nReddit %s ถึง %s  \nราคา %s ถึง %s (UTC)"
            % (day(info["reddit_lo"]), day(info["reddit_hi"]), day(info["market_lo"]), day(info["market_hi"])))
+
+st.subheader("ข้อมูลทั้งหมดที่มีในระบบ")
+st.caption("นับจากข้อมูลทั้งหมด ไม่ขึ้นกับตัวกรองด้านซ้าย")
+reddit = q("reddit_inventory").assign(total=lambda d: d.posts + d.comments)
+tick = q("ticker_inventory")
+tick_rows, joined_rows = int(tick.price_rows.sum()), int(tick.joined_rows.sum())
+common.kpi_cards([
+    ("ชุมชน Reddit", str(len(reddit)), None),
+    ("ข้อความทั้งหมด", "{:,}".format(int(reddit.total.sum())),
+     "ข้อความที่ผ่านการทำความสะอาดและกรองคุณภาพแล้ว และได้คะแนนความรู้สึก"),
+    ("สินทรัพย์", str(len(tick)), None),
+    ("แถวราคารายชั่วโมง", "{:,}".format(tick_rows), "จำนวนแถว (สินทรัพย์ × ชั่วโมงที่มีราคา) รวมทุกสินทรัพย์"),
+    ("แถวที่ต่อกับความรู้สึกได้", "{:,}".format(joined_rows),
+     "แถวราคาที่ชั่วโมงนั้นมีข้อความกล่าวถึงสินทรัพย์ตัวนั้นอย่างน้อย 1 ข้อความ จึงมีค่าความรู้สึก",
+     "%.1f%% ของแถวราคา" % (100.0 * joined_rows / tick_rows) if tick_rows else None)])
+
+st.markdown("**Reddit: แต่ละชุมชนมีกี่ข้อความ**")
+total = int(reddit.total.sum())
+shown = reddit.assign(share=(100.0 * reddit.total / total).round(1))
+shown = pd.concat([shown, pd.DataFrame([{"subreddit": "รวม", "posts": int(reddit.posts.sum()), "comments": int(reddit.comments.sum()),
+                                         "total": total, "share": 100.0}])], ignore_index=True)
+common.table(shown.rename(columns={"subreddit": "ชุมชน", "posts": "โพสต์", "comments": "ความคิดเห็น", "total": "รวม", "share": "สัดส่วน (%)"}),
+             hide_index=True, width="stretch")
+
+st.markdown("**สินทรัพย์: แต่ละตัวมีกี่แถว และต่อกับความรู้สึกได้กี่แถว**")
+order = {k: i for i, k in enumerate(common.GROUP_LABELS)}
+tick = tick.assign(share=(100.0 * tick.joined_rows / tick.price_rows).round(1), กลุ่ม=tick.big_group.map(common.group_name),
+                   _o=tick.big_group.map(order)).sort_values(["_o", "price_rows"], ascending=[True, False])
+common.table(tick[["ticker", "กลุ่ม", "price_rows", "joined_rows", "share"]].rename(columns={
+    "ticker": "สินทรัพย์", "price_rows": "แถวราคา", "joined_rows": "ต่อกับความรู้สึกได้", "share": "สัดส่วนที่ต่อได้ (%)"}),
+    hide_index=True, width="stretch", height=420)
+st.caption("หุ้น/ETF มีแถวราคาน้อยกว่าคริปโตมาก เพราะตลาดเปิดเพียงประมาณ 7 ชั่วโมงต่อวัน  \n"
+           "ชั่วโมงที่ไม่มีใครพูดถึงสินทรัพย์ตัวนั้นจะไม่มีค่าความรู้สึก (ว่าง ไม่ใช่ 0) จึงไม่นับเป็นแถวที่ต่อได้")
 
 st.subheader("วิธีใช้")
 st.markdown("""
