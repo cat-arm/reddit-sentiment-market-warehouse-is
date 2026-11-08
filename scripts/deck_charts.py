@@ -86,6 +86,79 @@ def parse_md():
     return variants, paired, band
 
 
+def insight_charts():
+    """The four insight stories (numbers from scripts/deck_insights.py -> output/reports/insight_stories.json)."""
+    import numpy as np
+    d = json.loads((ROOT / "output" / "reports" / "insight_stories.json").read_text(encoding="utf-8"))
+    # story 1: all hours against busy hours
+    rows = [r for r in d["story1"] if r["spike"]["bh"] < 0.05 and r["spike"]["rho"] > 0]
+    fig, ax = style(7.4, 4.6)
+    grouped(ax, [r["ticker"] for r in rows], [("All hours", [r["all"]["rho"] for r in rows]), ("Busy hours (Z > 1.5)", [r["spike"]["rho"] for r in rows])],
+            [MUTE, TEAL], 0.23, fmt="%.2f")
+    ax.set_xticklabels([r["ticker"] for r in rows], fontsize=8.5, rotation=30)
+    ax.set_title("Same-hour Spearman correlation: market-wide sentiment vs Current Return", color=INK, fontsize=11, loc="left")
+    save(fig, "story1.png")
+    # story 2: who moves first, ES=F in busy hours
+    lag = d["story2"]["ES=F"]
+    fig, ax = style(7.4, 4.6)
+    xs = [x["lag"] for x in lag]
+    cols = [CORAL if x < 0 else (MUTE if x == 0 else BLUE) for x in xs]
+    bars = ax.bar(xs, [x["rho"] for x in lag], color=cols, width=0.7)
+    for x, b in zip(lag, bars):
+        ax.text(b.get_x() + b.get_width() / 2, x["rho"] + (0.008 if x["rho"] >= 0 else -0.02), "%.2f" % x["rho"], ha="center", fontsize=9, color=INK)
+    ax.axhline(0, color=EDGE, lw=1)
+    ax.set_xticks(xs); ax.set_yticks([]); ax.set_xlabel("Hours between the Reddit hour and the return (negative = price moved first)", fontsize=10)
+    ax.set_title("ES=F, busy hours: correlation with the return k hours away", color=INK, fontsize=11, loc="left")
+    save(fig, "story2.png")
+    # story 3: the busiest hour
+    win = d["story3_window"]
+    hours = [w["hour"][11:16] for w in win]
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(7.4, 4.8), dpi=200, gridspec_kw={"height_ratios": [1, 1.25], "hspace": 0.45})
+    fig.patch.set_facecolor(BG)
+    for a in (a1, a2):
+        a.set_facecolor(BG)
+        for side in ("top", "right", "left"):
+            a.spines[side].set_visible(False)
+        a.spines["bottom"].set_color(EDGE); a.tick_params(length=0); a.set_yticks([]); a.tick_params(axis="x", colors=SOFT, labelsize=9)
+    texts = [w["texts"] for w in win]
+    bars = a1.bar(hours, texts, color=[AMBER if t == max(texts) else "#52618A" for t in texts], width=0.65)
+    for b, w in zip(bars, win):
+        a1.text(b.get_x() + b.get_width() / 2, w["texts"] + 300, "{:,}".format(w["texts"]), ha="center", fontsize=8, color=INK)
+    a1.set_ylim(0, 21000)
+    a1.set_xticks(range(len(win))); a1.set_xticklabels(["%s\nmood %+.3f" % (h, w["sentiment"]) for h, w in zip(hours, win)], fontsize=8)
+    a1.set_title("Reddit texts per hour (UTC, 9 Apr 2025) and market-wide mood", color=INK, fontsize=10.5, loc="left")
+    names = [("ES=F", BLUE), ("BTC-USD", AMBER), ("TSLA", CORAL)]
+    wdt = 0.26
+    for i, (t, c) in enumerate(names):
+        vals = [w["ret_" + t] for w in win]
+        xs = [k - wdt + i * wdt for k in range(len(win))]
+        ys = [v if v is not None else 0 for v in vals]
+        a2.bar(xs, ys, wdt * 0.92, color=c, label=t)
+        for x, v in zip(xs, vals):
+            if v is not None and abs(v) >= 3:
+                a2.text(x, v + 0.25, "%.1f" % v, ha="center", fontsize=7.5, color=INK)
+    a2.set_xticks(range(len(win))); a2.set_xticklabels(hours)
+    a2.axhline(0, color=EDGE, lw=1)
+    a2.set_ylim(-2.5, 11.5)
+    a2.legend(loc="upper left", frameon=False, ncol=3, labelcolor=SOFT, fontsize=9)
+    a2.set_title("Return in that hour (%)", color=INK, fontsize=10.5, loc="left")
+    save(fig, "story3.png")
+    # story 4: significant but tiny win rates
+    items = d["story4"]
+    fig, ax = style(7.4, 4.6)
+    ys = list(range(len(items)))[::-1]
+    for y, it in zip(ys, items):
+        ax.plot([50, it["win_rate"]], [y, y], color=EDGE, lw=2)
+        ax.scatter([it["win_rate"]], [y], s=90, color=TEAL if it["win_rate"] > 50 else CORAL, zorder=3)
+        ax.text(it["win_rate"] + (0.25 if it["win_rate"] >= 50 else -0.25), y, "%.1f%%" % it["win_rate"], va="center", ha="left" if it["win_rate"] >= 50 else "right", fontsize=9, color=INK)
+    ax.axvline(50, color=MUTE, lw=1, ls="--")
+    ax.set_yticks(ys); ax.set_yticklabels(["%s  %s  (n=%s)" % (i["ticker"], i["horizon"], "{:,}".format(i["n"])) for i in items], fontsize=9.5)
+    ax.set_xlim(42, 54); ax.set_xlabel("Win rate (%), dashed line = coin flip", fontsize=10)
+    ax.spines["left"].set_visible(False); ax.tick_params(axis="y", colors=SOFT)
+    ax.set_title("Win rates that pass the Benjamini-Hochberg test", color=INK, fontsize=11, loc="left")
+    save(fig, "story4.png")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--db", default=str(DEFAULT_DB))
@@ -175,6 +248,8 @@ def main(argv=None):
     ax.set_ylim(0, 60); ax.set_yticks([]); ax.tick_params(axis="x", labelsize=10)
     ax.set_title("Merge-rule accuracy by text sent to the models (%)", color=INK, fontsize=12, loc="left")
     save(fig, "text_variants.png")
+
+    insight_charts()
 
     OUT_JSON.write_text(json.dumps({"variants": variants, "paired_vs_B": paired, "band": band, "per_group": per_group,
                                     "labels": {k: sum(1 for v in labels.values() if v == k) for k in ("positive", "negative", "neutral")}},

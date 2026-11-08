@@ -10,7 +10,7 @@ const pptxgen = require("pptxgenjs");
 const ROOT = process.argv[2], CROPS = process.argv[3], OUT = process.argv[4];
 const NOTES = [];   // speaker notes: none attached in v4 (the Thai notes in notes_th.json were written for the v3 content and must be rewritten for these slides)
 let SLIDE_IDX = 0;
-const STORY = JSON.parse(fs.readFileSync(path.join(ROOT, "output", "reports", "deck_story_btc.json"), "utf8"));   // scripts/deck_story_btc.py
+const INSIGHT = JSON.parse(fs.readFileSync(path.join(ROOT, "output", "reports", "insight_stories.json"), "utf8"));   // scripts/deck_insights.py
 const RULE = JSON.parse(fs.readFileSync(path.join(ROOT, "output", "reports", "deck_rule_test.json"), "utf8"));   // scripts/deck_charts.py
 const DECK_FIG = (f) => path.join(ROOT, "output", "figures", "deck", f);
 let SIZES = {};
@@ -162,15 +162,6 @@ function sowhat(s, x, y, w, h, text) {                              // the amber
   s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x, y, w, h, fill: { color: AMBER, transparency: 86 }, line: { color: AMBER, width: 1 }, rectRadius: 0.08, objectName: "SoWhat" });
   T(s, text, { x: x + 0.2, y, w: w - 0.4, h, fontSize: 16, bold: true, color: AMBER, valign: "middle" });
 }
-function story(n, title, page, doItems, stats, so, key) {
-  const s = newSlide("DARK", "5 User story");
-  head(s, title, "5 User story  ·  Step " + n + "  ·  " + page, CORAL);
-  card(s, 0.6, 1.85, 5.9, 1.9, "What the analyst does", bl(doItems), { size: 14, headSize: 17, color: BLUE });
-  stats.forEach((st, i) => stat(s, 0.6 + i * 3.05, 3.95, 2.85, st[0], st[1], st[2], st[3] || 32));
-  sowhat(s, 0.6, 5.9, 5.9, 0.95, so);
-  shot(s, key, 6.85, 1.8, 5.9, 4.75, "Default filters. Choose BTC-USD in the sidebar to follow along. The dashboard is in Thai.");
-  return s;
-}
 function qslide(title, tag, rows) {
   const s = newSlide("DARK", "6 Executive questions");
   head(s, title, "6 Executive questions  ·  " + tag, GREEN);
@@ -192,7 +183,7 @@ function qslide(title, tag, rows) {
   const s = newSlide("DARK", "Opening");
   head(s, "Seven parts, one story.", "Agenda");
   const items = [["The pain point", "Why a single view is missing"], ["The users", "Who uses it, and for what"], ["The architecture", "Data flow, tools and models"], ["The six systems", "What each one does, and the dashboards"],
-    ["A user story", "One asset, BTC-USD, page by page"], ["Executive questions", "Every question, answered, with its page"], ["QA", "Tests, limits, questions"]];
+    ["Data stories", "Where mood and price line up"], ["Executive questions", "Every question, answered, with its page"], ["QA", "Tests, limits, questions"]];
   items.forEach((t, i) => {
     const col = i < 4 ? 0 : 1, row = i < 4 ? i : i - 4;
     const x = 0.6 + col * 6.2, y = 1.9 + row * 1.2;
@@ -478,81 +469,62 @@ function qslide(title, tag, rows) {
   shot(s, "home", 6.9, 1.85, 5.85, 4.75, "The dashboard itself is in Thai.");
 }
 
-// =============================================================== 5 USER STORY
+// =============================================================== 5 DATA STORIES
+function storySlide(n, title, chart, cardTitle, bullets, so) {
+  const s = newSlide("DARK", "5 Data stories");
+  head(s, title, "5 Data stories  ·  Story " + n, CORAL);
+  pic(s, chart, 0.5, 1.85, 7.3, 4.95);
+  card(s, 8.1, 1.85, 4.6, 3.05, cardTitle, bl(bullets), { size: 12.5, headSize: 17, color: BLUE });
+  sowhat(s, 8.1, 5.05, 4.6, 1.75, so);
+  return s;
+}
 {
-  const s = newSlide("HERO", "5 User story");
+  const s = newSlide("HERO", "5 Data stories");
   glow(s);
-  head(s, "User story: is Reddit chatter about BTC-USD telling me anything about its price?", "5 User story", CORAL);
-  T(s, "An investment analyst opens the dashboard with one question and walks through the pages in order. All numbers are what the pages show for the full range, all communities.", { x: 0.6, y: 1.95, w: 12.0, h: 0.9, fontSize: 18, color: SOFT });
-  const acts = [["1", "How busy is Reddit?", "Reddit Volume"], ["2", "Is BTC-USD talked about?", "Ticker Mentions"], ["3", "What did price do?", "Price and Return"], ["4", "What is the mood?", "Market and Sentiment"], ["5", "Who moves first?", "Lead and Lag"], ["6", "Is it reliable?", "Statistical Analysis"], ["7", "What to watch?", "Hot Events"]];
+  head(s, "Data stories: where does Reddit's mood line up with prices?", "5 Data stories", CORAL);
+  T(s, "The analyst looks for the places where the mood of Reddit and the market move together, and checks whether that helps to predict. Four stories, all from the full data set.", { x: 0.6, y: 1.95, w: 12.0, h: 0.9, fontSize: 18, color: SOFT });
+  const acts = [["1", "Busy hours: mood moves with price", "Statistical Analysis"], ["2", "Price moves first, then people talk", "Lead and Lag"], ["3", "The busiest hour: 9 Apr 2025", "Reddit Volume, Price and Return"], ["4", "Signals that are significant but tiny", "Statistical Analysis"]];
   acts.forEach((a, i) => {
-    const x = 0.6 + i * 1.77;
-    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x, y: 3.1, w: 1.63, h: 2.7, fill: { color: SURF }, line: { color: EDGE, width: 0.75 }, rectRadius: 0.08, objectName: "ActCard" });
-    T(s, a[0], { x: x + 0.15, y: 3.2, w: 1.3, h: 0.75, fontSize: 38, bold: true, color: i === 6 ? CORAL : TEAL });
-    T(s, a[1], { x: x + 0.15, y: 4.0, w: 1.38, h: 1.1, fontSize: 14, bold: true });
-    T(s, a[2], { x: x + 0.15, y: 5.1, w: 1.38, h: 0.6, fontSize: 12.5, color: MUTE });
+    const x = 0.6 + i * 3.08;
+    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x, y: 3.2, w: 2.88, h: 2.6, fill: { color: SURF }, line: { color: EDGE, width: 0.75 }, rectRadius: 0.08, objectName: "ActCard" });
+    T(s, a[0], { x: x + 0.2, y: 3.3, w: 1.0, h: 0.75, fontSize: 38, bold: true, color: i === 3 ? AMBER : TEAL });
+    T(s, a[1], { x: x + 0.2, y: 4.1, w: 2.5, h: 1.0, fontSize: 16, bold: true });
+    T(s, a[2], { x: x + 0.2, y: 5.2, w: 2.5, h: 0.5, fontSize: 12.5, color: MUTE });
   });
-  T(s, "Why BTC-USD: it is the most-mentioned asset and trades around the clock, so it has the most hours to test.", { x: 0.6, y: 6.1, w: 12.0, h: 0.7, fontSize: 16, color: SOFT });
+  T(s, "Correlation is Spearman; p-values are adjusted for many tests (Benjamini–Hochberg). Historical data, not investment advice.", { x: 0.6, y: 6.2, w: 12.0, h: 0.6, fontSize: 14, color: MUTE });
 }
 {
-  const p1 = STORY.p1;
-  story("1", "First, how busy is Reddit overall?", "Reddit Volume",
-    ["Pick the full range and all communities.", "Find the highest hour and the Z-score line."],
-    [[p1["ชั่วโมงที่สูงสุด"].split(" (")[0], "texts in the peak hour, 9 Apr 2025, 17:00 UTC", CORAL, 30], [p1["เฉลี่ยต่อชั่วโมง"], "texts in an average hour. " + p1["ชั่วโมงที่ Z-score > 1.5"] + " hours had Z-score above 1.5", AMBER, 30]],
-    "Big spikes are rare. Note the date and look at prices in that hour.", "p1");
+  const n = INSIGHT.story1_positive_bh_count, tot = INSIGHT.story1_assets;
+  const es = INSIGHT.story1.find((r) => r.ticker === "ES=F");
+  storySlide("1", "When Reddit is busy, its mood moves with the market in the same hour.", "story1.png", "What we see",
+    ["Hours with unusual volume (Z-score above 1.5): ES=F correlation " + es.spike.rho.toFixed(2) + ", against " + es.all.rho.toFixed(2) + " in all hours.", n + " of " + tot + " assets are significantly positive: 3 index futures and all 6 crypto.", "Most single stocks show nothing."],
+    "The strongest link in the whole study, about 2.5 times stronger when the crowd is busy.");
 }
 {
-  const p2 = STORY.p2;
-  story("2", "Is BTC-USD talked about enough to judge?", "Ticker Mentions",
-    ["Read the ranking of most-mentioned assets.", "Open the BTC-USD trend."],
-    [["#" + p2.rank + " of " + p2.of, "BTC-USD is the most-mentioned asset. Next is " + p2.second + " (" + fmt(p2.second_mentions) + ")", TEAL, 34], [fmt(p2.mentions), "mentions, " + p2.mention_rate_pct.toFixed(2) + "% of all texts", BLUE, 30]],
-    "Plenty of text, so BTC-USD is a fair asset to test.", "p2");
+  const lag = INSIGHT.story2["ES=F"], at = (k) => lag.find((l) => l.lag === k).rho, nx = INSIGHT.story2["ES=F_next_hour"];
+  storySlide("2", "But price moves first. Mood is a reaction, not a lead.", "story2.png", "What we see",
+    ["Correlation is highest with the return one hour BEFORE the Reddit hour (" + at(-1).toFixed(2) + "), lower in the same hour (" + at(0).toFixed(2) + "), and lowest an hour AFTER (" + at(1).toFixed(2) + ").", "Mood does not predict the next hour: correlation " + nx.rho.toFixed(2) + ", p = " + nx.p.toFixed(2) + "."],
+    "Useful to read the market's mood as it happens. Not a way to time the next move.");
 }
 {
-  const p3 = STORY.p3;
-  story("3", "What did BTC-USD's price do?", "Price and Return",
-    ["Look at price, RSI and volatility.", "Check future returns by asset group."],
-    [["+" + p3.change_pct + "%", "close from " + fmt(Math.round(p3.first_close)) + " to " + fmt(Math.round(p3.last_close)), GREEN, 34], [(p3.crypto_1h_share_up * 100).toFixed(1) + "%", "of crypto hours were up after 1 hour. Average return " + p3.crypto_1h_mean_pct + "%", AMBER, 34]],
-    "A strong rise overall, but any single hour is close to a coin flip.", "p3");
+  const w = INSIGHT.story3_window.find((x) => x.hour.endsWith("17:00")), r = INSIGHT.story3_event_returns;
+  storySlide("3", "The busiest hour in two years: 9 April 2025, 17:00 UTC.", "story3.png", "What we see",
+    [fmt(w.texts) + " texts in one hour, against 1,311 on average (Z-score " + w.z.toFixed(1) + ").", "Same hour: ES=F " + r["ES=F"].toFixed(1) + "%, TSLA " + r["TSLA"].toFixed(1) + "%, BTC-USD " + r["BTC-USD"].toFixed(1) + "%.", "Market-wide mood stayed slightly negative (" + w.sentiment.toFixed(3) + ") and improved only over the next three hours."],
+    "Volume jumps with the price, and the mood trails behind it.");
 }
 {
-  const p4 = STORY.p4;
-  story("4", "What is the mood on BTC-USD?", "Market and Sentiment",
-    ["Put price next to average sentiment.", "Read the positive and negative shares and the ranking."],
-    [[(p4.sentiment >= 0 ? "+" : "") + p4.sentiment.toFixed(3), "Sentiment Score from " + fmt(p4.texts) + " texts", TEAL, 34], [p4.pos_pct.toFixed(1) + "% / " + p4.neg_pct.toFixed(1) + "%", "positive / negative texts. Rank " + p4.rank_from_top + " of " + p4.ranked, BLUE, 28]],
-    "Mildly positive, close to neutral. BTC-USD is not an outlier.", "p4");
+  const t = INSIGHT.story4;
+  storySlide("4", "Some win rates pass the test, but sit within 1 to 2 points of a coin flip.", "story4.png", "What we see",
+    [t.length + " cases pass the Benjamini–Hochberg test.", "Most are below 50%: a positive mood is slightly more often followed by a fall.", "Largest gap above 50%: NG=F at 12 hours, 51.4% (n = 8,971)."],
+    "Statistically real, economically useless: costs would eat a 1 to 2 point edge.");
 }
 {
-  const lags = STORY.p6, before = lags.filter((l) => l.lag < 0), after = lags.filter((l) => l.lag > 0);
-  const mean = (a) => a.reduce((t, l) => t + l.rho, 0) / a.length;
-  story("5", "Does sentiment move before price, or after?", "Lead and Lag",
-    ["Read the lag chart, from 6 hours before to 6 hours after.", "Compare the bars on each side of zero."],
-    [[(mean(before) >= 0 ? "+" : "") + mean(before).toFixed(3), "average correlation with returns in the 6 hours BEFORE the text", CORAL, 34], [(mean(after) >= 0 ? "+" : "") + mean(after).toFixed(3), "average correlation with returns in the 6 hours AFTER the text", BLUE, 34]],
-    "Price moves first, then people talk. Sentiment does not lead price.", "p6");
-}
-{
-  const f = {}; STORY.p5.forEach((r) => { f[r.target] = r; });
-  const fut = ["1h", "2h", "3h", "6h", "12h"].map((k) => f[k]);
-  const lo = Math.min(...fut.map((r) => r.spearman_rho)), hi = Math.max(...fut.map((r) => r.spearman_rho));
-  story("6", "How far can the analyst trust a link?", "Statistical Analysis",
-    ["Open the BTC-USD row for each return horizon.", "Read the correlation, its adjusted p-value and the win rate."],
-    [[lo.toFixed(3) + " to " + hi.toFixed(3), "correlation with returns 1 to 12 hours ahead. Adjusted p-values " + Math.min(...fut.map((r) => r.bh)).toFixed(2) + " to " + Math.max(...fut.map((r) => r.bh)).toFixed(2), CORAL, 24], [Math.min(...fut.map((r) => r.winrate)).toFixed(1) + "% to " + Math.max(...fut.map((r) => r.winrate)).toFixed(1) + "%", "win rate, against a 50% baseline", AMBER, 28]],
-    "No reliable link to future price. Only the same hour's return shows a small one.", "p5");
-}
-{
-  const p7 = STORY.p7, t = p7.by_type;
-  story("7", "So what should the analyst watch?", "Hot Events",
-    ["Set Z-score 1.5 and sentiment 0.05.", "Read the signal list and what price did after each."],
-    [[fmt(p7.total_default), "BTC-USD signals: " + fmt(t.positive_sentiment_spike) + " positive, " + fmt(t.negative_sentiment_spike) + " negative, " + fmt(t.combined_signal) + " combined, " + fmt(t.volume_spike) + " volume", TEAL, 34], [p7.share_same_direction_1h.toFixed(1) + "%", "of signal hours: price moved the way sentiment pointed (1 hour)", AMBER, 34]],
-    "About a coin flip. Use signals to pick hours to study, not to trade.", "p7");
-}
-{
-  const s = newSlide("HERO", "5 User story");
+  const s = newSlide("HERO", "5 Data stories");
   glow(s);
-  head(s, "The analyst's conclusion on BTC-USD.", "5 User story", CORAL);
-  card(s, 0.6, 1.95, 3.9, 3.85, "What was found", bl(["BTC-USD is the most-talked-about asset.", "Its mood is mildly positive.", "Sentiment follows price, not the other way round.", "No reliable link to future returns."]), { size: 14, headSize: 20, color: CORAL });
-  card(s, 4.7, 1.95, 3.9, 3.85, "What to do with it", bl(["Watch Reddit as a mood and attention gauge.", "Use signals to choose hours to examine.", "Do not trade on Reddit sentiment alone."]), { size: 14, headSize: 20, color: GREEN });
-  card(s, 8.8, 1.95, 3.9, 3.85, "Why it still helps", bl(["One place to see it all.", "A verified \"no signal\" stops the team chasing patterns that are not there."]), { size: 14, headSize: 20, color: AMBER });
+  head(s, "What the analyst takes away.", "5 Data stories", CORAL);
+  card(s, 0.6, 1.95, 3.9, 3.85, "What was found", bl(["Reddit's mood moves with the market when the crowd is busy.", "Price moves first; mood follows.", "No usable edge for predicting returns."]), { size: 14, headSize: 20, color: CORAL });
+  card(s, 4.7, 1.95, 3.9, 3.85, "What to do with it", bl(["Read Reddit as the mood of the market while events happen.", "Use busy hours as a place to look.", "Do not trade on Reddit sentiment alone."]), { size: 14, headSize: 20, color: GREEN });
+  card(s, 8.8, 1.95, 3.9, 3.85, "Why it still helps", bl(["One place to see attention, mood and price together.", "A verified \"no signal\" stops the team chasing patterns that are not there."]), { size: 14, headSize: 20, color: AMBER });
   T(s, "Historical data. Not investment advice.", { x: 0.6, y: 6.1, w: 12.0, h: 0.6, fontSize: 16, color: SOFT });
 }
 
