@@ -30,7 +30,7 @@ tickers = common.selected_tickers()
 universe = q("tickers")
 names = dict(zip(universe.ticker, universe.name))
 if not tickers:
-    common.nothing_selected(["Current Return (%)", "Volume Z-score", "Normalized Average True Range (%)"],
+    common.nothing_selected(["Current Return รวมทั้งช่วง (%)", "Volume Z-score สูงสุด", "Normalized Average True Range (%)"],
                             "ไม่ได้เลือกหลักทรัพย์ จึงไม่มีข้อมูลแสดง")
 one = len(tickers) == 1
 per_ticker = 1 < len(tickers) <= MAX_LINES
@@ -45,13 +45,13 @@ if hourly.empty:
 by = hourly.groupby("ticker")
 returns = by.log_return.sum()
 natr = by.normalized_atr.mean()
-vz = by.volume_zscore_24.apply(lambda s: s.dropna().iloc[-1] if s.notna().any() else float("nan"))
+vz = by.volume_zscore_24.max()                                             # the highest of the range, like the Z-score cards of the other pages
 suffix = "" if one else " (เฉลี่ยของ %d ตัว)" % len(by)
 common.kpi_cards([
-    ("Current Return (%)", common.money(returns.mean()),
+    ("Current Return รวมทั้งช่วง (%)", common.money(returns.mean()),
      "ผลตอบแทนช่วงเวลาปัจจุบัน = ln(close_t / close_t−1) × 100 รวมทุกชั่วโมงในช่วงที่เลือก" + suffix),
-    ("Volume Z-score", common.money(vz.mean()),
-     "ค่าล่าสุดในช่วงที่เลือก = (volume_t − μ24h) ÷ σ24h เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน" + suffix),
+    ("Volume Z-score สูงสุด", common.money(vz.max()),
+     "ค่าสูงสุดในช่วงที่เลือก (ปริมาณซื้อขายของราคา ไม่ใช่ปริมาณ Reddit) = (volume_t − μ24h) ÷ σ24h เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน" + ("" if one else " (สูงสุดของทุกตัวที่เลือก)") + common.TRADING_Z_NOTE),
     ("Normalized Average True Range (%)", common.money(natr.mean()),
      "อัตราความผันผวนสัมพัทธ์ = (ATR 24 ชั่วโมง ÷ close) × 100 เฉลี่ยในช่วงที่เลือก" + suffix)])
 
@@ -84,11 +84,11 @@ def trend(col, title, color, key, height=common.CHART_HEIGHT, log=False, **kw):
     return common.multi_series_chart(long, "time", col, "ticker", title, height, log=log, y_domain=kw.get("y_domain"))
 
 
-price_title = "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)"
+price_title = "ราคาปิด (USD)" if one else ("ราคาปิด (ค่าแรก = 100)" if per_ticker else "ราคาปิด")      # several lines: each rebased; the average: "(เฉลี่ยของที่เลือก)" is added by `trend`
 common.show(trend("close" if one else "price_index", price_title, common.C_PRICE, "p_close"), width="stretch")
 if not one:
     st.caption("เลือกหลายตัวจึงปรับราคาแต่ละตัวให้ค่าแรกของช่วง = 100 เพื่อเทียบกันได้ (ราคาจริงต่างขนาดกันมาก เช่น SPY หลักร้อย BTC หลักแสน)")
-common.show(trend("volume" if one else "volume_index", "ปริมาณซื้อขาย (หน่วย)" if one else "ปริมาณซื้อขาย ดัชนี (ค่าเฉลี่ย = 100)",
+common.show(trend("volume" if one else "volume_index", "ปริมาณซื้อขาย (หน่วย)" if one else ("ปริมาณซื้อขาย (ค่าเฉลี่ย = 100)" if per_ticker else "ปริมาณซื้อขาย"),
                       common.C_VOLUME, "p_volume"), width="stretch")
 common.show(trend("rsi", "RSI", common.C_RATE, "p_rsi", y_domain=[0, 100])
                 + alt.Chart(alt.Data(values=[{"y": 30}, {"y": 70}])).mark_rule(strokeDash=[4, 4], color="gray")
@@ -101,7 +101,9 @@ if len(tickers) <= MAX_LINES:
                                                 bar=common.kind(st, "p_atr")), width="stretch")
     st.caption("ATR (Average True Range) คือค่าเฉลี่ยของ True Range 24 ชั่วโมง วัดระดับความผันผวนของราคาโดยไม่พิจารณาทิศทาง  \n"
                "ค่าเป็นดอลลาร์สหรัฐ จึงเทียบข้ามสินทรัพย์ไม่ได้ ให้ดู Normalized ATR แทน")
-common.show(trend("normalized_atr", "Normalized ATR (%)", common.C_NATR, "p_natr", y_zero=True), width="stretch")
+common.show(trend("normalized_atr", "Normalized ATR (%)" if one else "Normalized ATR", common.C_NATR, "p_natr", y_zero=True), width="stretch")
+if not one:
+    st.caption("Normalized ATR หน่วยเป็น % ของราคาปิด (ATR 24 ชั่วโมง ÷ ราคาปิด × 100)")
 
 # ---- the measures of every ticked ticker
 st.subheader("รายละเอียดค่าวัดของหลักทรัพย์ที่เลือก")
@@ -110,13 +112,16 @@ snap["สินทรัพย์"] = snap.ticker.map(lambda s: "%s (%s)" % (s, 
 snap["กลุ่ม"] = snap.big_group.map(GROUP_LABELS)
 rsi_zones = hourly.dropna(subset=["rsi"]).groupby("ticker").rsi.agg(over70=lambda s: (s > 70).mean(), under30=lambda s: (s < 30).mean())
 snap = snap.merge(rsi_zones, left_on="ticker", right_index=True, how="left")
-common.table(snap[["สินทรัพย์", "กลุ่ม", "last_close", "last_rsi", "over70", "under30", "current_return_pct", "mean_normalized_atr_pct",
-                   "fr_1h", "fr_2h", "fr_3h", "fr_6h", "fr_12h"]].rename(columns={
+measures = snap[["สินทรัพย์", "กลุ่ม", "last_close", "last_rsi", "over70", "under30", "mean_normalized_atr_pct",
+                 "fr_now", "fr_1h", "fr_2h", "fr_3h", "fr_6h", "fr_12h"]].rename(columns={
     "last_close": "ราคาปิดล่าสุด (USD)", "last_rsi": "RSI ล่าสุด", "over70": "สัดส่วน RSI > 70", "under30": "สัดส่วน RSI < 30",
-    "current_return_pct": "Current Return รวมทั้งช่วง (%)", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)",
-    "fr_1h": "ผลตอบแทน 1h (%)", "fr_2h": "2h (%)", "fr_3h": "3h (%)", "fr_6h": "6h (%)", "fr_12h": "12h (%)"}).round(4),
-    hide_index=True, width="stretch", height=min(420, 60 + 36 * len(snap)))
-st.caption("ผลตอบแทนล่วงหน้าคือค่าเฉลี่ยของแต่ละกรอบเวลาในช่วงที่เลือก ช่องที่ว่างหมายถึงไม่มีแท่งราคาครบตามกรอบเวลา (หุ้นและ ETF ที่ 12h ไม่มีเลย เพราะตลาดปิดกลางคืน)")
+    "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)",
+    "fr_now": "ผลตอบแทน Current (%)", "fr_1h": "1h (%)", "fr_2h": "2h (%)", "fr_3h": "3h (%)", "fr_6h": "6h (%)", "fr_12h": "12h (%)"})
+formats = {c: "{:.4f}" for c in measures.columns if c not in ("สินทรัพย์", "กลุ่ม")}
+formats["ราคาปิดล่าสุด (USD)"] = "{:,.2f}"
+st.dataframe(measures.style.format(formats, na_rep="-"), hide_index=True, width="stretch", height=min(420, 60 + 36 * len(snap)))      # a missing value shows "-", never None
+st.caption("**RSI:** RSI ล่าสุด = ค่า RSI ของชั่วโมงสุดท้ายในช่วงที่เลือก  สัดส่วน RSI > 70 = สัดส่วนของชั่วโมงที่ RSI เกิน 70 (ซื้อมากเกินไป)  สัดส่วน RSI < 30 = สัดส่วนของชั่วโมงที่ต่ำกว่า 30 (ขายมากเกินไป)  \n"
+           "**ผลตอบแทน:** ผลตอบแทน Current คือค่าเฉลี่ยต่อชั่วโมงของ Current Return (ผลตอบแทนของชั่วโมงเดียวกัน ส่วนขยาย) ส่วน 1h ถึง 12h คือผลตอบแทนล่วงหน้าเฉลี่ย ทุกคอลัมน์เป็นค่าเฉลี่ยในช่วงที่เลือก (ผลรวมของ Current Return ทั้งช่วงอยู่ในการ์ดด้านบน) ช่องที่ว่างหมายถึงไม่มีแท่งราคาครบตามกรอบเวลา (หุ้นและ ETF ที่ 12h ไม่มีเลย เพราะตลาดปิดกลางคืน)")
 
 # ---- below, as before: asset classes (computed over the ticked tickers)
 st.subheader("ผลตอบแทนล่วงหน้าแยกตามกลุ่มสินทรัพย์")
@@ -125,23 +130,37 @@ if fr.empty or fr.n.sum() == 0:
     st.info("ไม่มีข้อมูลผลตอบแทนล่วงหน้าในช่วงนี้")
 else:
     fr["กลุ่ม"] = fr.big_group.map(GROUP_LABELS)
+    fr["กรอบเวลา"] = fr.horizon
+    fr["ราคาขึ้นกี่ % ของแท่ง"] = (100.0 * fr.share_up).round(1)
     chart = (alt.Chart(fr).mark_bar().encode(
-        x=alt.X("horizon:N", sort=["1h", "2h", "3h", "6h", "12h"], title="กรอบเวลา"),
+        x=alt.X("กรอบเวลา:N", sort=["Current Return", "1h", "2h", "3h", "6h", "12h"], title="กรอบเวลา"),
         y=alt.Y("mean_return_pct:Q", title="ผลตอบแทนเฉลี่ย (%)"), xOffset="กลุ่ม:N",
         color=alt.Color("กลุ่ม:N", scale=common.group_scale()),
-        tooltip=["กลุ่ม", "horizon", alt.Tooltip("mean_return_pct:Q", format=".4f"),
-                 alt.Tooltip("share_up:Q", format=".1%"), alt.Tooltip("n:Q", format=",")]).properties(height=common.CHART_HEIGHT))
+        tooltip=["กลุ่ม", "กรอบเวลา", alt.Tooltip("mean_return_pct:Q", format=".4f"),
+                 alt.Tooltip("ราคาขึ้นกี่ % ของแท่ง:Q", format=".1f"), alt.Tooltip("n:Q", format=",")]).properties(height=common.CHART_HEIGHT))
     common.show(chart, width="stretch")
-    common.table(fr[["กลุ่ม", "horizon", "n", "mean_return_pct", "share_up"]].rename(columns={
-        "n": "จำนวนตัวอย่าง", "mean_return_pct": "ผลตอบแทนเฉลี่ย (%)", "share_up": "สัดส่วนที่เป็นบวก"}),
+    common.table(fr[["กลุ่ม", "กรอบเวลา", "n", "mean_return_pct", "ราคาขึ้นกี่ % ของแท่ง"]].rename(columns={
+        "n": "จำนวนตัวอย่าง", "mean_return_pct": "ผลตอบแทนเฉลี่ย (%)"}),
         hide_index=True, width="stretch")
-    st.caption("จำนวนตัวอย่างของหุ้นและ ETF ที่ 6h มีน้อย และที่ 12h เป็น 0 เพราะตลาดปิดกลางคืนจึงมีแท่งราคารายชั่วโมงไม่ครบ ไม่ได้แปลว่าผลตอบแทนเป็น 0")
+    st.caption("**ราคาขึ้นกี่ % ของแท่ง** คือสัดส่วนของแท่งราคาที่ผลตอบแทนเป็นบวก (ราคาขึ้น) จากแท่งที่ราคาขยับ (ไม่นับแท่งที่ผลตอบแทนเท่ากับ 0 พอดี) 50 = ขึ้นกับลงพอ ๆ กัน เหมือนโยนเหรียญ  \n"
+               "จำนวนตัวอย่างของหุ้นและ ETF ที่ 6h มีน้อย และที่ 12h เป็น 0 เพราะตลาดปิดกลางคืนจึงมีแท่งราคารายชั่วโมงไม่ครบ ไม่ได้แปลว่าผลตอบแทนเป็น 0")
 
 st.subheader("กลุ่มสินทรัพย์ใดผันผวนสูงที่สุด")
-risk = q("group_risk", start, end, tickers)
-risk["กลุ่ม"] = risk.big_group.map(GROUP_LABELS)
-common.table(risk[["กลุ่ม", "tickers", "bars", "mean_normalized_atr_pct", "mean_abs_log_return_pct"]].rename(columns={
-    "tickers": "จำนวนสินทรัพย์", "bars": "จำนวนบาร์", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)",
-    "mean_abs_log_return_pct": "|Current Return| เฉลี่ย (%)"}).round(4), hide_index=True, width="stretch")
+st.caption("ผันผวน = ราคาขยับแรงแค่ไหนโดยไม่สนทิศขึ้นหรือลง  เรียงจากกลุ่มที่ผันผวนสูงสุด **กดที่แถวของกลุ่มเพื่อดูรายตัวของกลุ่มนั้น**  \n"
+           "**Normalized ATR** = ความผันผวนสัมพัทธ์ (ATR 24 ชั่วโมง ÷ ราคาปิด × 100) เป็น KPI ของ proposal  \n"
+           "**|Current Return| เฉลี่ย** ใช้ค่าสัมบูรณ์เพราะถ้าเฉลี่ยผลตอบแทนตรง ๆ ชั่วโมงที่ขึ้นกับลงจะหักล้างกันจนใกล้ 0 ทั้งที่ราคาขยับแรง (ส่วนขยาย)  \n"
+           "**จำนวนแท่งราคา** = จำนวนแท่งราคารายชั่วโมงที่ใช้คำนวณ")
 tr = q("ticker_risk", start, end, tickers)
-common.table(tr.round(4), hide_index=True, width="stretch", height=260)
+tr["สินทรัพย์"] = tr.ticker.map(lambda t: "%s (%s)" % (t, names.get(t, "")))
+# the stock_etf group is shown split into stocks, index ETFs and bitcoin ETFs (EXTENSION: their volatility differs a lot); the other groups as they are
+tr["ชนิด"] = [("หุ้น/ETF · " + common.INSTRUMENT_LABELS.get(common.instrument_of(t), "")) if g == "stock_etf" else GROUP_LABELS.get(g, g) for t, g in zip(tr.ticker, tr.big_group)]
+tr["atr_x_bars"] = tr.mean_normalized_atr_pct * tr.bars
+tr["abs_x_bars"] = tr.mean_abs_log_return_pct * tr.bars
+kinds = tr.groupby("ชนิด").agg(ตัว=("ticker", "nunique"), แท่ง=("bars", "sum"), atr=("atr_x_bars", "sum"), absr=("abs_x_bars", "sum")).reset_index()
+kinds["atr"], kinds["absr"] = kinds.atr / kinds.แท่ง, kinds.absr / kinds.แท่ง              # the mean over all the bars of the kind, as the group table was
+for row in kinds.sort_values("atr", ascending=False).itertuples():                       # one drawer per kind: its row (the numbers) is the header, the assets are inside
+    part = tr[tr.ชนิด == row.ชนิด]
+    with st.expander("**%s** · %d ตัว · แท่งราคา %s · Normalized ATR %.4f%% · |Current Return| %.4f%%" % (row.ชนิด, row.ตัว, "{:,}".format(int(row.แท่ง)), row.atr, row.absr)):
+        common.table(part[["สินทรัพย์", "bars", "mean_normalized_atr_pct", "mean_abs_log_return_pct"]].rename(columns={
+            "bars": "จำนวนแท่งราคา", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)", "mean_abs_log_return_pct": "|Current Return| เฉลี่ย (%)"}).round(4),
+            hide_index=True, width="stretch")

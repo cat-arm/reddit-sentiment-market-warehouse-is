@@ -13,9 +13,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
-PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
-         "pages/4_Market_and_Sentiment.py", "pages/5_Statistical_Analysis.py", "pages/6_Lead_and_Lag.py",
-         "pages/7_Hot_Events.py"]
+PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py", "pages/4_Price_and_Reddit.py",
+         "pages/5_Market_and_Sentiment.py", "pages/6_Statistical_Analysis.py", "pages/7_Lead_and_Lag.py",
+         "pages/8_Hot_Events.py"]
 
 
 @unittest.skipUnless(DB.exists(), "real database not available")
@@ -122,7 +122,12 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(int(by_ticker.mentions.sum()), int(one + two))
         self.assertEqual(sorted(by_ticker.ticker.unique()), ["NVDA", "TSLA"])
         self.assertEqual(int(data.volume_by_source(DB, ("TSLA", "NVDA"), start, end, ids).mentions.sum()), int(one + two))
-        self.assertEqual(data.ticker_zscore(DB, ("TSLA", "NVDA"), start, end, ids).basis.iloc[0], "mentions")
+        self.assertEqual(data.ticker_zscore(DB, ("TSLA", "NVDA"), start, end, ids).basis.iloc[0], "texts")      # the Z-score is of the texts, not of the mentions
+        texts = data.ticker_texts_series(DB, ("TSLA", "NVDA"), start, end, ids)
+        single = sum(int(data.ticker_texts_series(DB, t, start, end, ids).texts.sum()) for t in ("TSLA", "NVDA"))
+        self.assertEqual(int(texts.texts.sum()), single)                                               # texts of several tickers = the sum of their parts
+        self.assertEqual(int(texts.posts.sum()), 0)                                                     # comments only
+        self.assertLessEqual(single, int(one + two))                                                    # a text counts once however often it names the ticker
         self.assertEqual(data.ticker_zscore(DB, "TSLA", start, end).basis.iloc[0], "texts")   # one ticker, all sources
 
     def test_on_demand_signals_equal_stored_signals(self):
@@ -135,7 +140,8 @@ class DashboardTests(unittest.TestCase):
         finally:
             db.close()
         started = time.time()
-        found = signals.detect(data.signal_panel(DB), 2.0, 0.3)
+        tickers = tuple(data.tickers(DB).ticker)
+        found = data.market_signals(DB, 0, 4_000_000_000, tickers, ("positive", "negative", "neutral"), 2.0, 0.3)
         computed = [(t, l, int(n)) for (t, l), n in found.groupby(["signal_type", "signal_level"]).size().items()]
         self.assertEqual(sorted(computed), sorted(stored))
         self.assertLess(time.time() - started, 10)

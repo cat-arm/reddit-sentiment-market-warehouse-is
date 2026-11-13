@@ -40,8 +40,6 @@ GROUP_DOTS = {"stock_etf": "🔵", "futures": "🟠", "crypto": "🟢"}   # same
 TYPE_KEYS = ["f_type_Post", "f_type_Comment"]
 STATUSES = ("positive", "negative", "neutral")                  # DimMajoritySentiment
 MAJORITY_KEYS = ["f_maj_" + s for s in STATUSES]
-SIGNAL_KEYS = ["s_z", "s_s", "s_h"]                             # DimDetectionConfig on the Ranking and Signals page
-EVENT_KEYS = ["h_z", "h_s", "h_n", "h_lv_low", "h_lv_medium", "h_lv_high"]                                     # the same idea on the Hot Events page
 OVERVIEW_KEYS = ["d_z", "d_s"]                                  # Market and Sentiment: thresholds FILTER the whole page (0 = no filter)
 SENTIMENT_MODELS = ("VADER+FinBERT", "VADER", "FinBERT")         # DimSentimentSource.ModelUsed; the first is the proposal's
 DEFAULT_RANGE_DAYS = 365
@@ -81,6 +79,40 @@ def q(name, *args):
     return _cached(name, os.path.getmtime(data.__file__), *args)
 
 
+def text_variant():
+    """The variant of the hourly sums that the Sentiment Threshold of the sidebar asks for: only the texts with |score| >= the threshold (0 = all)."""
+    from etl.reddit_hourly_community import variant_of
+    return variant_of(round(float(st.session_state.get("d_s", 0.0)) / 0.05) * 0.05)
+
+
+@st.cache_data(show_spinner="กำลังคำนวณ p-value และ Win Rate ...", max_entries=40)
+def panel_stat(family, variant, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, predictor):
+    """The live statistics table of one panel of the proposal's system 7.4 after every filter of the sidebar (cached: the same filters are never
+    computed twice).  The Statistical Analysis page draws it and the Hot Events page (system 7.6) looks the same numbers up (proposal 7.6 step 3)."""
+    prices = q("price_series_for", tickers, start, end)
+    returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in data.HORIZONS]]]
+
+    src = q("sources")
+    market = q("market_zscore", start, end, tuple(int(i) for i in src[src.subreddit.isin(communities) & src.content_type.isin(content_types)].source_id))   # Z of ALL the texts of the hour
+
+    from etl.reddit_hourly_community import variant_of
+    cut = variant_of(round(float(s_th) / 0.05) * 0.05)                 # the Sentiment Threshold filters the TEXTS (0 = all, 0.05 = strong, 0.30 = quality)
+
+    def frame(fam, var):
+        if fam == "global":
+            sent = q("global_hourly", start, end, communities, model, var, content_types)
+        else:
+            sent = q("sentiment_hourly", tickers, start, end, communities, model, var, content_types)
+        return data.sentiment_frame(sent, start, end, market=market)
+
+    base = frame("global" if variant == "baseline" else family, cut)
+    own = frame(family, variant) if variant in ("strong", "quality") else None
+    samples = data.panel_samples(base, own, returns, family, variant, statuses, z_th, 0.0, predictor=predictor)
+    if samples.empty:
+        return pd.DataFrame(columns=data.STAT_COLUMNS)
+    return data.stat_table(samples, sentiment="predictor")
+
+
 def setup(title, icon="📊"):
     """Page config + title + the shared disclaimer; call first on every page."""
     st.set_page_config(page_title=title, page_icon=icon, layout="wide")
@@ -92,6 +124,14 @@ def epoch(day, end_of_day=False):
     """Date -> epoch seconds of 00:00 (or 23:00 = last hour) UTC of that day."""
     moment = dt.datetime(day.year, day.month, day.day, 23 if end_of_day else 0, tzinfo=dt.timezone.utc)
     return int(moment.timestamp())
+
+
+def reset_filters():
+    """The button of the central filter: forget every central filter (time, sources, assets, sentiment source, majority status, the two thresholds)
+    and the shadow copies kept for the pages that do not draw them, so every widget starts again from its default."""
+    for key in list(st.session_state.keys()):
+        if key.startswith(("f_", "_keep_f_", "d_", "_keep_d_")) and key != "f_reset_button":
+            del st.session_state[key]
 
 
 def _restore(keys):
@@ -178,6 +218,13 @@ def selected_communities():
     return tuple(c for c in dict.fromkeys(q("sources").subreddit) if st.session_state.get(_sentiment_key(c), True))
 
 
+def sentiment_source_ids():
+    """DimSource ids of the communities and content types ticked in the DimSentimentSource filter (the texts that count on pages 4-6)."""
+    src = q("sources")
+    keep = src[src.subreddit.isin(selected_communities()) & src.content_type.isin(selected_content_types())]
+    return tuple(int(i) for i in keep.source_id)
+
+
 def selected_statuses():
     """Majority statuses kept by the DimMajoritySentiment filter; nothing ticked = nothing."""
     return tuple(s for s in STATUSES if st.session_state.get("f_maj_" + s, True))
@@ -207,31 +254,10 @@ def _majority_filter():
         st.sidebar.checkbox(status, key="f_maj_" + status)
 
 
-def _z_hint(key):
-    """Under the Z-score slider: what that threshold means in texts per hour, so the user need not think in standard deviations.  An hour
-    passes when its texts exceed the mean + Z x the standard deviation of the 24 hours before it; the line gives that number for the chosen
-    tickers and range (the median, and where the middle half of the tickers lie)."""
-    z = st.session_state.get(key, 0.0)
-    span = st.session_state.get("f_range")
-    days = sorted(span) if isinstance(span, (tuple, list)) and len(span) else []
-    if not z or not days:
-        return
-    tickers = tuple(selected_tickers())
-    start, end = epoch(days[0]), epoch(days[-1], end_of_day=True)
-    # one asset: its own number; several: the texts of all of them added together (the series the Market and Sentiment charts show)
-    need = data.texts_needed(q("volume_baseline", tickers, start, end, len(tickers) > 1), z)
-    if need is None:
-        st.sidebar.caption("ไม่มีข้อมูลปริมาณของหลักทรัพย์และช่วงเวลาที่เลือก")
-    elif len(tickers) == 1:
-        st.sidebar.caption("Z-score เกิน %.1f คือปริมาณ **มากกว่า %s ข้อความต่อชั่วโมง**" % (z, "{:,}".format(need[0])))
-    else:
-        st.sidebar.caption("Z-score เกิน %.1f คือปริมาณรวมของ %d สินทรัพย์ที่เลือก **มากกว่า %s ข้อความต่อชั่วโมง**" % (z, len(tickers), "{:,}".format(need[0])))
-
-
-def _detection_filter(kind):
-    """DimDetectionConfig: Z-score Threshold, Sentiment Threshold and Horizon (kind 'signals' = Ranking and Signals, 'overview' =
-    Market and Sentiment: two thresholds that filter the whole page, 0 = off; the Horizon is chosen inside the charts that need it), or the thresholds and the minimum number of
-    texts of the Hot Events page (kind 'events')."""
+def _detection_filter(kind, sentiment=False):
+    """DimDetectionConfig: Z-score Threshold, Sentiment Threshold and Horizon ('overview' =
+    Market and Sentiment, Statistical Analysis, Lead and Lag and Hot Events: two thresholds that filter the whole page, 0 = off, the same two
+    values on all four pages; the Horizon is chosen inside the charts that need it)."""
     state = st.session_state
     st.sidebar.markdown("**เกณฑ์การตรวจจับสัญญาณ (DimDetectionConfig)**")
     if kind == "overview":                                  # filters the hours of the page; 0 = off, so by default nothing is removed
@@ -239,28 +265,9 @@ def _detection_filter(kind):
         state.setdefault("d_s", 0.0)
         st.sidebar.caption("Reddit Volume Z-score Threshold (ปริมาณต้องเกินค่านี้ ค่า 0 คือไม่กรอง)")
         st.sidebar.slider("Reddit Volume Z-score Threshold", 0.0, 4.0, step=0.1, key="d_z", label_visibility="collapsed")
-        _z_hint("d_z")
-        st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่ค่านี้ ค่า 0 คือไม่กรอง)")
-        st.sidebar.slider("Sentiment Threshold", 0.0, 1.0, step=0.05, key="d_s", label_visibility="collapsed")
+        st.sidebar.caption("Sentiment Threshold (ทิ้งข้อความที่ |ความรู้สึก| ต่ำกว่าค่านี้ก่อนเฉลี่ยเป็นรายชั่วโมง ค่า 0 คือไม่กรอง 0.05 = ชัดเจน 0.30 = คุณภาพ)")
+        st.sidebar.slider("Sentiment Threshold", 0.0, 0.95, step=0.05, key="d_s", label_visibility="collapsed")
 
-    elif kind == "signals":
-        state.setdefault("s_z", 1.5)
-        state.setdefault("s_s", 0.30)
-        state.setdefault("s_h", "1h")
-        st.sidebar.caption("Reddit Volume Z-score Threshold (ปริมาณต้องเกิน)")
-        st.sidebar.slider("Reddit Volume Z-score Threshold", 0.5, 4.0, step=0.1, key="s_z", label_visibility="collapsed")
-        st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่)")
-        st.sidebar.slider("Sentiment Threshold", 0.0, 1.0, step=0.05, key="s_s", label_visibility="collapsed")
-        st.sidebar.caption("Horizon (กรอบเวลาของสถิติย้อนหลัง)")
-        st.sidebar.radio("Horizon", list(data.HORIZONS), key="s_h", horizontal=True, label_visibility="collapsed")
-    else:
-        state.setdefault("h_z", 0.0)
-        state.setdefault("h_s", 0.0)
-        st.sidebar.caption("Reddit Volume Z-score Threshold (ปริมาณต้องเกินค่านี้ ค่า 0 คือไม่กรอง)")
-        st.sidebar.slider("Reddit Volume Z-score Threshold", 0.0, 4.0, step=0.1, key="h_z", label_visibility="collapsed")
-        _z_hint("h_z")
-        st.sidebar.caption("Sentiment Threshold (|ความรู้สึก| ตั้งแต่ค่านี้ ค่า 0 คือไม่กรอง)")
-        st.sidebar.slider("Sentiment Threshold", 0.0, 1.0, step=0.05, key="h_s", label_visibility="collapsed")
 
 
 
@@ -365,19 +372,20 @@ def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=
     groups).  assets=False: the asset filter is NOT drawn and all classes are used.  sources=True: the source filter
     is drawn too (read it with `selected_sources()`).  multi=True: several tickers can be chosen (read them with
     `selected_tickers()`; the returned ticker is None).
-    System 7.5 pages add: sentiment=True (DimSentimentSource, `selected_communities()`), detection='signals' / 'events'
-    (DimDetectionConfig, values in session state s_z / s_s / s_h or h_z / h_s) and majority=True
+    System 7.5 pages add: sentiment=True (DimSentimentSource, `selected_communities()`), detection='overview'
+    (DimDetectionConfig: the two thresholds, session state d_z / d_s) and majority=True
     (DimMajoritySentiment, `selected_statuses()`).
     Streamlit would forget the values of widgets a page does not draw, so they are kept in shadow keys and restored on
     the next page that draws them."""
     info = q("data_range")
     universe = q("tickers")
     st.sidebar.header("ตัวกรองกลาง")
+    st.sidebar.button("รีเซ็ตตัวกรองทั้งหมด (ค่าเริ่มต้น)", key="f_reset_button", on_click=reset_filters, width="stretch")
     s_keys = source_keys()
     group_keys = ["f_group_" + k for k in GROUP_LABELS]
     t_keys = ticker_keys()
     ss_keys = sentiment_source_keys()
-    central = TIME_KEYS + t_keys + group_keys + s_keys + ss_keys + MAJORITY_KEYS + SIGNAL_KEYS + EVENT_KEYS + OVERVIEW_KEYS
+    central = TIME_KEYS + t_keys + group_keys + s_keys + ss_keys + MAJORITY_KEYS + OVERVIEW_KEYS
     _restore(central)
     if not sources:                                          # the sentiment-source block draws the Post / Comment boxes itself
         _keep([k for k in s_keys if not (sentiment and k in TYPE_KEYS)])
@@ -385,10 +393,6 @@ def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=
         _keep(ss_keys)
     if not majority:
         _keep(MAJORITY_KEYS)
-    if detection != "signals":
-        _keep(SIGNAL_KEYS)
-    if detection != "events":
-        _keep(EVENT_KEYS)
     if detection != "overview":
         _keep(OVERVIEW_KEYS)
     if not assets:
@@ -408,7 +412,7 @@ def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=
         _sentiment_source_filter()
     if detection:
         st.sidebar.divider()
-        _detection_filter(detection)
+        _detection_filter(detection, sentiment)
     if majority:
         st.sidebar.divider()
         _majority_filter()
@@ -423,12 +427,31 @@ def nothing_selected(labels, message="ไม่ได้เลือกแหล
     st.stop()
 
 
+# The notes of the Z-score cards (the hover of the ? icon): what is NOT calculated, so that a missing or a huge value is not a surprise
+REDDIT_Z_NOTE = (" หมายเหตุ: ชั่วโมงที่ 24 ชั่วโมงก่อนหน้ามีข้อความคงที่เกือบเท่ากันทุกชั่วโมง (ส่วนเบี่ยงเบนมาตรฐานไม่เกิน 0.001) หรือมีข้อมูลก่อนหน้าไม่ถึง 6 ชั่วโมง"
+                 " จะไม่คำนวณ Z-score (ว่าง ไม่ใช่ 0) เพื่อไม่ให้หารด้วยค่าที่เกือบศูนย์แล้วได้เลขมหาศาล")
+TRADING_Z_NOTE = (" หมายเหตุ: ไม่คำนวณเมื่อส่วนเบี่ยงเบนมาตรฐานของ 24 ชั่วโมงก่อนหน้าเป็น 0 หรือมีแท่งก่อนหน้าไม่ถึง 5 แท่ง"
+                  " ปริมาณซื้อขายที่เป็น 0 ถือเป็นช่องว่างของข้อมูล (ตลาดปิดหรือ yfinance ไม่มีข้อมูล เช่นคริปโตมี 0 ราว 50% ของแท่งทั้งที่ซื้อขายตลอดวัน)"
+                  " ไม่นับในหน้าต่าง 24 ชั่วโมงและแท่งนั้นไม่มี Z-score ใช้กับทุกสินทรัพย์ ค่าสูงสุดอาจยังใหญ่ในวันที่ฟิวเจอร์สครบสัญญาที่ปริมาณพุ่งจริง")
+
+
+INSTRUMENT_LABELS = {"stock": "หุ้น", "index_etf": "ETF ดัชนี", "bitcoin_etf": "ETF บิตคอยน์"}
+
+
+def instrument_of(ticker):
+    """Sub-type of a stock_etf asset (stock / index_etf / bitcoin_etf, from configs/tickers.yaml; EXTENSION), None for crypto and futures."""
+    from etl.common import load_yaml
+    return load_yaml("tickers.yaml")["tickers"].get(ticker, {}).get("instrument")
+
+
 def kpi_cards(items):
     """The KPI cards every page opens with, directly under the title: one bordered card per
     (label, value, help) or (label, value, help, delta)."""
+    # a card with a delta badge is taller than one without: when any card has one, give every card in the row the same height
+    height = 200 if any(len(item) > 3 and item[3] for item in items) else "content"
     for cell, item in zip(st.columns(len(items)), items):
         label, value, help_text = item[:3]
-        cell.metric(label, value, help=help_text, delta=item[3] if len(item) > 3 else None, delta_color="off", border=True)
+        cell.metric(label, value, help=help_text, delta=item[3] if len(item) > 3 else None, delta_color="off", border=True, height=height)
 
 
 # Time levels follow DimTime (Hour, Day, Week, Month, Year).  Each has the pandas rule that rolls hourly rows up to it.
@@ -669,6 +692,25 @@ def table(df, **kwargs):
         if pd.api.types.is_integer_dtype(s) or (s.abs().max() >= 1000):
             config[col] = st.column_config.NumberColumn(format="localized")
     return st.dataframe(df, column_config=config, **kwargs)
+
+
+def community_table(by_source, value):
+    """The table "by community" of the Reddit pages: one row per community, the counts of the comments, of the posts and the total, each with its share (%) of
+    the total of its column (every % column adds up to 100 down the table), and a last row with the totals.  `by_source` = DataFrame(subreddit,
+    content_type, `value`)."""
+    pivot = by_source.pivot_table(index="subreddit", columns="content_type", values=value, aggfunc="sum").fillna(0)
+    pivot["รวม"] = pivot.sum(axis=1)
+    table = pivot.sort_values("รวม", ascending=False).astype(int).rename(columns={"Comment": "ความคิดเห็น", "Post": "โพสต์"})
+    names = {"ความคิดเห็น": "ความคิดเห็น (%)", "โพสต์": "โพสต์ (%)", "รวม": "รวม (%)"}
+    for kind_name, share_name in names.items():
+        if kind_name in table and table[kind_name].sum():
+            table[share_name] = 100.0 * table[kind_name] / table[kind_name].sum()
+    columns = ["ความคิดเห็น", names["ความคิดเห็น"], "โพสต์", names["โพสต์"], "รวม", names["รวม"]]
+    table = table[[c for c in columns if c in table]]
+    table.loc["รวมทุกชุมชน"] = table.sum()
+    percent = {c: st.column_config.NumberColumn(format="%.1f") for c in table.columns if "%" in c}
+    counts = {c: st.column_config.NumberColumn(format="localized") for c in table.columns if "%" not in c}
+    return st.dataframe(table, column_config={**counts, **percent}, width="stretch")
 
 
 def money(x):

@@ -21,7 +21,7 @@ import streamlit as st  # noqa: E402
 from dashboard import common, data  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
-common.setup("Lead and Lag (ความรู้สึกหรือราคาเปลี่ยนก่อนกัน)", "🔀")
+common.setup("Lead and Lag (ส่วนขยาย: ความรู้สึกหรือราคาเปลี่ยนก่อนกัน)", "🔀")
 _, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True)
 tickers = common.selected_tickers()
 communities = common.selected_communities()
@@ -35,13 +35,14 @@ s_th = st.session_state.get("d_s", 0.0)
 names = dict(zip(q("tickers").ticker, q("tickers").name))
 
 prices = q("price_series_for", tickers, start, end)
-sent = q("sentiment_hourly", tickers, start, end, communities, common.selected_model(), "all", content_types)
+sent = q("sentiment_hourly", tickers, start, end, communities, common.selected_model(), common.text_variant(), content_types)      # the texts that pass the Sentiment Threshold
+sent_all = q("sentiment_hourly", tickers, start, end, communities, common.selected_model(), "all", content_types) if common.text_variant() != "all" else None   # the volume stays that of ALL the texts
 if prices.empty:
     common.kpi_cards([(c, "n/a", None) for c in CARDS])
     st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
     st.stop()
-per_ticker = data.sentiment_frame(sent, start, end)
-per_ticker_kept = per_ticker.assign(majority=per_ticker.majority.where(data.threshold_mask(per_ticker, z_th, s_th)))
+per_ticker = data.sentiment_frame(sent, start, end, market=q("market_zscore", start, end, common.sentiment_source_ids()), volume=sent_all)      # Z-score of ALL the texts of the hour
+per_ticker_kept = per_ticker.assign(majority=per_ticker.majority.where(data.threshold_mask(per_ticker, z_th, 0.0)))
 
 # ---- who moves first?  the same ticker-hours as above, now looking back as well as forward
 timing = per_ticker_kept.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "sentiment_mean", "majority"]]
@@ -82,7 +83,7 @@ else:
 st.subheader("ความรู้สึกหลังราคาขึ้นหรือลง")
 CURRENT = "Current Return (ชั่วโมงเดียวกัน)"
 PAST = {CURRENT: 0, **{"%d ชั่วโมงก่อนหน้า" % h: h for h in (1, 2, 3, 6, 12)}}              # the horizons of the proposal (1 / 2 / 3 / 6 / 12 hours)
-st.session_state.setdefault("s_past_hours", "3 ชั่วโมงก่อนหน้า")
+st.session_state.setdefault("s_past_hours", CURRENT)
 past_pick = st.radio("ดูผลตอบแทน", list(PAST), horizontal=True, key="s_past_hours", label_visibility="collapsed")
 timing = timing.assign(past=data.past_return(timing, PAST[past_pick]))
 rb = data.return_buckets(timing, "past")

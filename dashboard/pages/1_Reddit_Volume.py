@@ -26,8 +26,7 @@ src_ids = common.selected_sources()
 tickers = common.selected_tickers()
 restricted = common.tickers_restricted()
 if not src_ids or not tickers:
-    common.nothing_selected(["Reddit Volume รวม", "เฉลี่ยต่อชั่วโมง", "ชั่วโมงที่ปริมาณสูงสุด", "Reddit Volume Z-score สูงสุด",
-                             "ชั่วโมงที่ Z-score > 1.5"])
+    common.nothing_selected(["Reddit Volume รวม", "เฉลี่ยต่อชั่วโมง", "ชั่วโมงที่ปริมาณสูงสุด", "Z-score สูงสุดในช่วง"])
 
 everything = q("total_volume_series", start, end, src_ids)      # all texts of the chosen sources (also the base of the rate)
 if everything.empty:
@@ -37,12 +36,12 @@ if not restricted:
     total = everything
     count_name = "Reddit Volume"
 else:
-    # only some tickers kept: Ticker_mention_count split by Post / Comment; the Z-score follows `data.ticker_zscore`
-    mentions = q("ticker_volume_series", tickers, start, end, src_ids).rename(columns={"mentions": "texts"})
+    # only some tickers kept: the TEXTS (posts and comments) that mention them, split by Post / Comment; the Z-score follows `data.ticker_zscore`
+    mentions = q("ticker_texts_series", tickers, start, end, src_ids)
     z = q("ticker_zscore", tickers, start, end, src_ids)[["hour_utc", "zscore", "basis"]]
     total = mentions.drop(columns="time").merge(z, on="hour_utc", how="outer").assign(
         time=lambda d: pd.to_datetime(d.hour_utc, unit="s", utc=True)).sort_values("time")
-    count_name = "Ticker Mention Count"
+    count_name = "Reddit Volume ของสินทรัพย์ที่เลือก"
 # a missing hour means "no texts", which is a real 0 for a count (unlike sentiment, where it is unknown)
 full = pd.DataFrame({"time": pd.date_range(everything.time.min(), everything.time.max(), freq="h")})
 total = full.merge(total, on="time", how="left").fillna({"posts": 0, "comments": 0, "texts": 0})
@@ -50,38 +49,35 @@ shown = common.resample(total, {"posts": "sum", "comments": "sum", "texts": "sum
 
 # KPI cards (proposal 7.1: Reddit_volume total / per hour / busiest hour, Volume Z-score peak and spike hours)
 cards = [(count_name + " รวม", "{:,}".format(int(total.texts.sum())),
-          "โพสต์ + ความคิดเห็น" if not restricted else "จำนวนครั้งที่หลักทรัพย์ที่เลือกถูกพูดถึงในแหล่งข้อมูลที่เลือก"),
+          "โพสต์ + ความคิดเห็น" if not restricted else "จำนวนโพสต์และความคิดเห็นที่พูดถึงหลักทรัพย์ที่เลือกในแหล่งข้อมูลที่เลือก"),
          ("เฉลี่ยต่อชั่วโมง", "{:,.0f}".format(total.texts.mean()), None),
          ("ชั่วโมงที่ปริมาณสูงสุด", "{:,}".format(int(total.texts.max())), str(total.loc[total.texts.idxmax(), "time"])[:16] + " UTC"),
-         ("Reddit Volume Z-score สูงสุด" if not restricted else "Volume Z-score ของที่เลือก สูงสุด", common.money(total.zscore.max()),
-          "Z-score ของชั่วโมงที่ปริมาณสูงผิดปกติที่สุดในช่วงที่เลือก คือสูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้ากี่เท่าของส่วนเบี่ยงเบนมาตรฐาน"),
-         ("ชั่วโมงที่ Z-score > 1.5", "{:,}".format(int((total.zscore > 1.5).sum())),
-          "Spike คือชั่วโมงที่ปริมาณสูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้าเกิน 1.5 เท่าของส่วนเบี่ยงเบนมาตรฐาน (เกณฑ์ 1.5 ตาม proposal)")]
+         ("Z-score สูงสุดในช่วง" if not restricted else "Z-score ที่เลือก สูงสุด", common.money(total.zscore.max()),
+          "Z-score ของชั่วโมงที่ปริมาณสูงผิดปกติที่สุดในช่วงที่เลือก คือสูงกว่าค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้ากี่เท่าของส่วนเบี่ยงเบนมาตรฐาน" + common.REDDIT_Z_NOTE)]
 if restricted:
     base = float(everything.texts.sum())
-    cards.append(("Ticker Mention Rate (%)", "n/a" if not base else "{:.3f}".format(100.0 * total.texts.sum() / base),
+    counted = float(q("ticker_volume_series", tickers, start, end, src_ids).mentions.sum())          # Ticker_mention_count (a text can mention a ticker twice)
+    cards.append(("Ticker Mention Rate (%)", "n/a" if not base else "{:.3f}".format(100.0 * counted / base),
                   "Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดของแหล่งข้อมูลเดียวกัน × 100"))
 common.kpi_cards(cards)
 if restricted:
-    st.info("เลือกหลักทรัพย์บางตัว จึงแสดง**จำนวนครั้งที่หลักทรัพย์เหล่านั้นถูกพูดถึง** (Ticker_mention_count) แทนข้อความทั้งหมด "
-            "ข้อความเดียวที่พูดถึงหลายตัวหรือหลายครั้งนับหลายครั้ง ติ๊กให้ครบทุกตัวเพื่อกลับไปดูข้อความทั้งหมด")
-    basis = total["basis"].dropna()
-    st.caption("Z-score คำนวณจาก%s" % ("จำนวนข้อความที่พูดถึงสินทรัพย์ (ค่าที่เก็บไว้ ใช้ใน panel_Ticker_spike)"
-                                       if basis.empty or basis.iloc[0] == "texts" else
-                                       "จำนวนครั้งที่ถูกพูดถึงรวมของที่เลือกในแหล่งข้อมูลที่เลือก (กฎเดียวกัน: เทียบ 24 ชั่วโมงก่อนหน้า) เพราะไม่ได้เก็บจำนวนข้อความต่อแหล่งข้อมูล"))
+    st.info("เลือกหลักทรัพย์บางตัว จึงแสดง**จำนวนโพสต์และความคิดเห็นที่พูดถึงหลักทรัพย์เหล่านั้น** แทนข้อความทั้งหมดของตลาด "
+            "(ข้อความเดียวที่พูดถึงหลายตัวที่เลือกนับหลายครั้ง) ติ๊กให้ครบทุกตัวเพื่อกลับไปดูข้อความทั้งหมด")
+    st.caption("Z-score คำนวณจากจำนวนข้อความที่พูดถึงหลักทรัพย์ที่เลือก เทียบกับ 24 ชั่วโมงก่อนหน้า (ไม่รวมชั่วโมงปัจจุบัน)")
 
-# Comments and posts are two charts one above the other (no dual axis: posts are only ~1 % of the texts, so a shared
+# Posts, comments, then the total (posts + comments): one chart above the other (no dual axis: posts are only ~1 % of the texts, so a shared
 # axis hides them and two axes make the lines cross meaninglessly).  A day without any text in the six communities is
 # a data gap and is drawn as a gap, not as 0.
 daily = common.resample(total, {"posts": "sum", "comments": "sum", "texts": "sum"}, "Daily")
-daily[["posts", "comments"]] = daily[["posts", "comments"]].where(daily.texts > 0)
+daily[["posts", "comments", "texts"]] = daily[["posts", "comments", "texts"]].where(daily.texts > 0)
 hourly = total
-common.show(common.count_chart(daily, hourly, "comments", "ความคิดเห็น" if not restricted else "พูดถึงในความคิดเห็น", common.C_REDDIT, how, bar=common.kind(st, "v_comments")), width="stretch")
-common.show(common.count_chart(daily, hourly, "posts", "โพสต์" if not restricted else "พูดถึงในโพสต์", common.C_REDDIT_LIGHT, how, bar=common.kind(st, "v_posts")), width="stretch")
+common.show(common.count_chart(daily, hourly, "posts", "Reddit Volume (โพสต์)" if not restricted else "Reddit Volume ของที่เลือก (โพสต์)", common.C_REDDIT_LIGHT, how, bar=common.kind(st, "v_posts")), width="stretch")
+common.show(common.count_chart(daily, hourly, "comments", "Reddit Volume (ความคิดเห็น)" if not restricted else "Reddit Volume ของที่เลือก (ความคิดเห็น)", common.C_REDDIT, how, bar=common.kind(st, "v_comments")), width="stretch")
+common.show(common.count_chart(daily, hourly, "texts", "Reddit Volume (โพสต์ + ความคิดเห็น)" if not restricted else "Reddit Volume ของที่เลือก (โพสต์ + ความคิดเห็น)", common.C_REDDIT, how, bar=common.kind(st, "v_total")), width="stretch")
 st.caption(common.count_caption(how))
 
 # Z-score of the hourly volume; for day / week / month / year each point is the HIGHEST hourly Z-score of that period
-z = common.line(shown, "time", "zscore", "Volume Z-score" + ("" if not restricted else " ของที่เลือก") + ("" if how == "Hourly" else " (สูงสุดของ%s)" % common.PERIOD_LABEL[how]),
+z = common.line(shown, "time", "zscore", "Reddit Volume Z-score" + ("" if not restricted else " ของที่เลือก") + ("" if how == "Hourly" else " (สูงสุดของ%s)" % common.PERIOD_LABEL[how]),
                 common.C_Z, dots=how != "Hourly", label="Z-score สูงสุด", bar=common.kind(st, "v_z"))
 zero = common.zero_rule()       # Z = 0: normal volume
 rule = common.ref_rule(1.5)
@@ -96,8 +92,5 @@ if not restricted:
 else:
     by_source = q("volume_by_source", tickers, start, end, src_ids).rename(columns={"mentions": "texts"})
     subtitle = "แยกตามชุมชน (จำนวนครั้งที่หลักทรัพย์ที่เลือกถูกพูดถึง)"
-pivot = by_source.pivot_table(index="subreddit", columns="content_type", values="texts", aggfunc="sum").fillna(0)
-pivot["รวม"] = pivot.sum(axis=1)
 st.subheader(subtitle)
-common.table(pivot.sort_values("รวม", ascending=False).astype(int).rename(
-    columns={"Comment": "ความคิดเห็น", "Post": "โพสต์"}), width="stretch")
+common.community_table(by_source, "texts")

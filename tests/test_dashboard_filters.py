@@ -10,15 +10,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "output" / "reddit.sqlite3"
-SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py"}   # system 7.1: DimSource filter
-SENTIMENT_PAGE = "pages/4_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
-RANKING_PAGE = "pages/5_Statistical_Analysis.py"                              # 7.5-2: p-values, win rate, regression
-ANALYSIS_PAGE = "pages/6_Lead_and_Lag.py"                                      # extension: who moves first
-DETECTION_PAGES = {"pages/7_Hot_Events.py": ["h_z", "h_s"], SENTIMENT_PAGE: ["d_z", "d_s"], RANKING_PAGE: ["d_z", "d_s"],
+SPIKE_PAGE = "pages/4_Price_and_Reddit.py"                                     # extension: Price and Return with the Reddit volume added
+SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", SPIKE_PAGE}   # system 7.1: DimSource filter
+SENTIMENT_PAGE = "pages/5_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
+RANKING_PAGE = "pages/6_Statistical_Analysis.py"                              # 7.5-2: p-values, win rate, regression
+ANALYSIS_PAGE = "pages/7_Lead_and_Lag.py"                                      # extension: who moves first
+DETECTION_PAGES = {"pages/8_Hot_Events.py": ["d_z", "d_s"], SENTIMENT_PAGE: ["d_z", "d_s"], RANKING_PAGE: ["d_z", "d_s"],
                    ANALYSIS_PAGE: ["d_z", "d_s"]}
 MAJORITY_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE, *DETECTION_PAGES}
-SENTIMENT_PAGES = {SENTIMENT_PAGE, RANKING_PAGE, ANALYSIS_PAGE}
-COUNT_PAGES = SOURCE_PAGES | {"pages/3_Price_and_Return.py"}                  # first card = a count that follows the ticks
+SENTIMENT_PAGES = {SENTIMENT_PAGE, RANKING_PAGE, ANALYSIS_PAGE, "pages/8_Hot_Events.py"}      # page 7 takes the same sentiment source as page 5
+COUNT_PAGES = (SOURCE_PAGES - {SPIKE_PAGE}) | {"pages/3_Price_and_Return.py"}                  # first card = a count that follows the ticks
 TIME_KEYS = ["f_range", "f_gran"]
 COMMUNITIES = ["r/wallstreetbets", "r/stocks", "r/investing", "r/StockMarket", "r/options", "r/CryptoCurrency"]
 SOURCE_KEYS = ["f_src_" + c for c in COMMUNITIES] + ["f_type_Post", "f_type_Comment"]
@@ -28,9 +29,9 @@ GROUP_KEYS = ["f_group_stock_etf", "f_group_futures", "f_group_crypto"]
 TICKERS = ["AAPL", "AMC", "AMD", "BITO", "BRK-B", "COIN", "GME", "HOOD", "IBIT", "IWM", "JNJ", "JPM", "KO", "MARA", "MSFT",
            "MSTR", "NVDA", "PLTR", "QQQ", "SPY", "TSLA", "XOM", "CL=F", "ES=F", "GC=F", "NG=F", "NQ=F", "RTY=F",
            "BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD", "SOL-USD", "XRP-USD"]
-PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py",
-         "pages/4_Market_and_Sentiment.py", RANKING_PAGE, ANALYSIS_PAGE,
-         "pages/7_Hot_Events.py"]
+PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py", SPIKE_PAGE,
+         "pages/5_Market_and_Sentiment.py", RANKING_PAGE, ANALYSIS_PAGE,
+         "pages/8_Hot_Events.py"]
 MULTI_PAGES = set(PAGES[1:])                                                  # every dashboard takes several tickers
 
 
@@ -61,7 +62,7 @@ def expected_keys(page):
 def sidebar_order(at):
     """Keys of the sidebar widgets in the order they are drawn."""
     return [b.key for b in at.sidebar.children.values() if getattr(b, "key", None)
-            and b.key not in ("f_tk_all", "f_tk_none")]
+            and b.key not in ("f_tk_all", "f_tk_none", "f_reset_button")]
 
 
 def sidebar_signature(at):
@@ -97,6 +98,20 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(at.sidebar.radio(key="f_gran").value, "รายเดือน", page)
             self.assertEqual(tuple(at.sidebar.date_input(key="f_range").value),
                              (dt.date(2026, 8, 3), dt.date(2026, 8, 9)), page)
+
+    def test_the_reset_button_restores_every_default(self):
+        """The button above the central filter sets every filter back to its default, on every page that has the filters."""
+        for page in ("pages/1_Reddit_Volume.py", "pages/5_Market_and_Sentiment.py", "pages/6_Statistical_Analysis.py", "pages/8_Hot_Events.py"):
+            fresh = self.run_page(page)
+            default = (tuple(fresh.sidebar.date_input(key="f_range").value), fresh.sidebar.checkbox(key="f_group_crypto").value)
+            at = self.run_page(page, f_group_crypto=False, f_range=(dt.date(2026, 8, 3), dt.date(2026, 8, 9)), f_gran="รายเดือน")
+            if page != "pages/1_Reddit_Volume.py":
+                at.sidebar.slider(key="d_z").set_value(2.0).run()
+            at.sidebar.button(key="f_reset_button").click().run()
+            self.assertEqual(len(at.exception), 0, "%s: %s" % (page, [e.value for e in at.exception]))
+            self.assertEqual((tuple(at.sidebar.date_input(key="f_range").value), at.sidebar.checkbox(key="f_group_crypto").value), default, page)
+            if page != "pages/1_Reddit_Volume.py":
+                self.assertEqual((at.sidebar.slider(key="d_z").value, at.sidebar.slider(key="d_s").value), (0.0, 0.0), page)
 
     def test_a_choice_survives_pages_that_do_not_have_that_filter(self):
         """Leave a page and come back: every filter is as it was, also those the pages in between do not draw (they work with
@@ -157,6 +172,16 @@ class FilterTests(unittest.TestCase):
             at.sidebar.checkbox(key="f_group_crypto").set_value(False).run()          # BTC-USD leaves with its class
             self.assertEqual(at.metric[0].value, two, page)
             self.assertEqual(len(at.exception), 0, page)
+
+    def test_price_and_reddit_cards_follow_the_ticks_and_the_sources(self):
+        """Price and Reddit: the Reddit cards follow the sources, the Current Return and the trading volume cards follow the ticked assets."""
+        at = self.run_page(SPIKE_PAGE)
+        full = [m.value for m in at.metric]
+        at = tick_only(at, ["BTC-USD"])
+        one = [m.value for m in at.metric]
+        self.assertEqual(one[:2], full[:2], "the Reddit volume of the market does not depend on the asset")
+        self.assertNotEqual(one[2:], full[2:], "the Current Return and the trading volume follow the ticked asset")
+        self.assertEqual(len(at.exception), 0)
 
     def test_ticking_a_class_ticks_all_its_tickers(self):
         """Pages 1-3: unticking a class clears its tickers, ticking it again ticks the whole class (even a ticker unticked before)."""
@@ -223,20 +248,21 @@ class FilterTests(unittest.TestCase):
             at.selectbox(key="p5_log_panel").select_index(i).run()
             self.assertEqual(len(at.exception), 0, i)
         at.selectbox(key="p5_log_panel").select_index(0)
-        for option in at.radio(key="p5_predictor").options:                                  # EXTENSION: the variable that is measured
-            at.radio(key="p5_predictor").set_value(option).run()
-            self.assertEqual(len(at.exception), 0, "%s: %s" % (option, [e.value for e in at.exception]))
-        at.radio(key="p5_predictor").set_value(at.radio(key="p5_predictor").options[0]).run()
-        self.assertTrue(at.radio(key="p5_predictor").value.endswith("(sentiment_mean)"))
+        self.assertNotIn("p5_predictor", [r.key for r in at.radio])                          # the proposal measures only the mean Sentiment Score
         at.sidebar.slider(key="d_z").set_value(2.0).run()                                     # the Z-score narrows every panel and says what it means in texts
         self.assertEqual(len(at.exception), 0)
         self.assertNotEqual([m.value for m in at.metric][:3], full[:3])
-        self.assertTrue(any("Z-score เกิน" in c.value and "ข้อความต่อชั่วโมง" in c.value for c in at.sidebar.caption), "the sidebar tells the texts per hour of the Z-score")
+        self.assertFalse(any("Z-score เกิน" in c.value for c in at.sidebar.caption), "no texts-per-hour hint under the Z-score slider (it misled: the Z-score is relative to each hour)")
         at.sidebar.slider(key="d_z").set_value(0.0)
         self.assertEqual(at.radio(key="p5_family_all").value, "global")                    # the default: the sentiment of the whole market
         at.radio(key="p5_family_all").set_value("Ticker").run()
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
         at.radio(key="p5_family_all").set_value("global")
+        for panel, (z_cut, s_cut) in (("strong", (0.0, 0.05)), ("quality", (0.0, 0.30)), ("spike", (1.5, 0.0)), ("all", (0.0, 0.0))):   # a panel moves the sidebar thresholds
+            at.radio(key="p5_panel").set_value(panel).run()
+            self.assertEqual(len(at.exception), 0, "%s: %s" % (panel, [e.value for e in at.exception]))
+            self.assertEqual((at.sidebar.slider(key="d_z").value, at.sidebar.slider(key="d_s").value), (z_cut, s_cut), panel)
+        self.assertNotIn("baseline", at.radio(key="p5_panel").options)                      # the random baseline is not a view
         # the time range is a filter of the p-values
         at.sidebar.date_input(key="f_range").set_value((dt.date(2026, 3, 1), dt.date(2026, 3, 31))).run()
         self.assertEqual(len(at.exception), 0)
@@ -298,17 +324,10 @@ class FilterTests(unittest.TestCase):
             self.assertNotEqual(at.metric[0].value, full[0], "Z-score Threshold %s removes hours, so the Sentiment Score changes" % z)
         at.sidebar.slider(key="d_z").set_value(0.0)
         at.run()
-        self.assertFalse(any("Z-score เกิน" in c.value for c in at.sidebar.caption))              # 0 = off: no hint (nothing to say)
-        at.sidebar.slider(key="d_z").set_value(2.0).run()                          # a Z-score is told in texts per hour and follows the slider
-        hint = [c.value for c in at.sidebar.caption if "Z-score เกิน" in c.value]
-        self.assertEqual(len(hint), 1)
-        self.assertRegex(hint[0], r"Z-score เกิน 2\.0 คือปริมาณรวมของ \d+ สินทรัพย์ที่เลือก \*\*มากกว่า [\d,]+ ข้อความต่อชั่วโมง\*\*")
+        at.sidebar.slider(key="d_z").set_value(2.0).run()
+        self.assertFalse(any("Z-score เกิน" in c.value for c in at.sidebar.caption), "no hint under the Z-score slider")
         at.sidebar.slider(key="d_z").set_value(3.5).run()
-        harder = [c.value for c in at.sidebar.caption if "Z-score เกิน" in c.value][0]
-        self.assertRegex(harder, r"Z-score เกิน 3\.5")
-        first = int(hint[0].split("มากกว่า ")[1].split(" ")[0].replace(",", ""))
-        second = int(harder.split("มากกว่า ")[1].split(" ")[0].replace(",", ""))
-        self.assertGreater(second, first, "a higher Z-score asks for more texts")
+        self.assertEqual(len(at.exception), 0)
         at.sidebar.slider(key="d_z").set_value(0.0)
         at.sidebar.checkbox(key="f_type_Comment").set_value(False).run()           # only the posts of the community are counted
         self.assertEqual(len(at.exception), 0)
@@ -329,7 +348,7 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(len(at.exception), 0, key)
             at.checkbox(key="dl_" + key).set_value(True)
             at.checkbox(key="dr_" + key).set_value(True).run()
-        for measure in ("Current Return (ชั่วโมงเดียวกัน)", "ผลตอบแทนล่วงหน้า 2h", "ผลตอบแทนล่วงหน้า 12h"):      # sentiment vs return bars
+        for measure in ("Current Return (ชั่วโมงเดียวกัน ส่วนขยาย)", "ผลตอบแทนล่วงหน้า 2h", "ผลตอบแทนล่วงหน้า 12h"):      # sentiment vs return bars
             at.radio(key="s_bar_measure").set_value(measure).run()
             self.assertEqual(len(at.exception), 0, measure)
         at.radio(key="s_ratio_mode").set_value("ผลโหวตส่วนใหญ่ (สัดส่วนชั่วโมง)")      # the ratio chart can count the majority votes
@@ -340,15 +359,12 @@ class FilterTests(unittest.TestCase):
             at.sidebar.checkbox(key=key).set_value(False)
         at = at.run()
         self.assertTrue(all(m.value == "0" for m in at.metric), "no community ticked = nothing")
-        page = "pages/7_Hot_Events.py"
+        page = "pages/8_Hot_Events.py"
         at = self.run_page(page)
         base = at.metric[0].value
-        at.sidebar.slider(key="h_z").set_value(3.5).run()                          # both thresholds start at 0: every hour with texts is a signal
-        at.sidebar.slider(key="h_s").set_value(0.5).run()
+        at.sidebar.slider(key="d_z").set_value(3.5).run()                          # both thresholds start at 0: every hour with texts is a signal
+        at.sidebar.slider(key="d_s").set_value(0.5).run()
         self.assertNotEqual(at.metric[0].value, base, "the thresholds change the signals")
-        narrow = at.metric[0].value
-        at.slider(key="h_n").set_value(10).run()
-        self.assertNotEqual(at.metric[0].value, narrow, "the least texts per hour change the signals")
         self.assertEqual(len(at.exception), 0)
 
     def test_majority_vote_chart_follows_every_filter(self):
@@ -403,7 +419,7 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(at.metric[0].label, "Reddit Volume รวม")
         self.assertEqual(len(at.info), 0)
         at = tick_only(at, ["SPY"])
-        self.assertEqual(at.metric[0].label, "Ticker Mention Count รวม")
+        self.assertEqual(at.metric[0].label, "Reddit Volume ของสินทรัพย์ที่เลือก รวม")
         self.assertEqual(len(at.info), 1)                            # the page says what it now counts
 
     def test_every_chart_can_switch_to_bars(self):

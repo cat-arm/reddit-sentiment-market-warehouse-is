@@ -259,9 +259,9 @@ class StatTableTests(unittest.TestCase):
         self.assertGreater(same_hour.winrate, 55)
 
     def test_too_few_pairs_give_nan_not_zero(self):
-        out = data.stat_table(self.samples(n=20))
-        self.assertTrue(out.spearman_rho.isna().all() and out.winrate.isna().all())
-        self.assertTrue((out.n == 20).all())
+        out = data.stat_table(self.samples(n=2))                  # fewer than 3 pairs: a correlation does not exist (2 points always give +-1)
+        self.assertTrue(out.spearman_rho.isna().all())
+        self.assertTrue((out.n == 2).all())                       # the win rate has no minimum n: it is computed from the 2 hours (the dashboard marks n < 30)
 
     def test_a_null_return_is_dropped_and_zero_is_not_a_direction(self):
         s = self.samples(n=100, slope=1.0)
@@ -311,37 +311,31 @@ class ZScoreInTextsTests(unittest.TestCase):
 
 
 class ExtensionFilterTests(unittest.TestCase):
-    """The EXTENSION: the variable that is measured (the sentiment, its momentum, its lag or the Z-score)."""
+    """How the sentiment is read against the returns (proposal 7.4): the score or the majority status as + / - / 0."""
 
     def panel(self, predictor, **kw):
         hours = [i * 3600 for i in range(5)]
-        base = pd.DataFrame({"series": "AAA", "hour_utc": hours, "zscore": [0.5, 1.0, 2.0, np.nan, 0.0], "majority": "positive",
+        base = pd.DataFrame({"series": "AAA", "hour_utc": hours, "zscore": [0.5, 1.0, 2.0, np.nan, 0.0],
+                             "majority": ["positive", "negative", "neutral", "positive", None],
                              "sentiment_mean": [0.1, 0.3, -0.2, 0.4, np.nan], "texts": [4, 6, 2, 8, 0], "momentum": [np.nan, 0.2, -0.5, 0.6, np.nan]})
         returns = pd.DataFrame({"ticker": "AAA", "hour_utc": hours, "log_return": np.arange(5.0)})
-        return data.panel_samples(base, None, returns, "Ticker", "all", ("positive",), 0.0, 0.0, predictor=predictor, **kw)
+        return data.panel_samples(base, None, returns, "Ticker", "all", ("positive", "negative", "neutral"), 0.0, 0.0, predictor=predictor, **kw)
 
-    def test_the_measured_variable_is_a_column_of_the_hour(self):
+    def test_the_score_and_the_majority_are_two_columns_of_the_hour(self):
         self.assertEqual(list(self.panel("sentiment_mean").predictor), [0.1, 0.3, -0.2, 0.4])
-        momentum = self.panel("momentum")
-        self.assertEqual(list(momentum.hour_utc), [3600, 7200, 10800])                                  # the hour without a momentum is not a sample
-        self.assertEqual(list(momentum.predictor), [0.2, -0.5, 0.6])
-        lag = self.panel("lag1")                                                                       # the sentiment of the hour before = this hour - the change
-        self.assertEqual(list(lag.hour_utc), [3600, 7200, 10800])
-        for got, want in zip(lag.predictor, [0.1, 0.3, -0.2]):
-            self.assertAlmostEqual(got, want)
-        z = self.panel("zscore")
-        self.assertEqual(list(z.predictor), [0.5, 1.0, 2.0])                                           # an hour without a Z-score is not a sample
+        majority = self.panel("majority")
+        self.assertEqual(list(majority.predictor), [1.0, -1.0, 0.0, 1.0])                             # + / - / 0, no score
+        self.assertEqual(list(majority.hour_utc), [0, 3600, 7200, 10800])                             # the hour without text is not a sample
 
-    def test_a_variable_without_direction_has_no_win_rate(self):
-        samples = self.panel("zscore").assign(zscore_pred=lambda d: d.predictor)
-        samples = pd.concat([samples] * 20, ignore_index=True)
-        samples["future_return_1h"] = 1.0
-        for col in ("future_return_2h", "future_return_3h", "future_return_6h", "future_return_12h"):
+    def test_a_neutral_majority_has_no_direction_in_the_win_rate(self):
+        samples = pd.concat([self.panel("majority")] * 20, ignore_index=True)
+        for col in ("future_return_1h", "future_return_2h", "future_return_3h", "future_return_6h", "future_return_12h"):
             samples[col] = 1.0
         samples["log_return"] = np.arange(len(samples), dtype=float) % 7 - 3
-        out = data.stat_table(samples, sentiment="predictor", directional=False)
-        self.assertTrue(out.winrate.isna().all() and out.win_p.isna().all())
-        self.assertTrue(out[out.target == "log_return"].spearman_rho.notna().all())                    # the correlation is still measured
+        out = data.stat_table(samples, sentiment="predictor")
+        row = out[out.target == "1h"].iloc[0]
+        self.assertEqual(int(row.win_n), 60)                                                           # 3 of the 4 hours have a direction (the neutral one has none)
+        self.assertAlmostEqual(row.winrate, 100.0 * 40 / 60)                                           # the two positive hours win, the negative one loses
 
 
 class PanelSamplesTests(unittest.TestCase):

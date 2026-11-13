@@ -15,9 +15,10 @@ PAGES = [st.Page("home.py", title="Home", icon="🏠", default=True),
          st.Page("pages/1_Reddit_Volume.py", title="Reddit Volume"),
          st.Page("pages/2_Ticker_Mentions.py", title="Ticker Mentions"),
          st.Page("pages/3_Price_and_Return.py", title="Price and Return"),
-         st.Page("pages/4_Market_and_Sentiment.py", title="Market and Sentiment"),
-         st.Page("pages/5_Statistical_Analysis.py", title="Statistical Analysis"),
-         st.Page("pages/6_Lead_and_Lag.py", title="Lead and Lag"),
-         st.Page("pages/7_Hot_Events.py", title="Hot Events")]
+         st.Page("pages/4_Price_and_Reddit.py", title="Price and Reddit"),
+         st.Page("pages/5_Market_and_Sentiment.py", title="Market and Sentiment"),
+         st.Page("pages/6_Statistical_Analysis.py", title="Statistical Analysis"),
+         st.Page("pages/7_Lead_and_Lag.py", title="Lead and Lag"),
+         st.Page("pages/8_Hot_Events.py", title="Hot Events")]
 
 st.navigation(PAGES, position="top").run()

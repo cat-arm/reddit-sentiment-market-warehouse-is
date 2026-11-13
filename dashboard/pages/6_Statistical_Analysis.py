@@ -3,10 +3,11 @@ horizon; the figures a1_*, a2_*, a3_* of output/figures made interactive).
 
 Same filters as Market and Sentiment (table 17): time, assets, sentiment source (communities, model), the two thresholds, majority
 status.  EVERY number is computed live on the ticker-hours the filters leave, so changing the time range changes the p-values:
-  * one tab per kind of text (table 12 of the proposal): every text, the clear ones (strong), the quality ones, the hours of a
-    Volume Z-score spike, the random baseline;
-  * inside a tab: the texts that mention the asset itself (Ticker) or the sentiment of the whole market (Global);
-  * per panel: a heat map asset x horizon of the Spearman / Pearson correlation or the Win Rate (value, n, a star when the
+  * the panels of table 12 (all / strong / quality / spike) are a radio that MOVES the two thresholds of the sidebar to that panel's cut (the
+    numbers follow; the Sentiment Threshold filters the TEXTS, in steps of 0.05, from the variants of `reddit_hourly_community`); no baseline view; the sentiment of the whole market (Global) or of the texts that mention the asset itself (Ticker);
+    the per-text panels and the random baseline are in analysis_results and the figures a1_*, a2_*;
+  * a switch for how the sentiment is read: the score or the majority status (+ / -);
+  * a heat map asset x horizon of the Spearman / Pearson correlation or the Win Rate (value, n, a star when the
     Benjamini-Hochberg p < 0.05) and the table of the p-values behind it;
   * the Logistic Regression is the stored result of system 7.4 (whole data set; a cross-validated model is not recomputed per filter).
 Descriptive only: hourly data are autocorrelated and the horizons overlap, so p-values are not exact; no investment advice.
@@ -33,12 +34,13 @@ communities = common.selected_communities()
 statuses = common.selected_statuses()
 content_types = common.selected_content_types()
 CARDS = ["Historical Win Rate", "Spearman p-value", "Pearson p-value", "Logistic AUC"]
+st.caption("**หมายเหตุ:** ไม่มีเกณฑ์จำนวนตัวอย่างขั้นต่ำ ทุกค่าที่คำนวณได้จะแสดง (สหสัมพันธ์ต้องมีอย่างน้อย 3 ชั่วโมงจึงมีค่าทางคณิตศาสตร์) ค่าที่ n น้อยกว่า 30 ติดเครื่องหมาย ⚠ แปลว่าไม่น่าเชื่อถือ ให้ดู n และ ★ (p ปรับ BH) ประกอบเสมอ")
 if not tickers or not communities or not statuses or not content_types:
     common.nothing_selected(CARDS, "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
 z_th = st.session_state.get("d_z", 0.0)
 s_th = st.session_state.get("d_s", 0.0)
 PREDICTOR_OF = {label: key for key, label in data.PREDICTORS.items()}
-predictor = PREDICTOR_OF.get(st.session_state.get("p5_predictor"), "sentiment_mean")      # EXTENSION: the variable that is measured (the radio is drawn below the cards)
+predictor = PREDICTOR_OF.get(st.session_state.get("p5_basis"), "sentiment_mean")      # how the sentiment is read: the score or the majority (+ / -); the radio is drawn below the cards
 model = common.selected_model()
 universe = q("tickers")
 group_of = dict(zip(universe.ticker, universe.big_group))
@@ -57,29 +59,8 @@ if prices.empty:
     common.kpi_cards([(c, "n/a", None) for c in CARDS])
     st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
     st.stop()
-@st.cache_data(show_spinner="กำลังคำนวณ p-value และ Win Rate ...", max_entries=40)
-def panel_stat(family, variant, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, predictor):
-    """The live statistics table of one panel after every filter of the sidebar (cached: the same filters are never computed twice)."""
-    prices = q("price_series_for", tickers, start, end)
-    returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in data.HORIZONS]]]
-
-    def frame(fam, var):
-        if fam == "global":
-            sent = q("global_hourly", start, end, communities, model, var, content_types)
-        else:
-            sent = q("sentiment_hourly", tickers, start, end, communities, model, var, content_types)
-        return data.sentiment_frame(sent, start, end)
-
-    base = frame("global" if variant == "baseline" else family, "all")
-    own = frame(family, variant) if variant in ("strong", "quality") else None
-    samples = data.panel_samples(base, own, returns, family, variant, statuses, z_th, s_th, predictor=predictor)
-    if samples.empty:
-        return pd.DataFrame(columns=data.STAT_COLUMNS)
-    return data.stat_table(samples, sentiment="predictor", directional=predictor != "zscore")
-
-
 def stat(family, variant):
-    return panel_stat(family, variant, tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_th, s_th,
+    return common.panel_stat(family, variant, tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_th, s_th,
                       tuple(content_types), predictor)
 
 
@@ -118,58 +99,76 @@ def asset_label(ticker):
     return "%s (%s)" % (ticker, GROUP_LABELS[group_of[ticker]])
 
 
+def dark_cell(values, domain):
+    """True where the colour of a cell is dark (the two ends of the red-yellow-green scale): the text on it must be white to be read."""
+    lo, hi = domain
+    t = ((pd.to_numeric(values, errors="coerce") - lo) / (hi - lo)).clip(0, 1)
+    return ((t < 0.22) | (t > 0.78)).fillna(False)
+
+
+def ink(light_cell_color):
+    """Text colour: white on a dark cell, `light_cell_color` on a light one (the field `dark` of the data)."""
+    return alt.condition(alt.datum.dark, alt.value("#ffffff"), alt.value(light_cell_color))
+
+
 def heatmap(stat, measure):
-    """Ticker x horizon heat map of one measure.  Every cell: the value (the colour and the big number, a star when the Benjamini-Hochberg
-    p < 0.05), under it its p-value and under that the number of samples n it is computed from."""
+    """Ticker x horizon heat map.  Every cell shows the three values (Spearman, Pearson, Win Rate; a star when the Benjamini-Hochberg p < 0.05);
+    the measure that is clicked above sets the colour of the cells and is the one printed big and bold.  The p-values and n are in the tooltip."""
     value, p_col, bh_col, fmt, domain, n_col = BASE[measure]
     d = stat[stat.ticker.isin(tickers)].copy()
     d["ช่วง"] = d.target.map(TARGET_LABEL)
     d["value"] = d[value]
-    d["p"] = d[p_col]
-    d["bh"] = d[bh_col]
-    d["n_used"] = d[n_col]
     d["asset"] = [asset_label(t) for t in d.ticker]
-    d["label"] = [("" if pd.isna(v) else ("{:%s}" % fmt).format(v) + ("★" if b < 0.05 else "")) for v, b in zip(d.value, d.bh)]
-    d["plabel"] = ["" if pd.isna(v) else ("p<0.001" if pp < 0.001 else "p=%.3f" % pp) for v, pp in zip(d.value, d.p)]
-    d["nlabel"] = ["" if pd.isna(v) else "n=%s" % "{:,}".format(int(n)) for v, n in zip(d.value, d.n_used)]
+    d["dark"] = dark_cell(d.value, domain)
+    short = {"Spearman": "S", "Pearson": "P", "Win Rate": "W"}
+    for name in VIEWS:                                                     # one label per measure: "S +0.021★", "P +0.010", "W 52.1★"
+        col, _, bh, f, _, _ = BASE[name]
+        pcol = BASE[name][1]
+        d["lab_" + name] = ["" if pd.isna(v) else "%s %s%s   %s" % (short[name], ("{:%s}" % f).format(v), "★" if b < 0.05 else "", "p<0.001" if pp < 0.001 else "p=%.3f" % pp)
+                            for v, b, pp in zip(d[col], d[bh], d[pcol])]
+    d["lab_n"] = ["" if pd.isna(a) else "%sn=%s · Win n=%s" % ("⚠ " if (a < 30 or (not pd.isna(w) and w < 30)) else "", "{:,}".format(int(a)), "-" if pd.isna(w) else "{:,}".format(int(w)))
+                  for a, w in zip(d.n, d.win_n)]
     order = [TARGET_LABEL[t] for t in data.STAT_TARGETS]
     chart = alt.Chart(d).encode(x=alt.X("ช่วง:O", sort=order, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
                                 y=alt.Y("asset:N", sort=[asset_label(t) for t in ORDER], title=None, axis=alt.Axis(labelLimit=220)))
     valid = "isValid(datum.value)"
+    d["bh"], d["n_used"] = d[bh_col], d[n_col]                              # the chosen measure (the page test reads these)
+    tips = ["asset", "ช่วง"]
+    for name, key in (("Spearman", "sp"), ("Pearson", "pe"), ("Win Rate", "wr")):
+        col, pc, bh, f, _, nc = BASE[name]
+        d[key + "_v"], d[key + "_p"], d[key + "_bh"], d[key + "_n"] = d[col], d[pc], d[bh], d[nc]
+        tips += [alt.Tooltip(key + "_v:Q", title=name, format=f), alt.Tooltip(key + "_p:Q", title="p-value " + name, format=".4f"),
+                 alt.Tooltip(key + "_bh:Q", title="p-value (BH) " + name, format=".4f"), alt.Tooltip(key + "_n:Q", title="จำนวนตัวอย่าง " + name, format=",")]
     rect = chart.mark_rect().transform_filter(valid).encode(
         color=alt.Color("value:Q", title=measure + (" (%)" if measure == "Win Rate" else " ค่าสหสัมพันธ์"),
-                        scale=alt.Scale(domain=domain, scheme="redyellowgreen", clamp=True)),
-        tooltip=["asset", "ช่วง", alt.Tooltip("value:Q", title=measure, format=fmt), alt.Tooltip("p:Q", title="p-value", format=".4f"),
-                 alt.Tooltip("bh:Q", title="p-value (BH)", format=".4f"), alt.Tooltip("n_used:Q", title="จำนวนตัวอย่าง", format=",")])
-    text = chart.mark_text(fontSize=11, dy=-12, color="#222222").transform_filter(valid).encode(text="label:N")
-    ptext = chart.mark_text(fontSize=9, dy=0, color="#444444").transform_filter(valid).encode(text="plabel:N")
-    ntext = chart.mark_text(fontSize=9, dy=11, color="#555555").transform_filter(valid).encode(text="nlabel:N")
-    return (rect + text + ptext + ntext).properties(height=max(120, 46 * len(ORDER) + 30))
+                        scale=alt.Scale(domain=domain, scheme="redyellowgreen", clamp=True)), tooltip=tips)
+    layers = [rect]
+    for line, name in zip((-24, -8, 8), VIEWS):                            # a line per measure (value, star, p-value); the chosen one is bigger and bold
+        chosen = name == measure
+        layers.append(chart.mark_text(fontSize=11 if chosen else 9, fontWeight="bold" if chosen else "normal", dy=line).transform_filter(valid).encode(
+            text="lab_%s:N" % name, color=ink("#222222" if chosen else "#555555")))
+    layers.append(chart.mark_text(fontSize=9, dy=24).transform_filter(valid).encode(text="lab_n:N", color=ink("#555555")))      # the number of hours behind the values
+    return alt.layer(*layers).properties(height=max(170, 68 * len(ORDER) + 30))
 
 
 def panel_view(stat, key):
     """The content of one panel: the switch between the three measures and the heat map."""
     if stat.empty or stat.n.fillna(0).sum() == 0:
-        st.info("ไม่มีข้อมูลเพียงพอสำหรับ panel นี้ตามตัวกรองที่เลือก (ต้องมีอย่างน้อย 30 ชั่วโมงต่อคู่ ลองขยายช่วงเวลาหรือลดเกณฑ์)")
+        st.info("ไม่มีข้อมูลเพียงพอสำหรับ panel นี้ตามตัวกรองที่เลือก (ไม่มีชั่วโมงที่ผ่านตัวกรองและมีทั้งความรู้สึกกับราคา ลองขยายช่วงเวลาหรือลดเกณฑ์)")
         return
     measure = st.radio("แสดง", VIEWS, horizontal=True, key="p5_measure_" + key, label_visibility="collapsed")
-    if measure == "Win Rate" and predictor == "zscore":
-        st.info("Reddit Volume Z-score ไม่มีทิศทางบวกหรือลบ จึงไม่มี Win Rate (ดูได้เฉพาะ Spearman และ Pearson)")
-        return
     if stat[stat.ticker.isin(tickers)][BASE[measure][0]].notna().sum() == 0:
-        st.info("ไม่มีค่า %s ของสินทรัพย์ที่เลือกใน panel นี้ (ข้อมูลน้อยกว่า 30 ชั่วโมงต่อคู่)" % measure)
+        st.info("ไม่มีค่า %s ของสินทรัพย์ที่เลือกใน panel นี้ (ข้อมูลน้อยกว่า 3 ชั่วโมงต่อคู่ คำนวณสหสัมพันธ์ไม่ได้)" % measure)
         return
     common.show(heatmap(stat, measure))
-    st.caption("ตัวเลขใหญ่ในแต่ละช่องคือ %s  \n"
-               "บรรทัดที่สองคือ p-value ของค่านั้น (ต่ำกว่า 0.05 ถือว่าน่าสนใจ)  \n"
-               "บรรทัดที่สามคือ n หรือจำนวนชั่วโมงที่ใช้คำนวณ  \n"
-               "เครื่องหมาย ★ หมายถึง p-value ที่ปรับด้วย Benjamini-Hochberg แล้วต่ำกว่า 0.05  \n"
-               "ช่องว่างหมายถึงข้อมูลน้อยกว่า 30 ชั่วโมง ไม่ใช่ค่า 0  \n"
+    st.caption("ทุกช่องแสดง 3 ค่า: S = Spearman, P = Pearson, W = Win Rate (%%)  กดปุ่มด้านบนเพื่อเปลี่ยนว่าสีของช่องตามค่าไหน (ค่าที่เลือกพิมพ์ตัวใหญ่ตัวหนา)  \n"
+               "ทุกค่ามี p-value (ก่อนปรับ) ต่อท้าย และบรรทัดล่างสุดคือ n (จำนวนชั่วโมงของ Spearman / Pearson) กับ Win n (จำนวนชั่วโมงที่นับใน Win Rate ไม่รวมกรณีที่ราคาหรือความรู้สึกเป็น 0) ชี้ที่ช่องเพื่อดู p ปรับ BH  \n   p ต่ำกว่า 0.05 ถือว่าน่าสนใจ แต่ต้องดู p ปรับ BH ด้วย  \n"
+               "เครื่องหมาย ★ ท้ายค่า หมายถึง p-value ของค่านั้นที่ปรับด้วย Benjamini-Hochberg (ส่วนขยาย) แล้วต่ำกว่า 0.05  \n"
+               "ช่องว่างหมายถึงคำนวณไม่ได้ (น้อยกว่า 3 ชั่วโมง) ไม่ใช่ค่า 0  \n⚠ หน้า n หมายถึง n น้อยกว่า 30 ไม่น่าเชื่อถือ  \n"
                "Current Return คือผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) ส่วน 1h ถึง 12h คือผลตอบแทนล่วงหน้า  \n"
                "%s"
-               % (("Win Rate (%)" if measure == "Win Rate" else "ค่าสหสัมพันธ์ %s" % measure),
-                  ("สี: แดงคือต่ำกว่า 50 เขียวคือสูงกว่า 50 (50 เท่ากับการสุ่ม)" if measure == "Win Rate" else
-                   "สี: แดงคือค่าลบ เขียวคือค่าบวก ค่า 0 คือไม่มีความสัมพันธ์")))
+               % ("สี: แดงคือต่ำกว่า 50 เขียวคือสูงกว่า 50 (50 เท่ากับการสุ่ม)" if measure == "Win Rate" else
+                  "สี: แดงคือค่าลบ เขียวคือค่าบวก ค่า 0 คือไม่มีความสัมพันธ์"))
 
 
 METHOD_NOTE = """
@@ -211,13 +210,14 @@ def logistic_view():
     auc_grid["panel_label"] = auc_grid.panel.map(labels)
     auc_grid["ช่วง"] = auc_grid.horizon.map(TARGET_LABEL)
     auc_grid["label"] = auc_grid.value.map("{:.3f}".format)
+    auc_grid["dark"] = dark_cell(auc_grid.value, (0.47, 0.53))
     chart = alt.Chart(auc_grid).encode(
         x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
         y=alt.Y("panel_label:N", sort=[labels[p] for p in data.STORED_PANELS], title=None, axis=alt.Axis(labelLimit=260)))
     rect = chart.mark_rect().encode(
         color=alt.Color("value:Q", title="AUC", scale=alt.Scale(domain=[0.47, 0.53], scheme="redyellowgreen", clamp=True)),
         tooltip=["panel_label", "ช่วง", alt.Tooltip("value:Q", title="AUC", format=".4f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=",")])
-    text = chart.mark_text(fontSize=11, color="#222222").encode(text="label:N")
+    text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
     st.write("AUC แต่ละ panel × Horizon (รูป a3_auc)")
     common.show((rect + text).properties(height=34 * auc_grid.panel.nunique() + 30))
     st.caption("สีเหลืองคือ 0.5 (เท่ากับการสุ่ม) สีเขียวคือสูงกว่า 0.5 สีแดงคือต่ำกว่า 0.5 (สีเดียวกับ heat map ด้านบน)  \nค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 หมายความว่าทำนายได้ไม่ดีกว่าการสุ่ม  \n"
@@ -233,6 +233,7 @@ def logistic_view():
     coefs = coefs.assign(ตัวแปร=coefs.column.map(data.variable_label), ช่วง=coefs.horizon.map(TARGET_LABEL),
                          กลุ่ม=coefs.column.map(lambda c: data.VARIABLE_GROUPS.get(data.VARIABLES.get(c, ("", ""))[1], "")),
                          effect=data.effect_points(coefs.value))
+    coefs["dark"] = dark_cell(coefs.effect, (-2.5, 2.5))
     coefs["label"] = coefs.effect.map("{:+.1f}".format)
     row_order = [data.variable_label(c) for c in data.VARIABLES if c in set(coefs.column)]         # grouped: Level, Direction, Vote, Volume, Lag, Momentum
 
@@ -272,13 +273,14 @@ def logistic_view():
         color=alt.Color("effect:Q", title="จุด% ของโอกาสขึ้น", scale=alt.Scale(domain=[-2.5, 2.5], scheme="redyellowgreen", clamp=True)),
         tooltip=["ตัวแปร", "กลุ่ม", "ช่วง", alt.Tooltip("effect:Q", title="จุดเปอร์เซ็นต์", format="+.2f"),
                  alt.Tooltip("value:Q", title="สัมประสิทธิ์มาตรฐาน (ค่าดิบของโมเดล)", format="+.4f")])
-    text = chart.mark_text(fontSize=11, color="#222222").encode(text="label:N")
+    text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
     common.show((rect + text).properties(height=30 * len(row_order) + 40))
     st.caption("ค่าในช่องคือจำนวนจุดเปอร์เซ็นต์ที่โอกาสขึ้นเปลี่ยนไปเมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน (คิดจากสัมประสิทธิ์ ÷ 4 × 100 ซึ่งใช้ได้เมื่อโอกาสใกล้ 50% ดูสัมประสิทธิ์ดิบของโมเดลได้ที่ tooltip)  \n"
                "สีเขียวคือดันให้ขึ้น สีแดงคือดันให้ลง  \nCurrent Return คือชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักแรงกว่าคอลัมน์อื่น เพราะราคากับความรู้สึกเปลี่ยนไปพร้อมกัน")
     imp = one[one.metric.str.startswith("group_importance:")].assign(
         กลุ่มตัวแปร=lambda d: d.metric.str[17:].map(lambda g: data.VARIABLE_GROUPS.get(g, g)), ช่วง=lambda d: d.horizon.map(TARGET_LABEL),
         label=lambda d: d.value.map("{:.3f}".format))
+    imp["dark"] = (imp.value / imp.value.max()) > 0.7 if len(imp) else False
     if not imp.empty:
         st.write("ความสำคัญของกลุ่มตัวแปร (ผลรวมขนาดสัมประสิทธิ์ของกลุ่ม ยิ่งสูงยิ่งมีอิทธิพลต่อโมเดลมาก)")
         chart = alt.Chart(imp).encode(
@@ -287,29 +289,63 @@ def logistic_view():
                     axis=alt.Axis(labelLimit=300, labelOverlap=False)))
         rect = chart.mark_rect().encode(color=alt.Color("value:Q", title="ความสำคัญ", scale=alt.Scale(scheme="greens")),
                                         tooltip=["กลุ่มตัวแปร", "ช่วง", alt.Tooltip("value:Q", title="ความสำคัญ", format=".4f")])
-        text = chart.mark_text(fontSize=11, color="#222222").encode(text="label:N")
+        text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
         common.show((rect + text).properties(height=34 * imp.กลุ่มตัวแปร.nunique() + 40))
         st.caption("6 กลุ่มตัวแปรตามที่ proposal กำหนด  กลุ่มที่ค่าสูงกว่ามีอิทธิพลต่อโมเดลมากกว่า แต่เมื่อ AUC ใกล้ 0.5 โมเดลโดยรวมก็ยังทำนายไม่ได้")
 
 
-st.radio("ตัวแปรที่วัด (ส่วนขยายนอก proposal: proposal วัดค่าความรู้สึกเฉลี่ย)", list(PREDICTOR_OF), horizontal=True, key="p5_predictor")
-st.caption("ตัวแปรที่วัดคือตัวเลขรายชั่วโมงที่นำมาเทียบกับผลตอบแทน  \nMomentum คือความรู้สึกชั่วโมงนี้ลบด้วยชั่วโมงก่อน  \nLag 1h คือความรู้สึกของชั่วโมงก่อนหน้า  \n"
-           "Reddit Volume Z-score ไม่มีทิศทาง จึงไม่มี Win Rate  \nการ์ดและทุกแท็บเปลี่ยนตามตัวแปรที่เลือก")
+st.radio("วัดความรู้สึกด้วย", list(PREDICTOR_OF), horizontal=True, key="p5_basis")
+st.caption("proposal 7.4 เทียบทิศทางของทั้งคะแนนความรู้สึก (sentiment_mean) และประเภทความรู้สึกส่วนใหญ่ (majority_final_status)  \n"
+           "แบบ majority ไม่ใช้คะแนน ใช้แค่ บวก (+1) ลบ (−1) หรือเป็นกลาง (0 = ไม่มีทิศทาง ไม่นับใน Win Rate)  การ์ด แท็บ และตารางจัดอันดับเปลี่ยนตามตัวเลือกนี้")
 
-# ---- one tab per kind of text; ALL of them are computed with the page (cached, so a second visit and every tab switch is instant) --------------
-variants = list(data.PANEL_VARIANTS)
-names_tabs = [data.PANEL_VARIANTS[v] for v in variants]
-tabs = st.tabs(names_tabs)
-for tab, variant in zip(tabs, variants):
-    with tab:
-        if variant == "baseline":
-            family = "global"
-            st.info("**Baseline ทิศทางสุ่มคืออะไร**  \nเป็นกลุ่มควบคุมไว้เทียบ ระบบนำความรู้สึกจริงออก แล้วสุ่มทิศทางบวกหรือลบ (เหมือนโยนเหรียญ) ใส่แทนในชั่วโมงเดียวกับ panel Global "
-                    "แล้วคำนวณ Spearman, Pearson และ Win Rate แบบเดียวกัน  \nผลที่ได้คือ \"หน้าตาของการไม่มีสัญญาณเลย\" (Win Rate ราว 50%, p-value กระจาย 0 ถึง 1) "
-                    "หาก panel จริงไม่ต่างจากแท็บนี้ แสดงว่าความรู้สึกจากชุมชน Reddit ไม่ได้ให้ข้อมูลเกี่ยวกับราคา")
-        else:
-            family = st.radio("ข้อความที่ใช้", list(data.PANEL_FAMILIES), format_func=data.PANEL_FAMILIES.get, horizontal=True, key="p5_family_" + variant)
-        panel_view(stat_all if (variant, family) == ("all", "global") else stat(family, variant), variant)
+# ---- the panels of table 12 as tabs: a click moves the Z-score / Sentiment thresholds of the sidebar to that panel's cut, the numbers follow ---------------
+PRESETS = {"all": (0.0, 0.0), "strong": (0.0, 0.05), "quality": (0.0, 0.30), "spike": (1.5, 0.0)}       # (Z-score threshold, Sentiment threshold)
+PANELS = {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}                                 # no random baseline view (the default of the Win Rate is 50%)
+
+
+def apply_preset():
+    if st.session_state["p5_panel"] in PRESETS:                                  # a click moves the sliders
+        st.session_state["d_z"], st.session_state["d_s"] = PRESETS[st.session_state["p5_panel"]]
+
+
+# the other way round: the radio always shows what the sliders say (the panel whose cut they match, else nothing is selected)
+now = (round(float(st.session_state.get("d_z", 0.0)), 2), round(float(st.session_state.get("d_s", 0.0)), 2))
+st.session_state["p5_panel"] = next((k for k, v in PRESETS.items() if v == now), None)
+
+
+st.radio("ชนิดข้อความ (panel ตามตาราง 12)", list(PANELS), format_func=PANELS.get, horizontal=True, key="p5_panel", on_change=apply_preset, index=None)
+st.caption("กดเลือก panel แล้วแถบเกณฑ์ด้านซ้ายจะเลื่อนตาม ถ้าเลื่อนแถบเองปุ่มจะเปลี่ยนตาม (ไม่ตรงกับ panel ไหน = ไม่เลือกปุ่มใดเลย)  \n"
+           "ชัดเจน = Sentiment 0.05, คุณภาพ = Sentiment 0.30, ปริมาณพุ่ง = Z-score 1.5, ทุกข้อความ = ไม่กรอง  \n"
+           "Sentiment Threshold กรอง**ทีละข้อความ**ก่อน (ทิ้งคอมเมนต์ที่ |ความรู้สึก| ต่ำกว่าเกณฑ์) แล้วค่อยเฉลี่ยเป็นความรู้สึกของแต่ละชั่วโมง ตรงกับ panel strong / quality ของตาราง 12 ส่วน Z-score กรอง**ทั้งชั่วโมง**  \n"
+           "Baseline ทิศทางสุ่มอยู่ในรูป a1_*, a2_* และตาราง analysis_results")
+family = st.radio("ข้อความที่ใช้", list(data.PANEL_FAMILIES), format_func=data.PANEL_FAMILIES.get, horizontal=True, key="p5_family_all")
+panel_view(stat_all if family == "global" else stat(family, "all"), "all")
+
+
+# ---- the ranking of the assets (proposal 7.5 dashboard 2): the panel Global (every text of the market) after every filter, sortable --------------
+st.subheader("จัดอันดับสินทรัพย์ (กดหัวคอลัมน์เพื่อเรียง)")
+own_frame = data.sentiment_frame(q("sentiment_hourly", tuple(tickers), start, end, tuple(communities), model, "all", tuple(content_types)), start, end)
+reddit_z = own_frame.groupby("series").zscore.max()                                   # the Z-score of the texts that mention the asset
+trading_z = prices.groupby("ticker").volume_zscore_24.max()                            # the Z-score of the trading volume of the asset
+ranking = stat_all[stat_all.ticker.isin(tickers)].copy()
+if ranking.empty or ranking.winrate.notna().sum() == 0:
+    st.info("ไม่มีสินทรัพย์ที่มีข้อมูลพอ ตามตัวกรองที่เลือก")
+else:
+    ranking["กลุ่ม"] = ranking.ticker.map(lambda t: GROUP_LABELS.get(group_of.get(t), ""))
+    table = pd.DataFrame({
+        "กลุ่ม": ranking["กลุ่ม"], "สินทรัพย์": ranking.ticker, "Horizon": ranking.target.map(TARGET_LABEL), "n (Win Rate)": ranking.win_n,
+        "Win Rate (%)": ranking.winrate, "p ดิบ (Win Rate)": ranking.win_p, "p ปรับ BH (Win Rate, ส่วนขยาย)": ranking.win_bh,
+        "นัยสำคัญหลังปรับ": np.where(ranking.win_bh < 0.05, "★", ""), "n น้อย": np.where((ranking.win_n < 30) | (ranking.n < 30), "⚠", ""), "Spearman ρ": ranking.spearman_rho, "Pearson ρ": ranking.pearson_rho,
+        "ผลตอบแทนเฉลี่ย (%)": ranking.mean_return,
+        "Reddit Volume Z สูงสุด (ข้อความที่พูดถึง)": ranking.ticker.map(reddit_z), "Trading Volume Z สูงสุด": ranking.ticker.map(trading_z)})
+    table = table.sort_values("p ปรับ BH (Win Rate, ส่วนขยาย)", na_position="last")
+    formats = {"n (Win Rate)": "{:,.0f}", "Win Rate (%)": "{:.1f}", "p ดิบ (Win Rate)": "{:.3f}", "p ปรับ BH (Win Rate, ส่วนขยาย)": "{:.3f}", "Spearman ρ": "{:+.3f}",
+               "Pearson ρ": "{:+.3f}", "ผลตอบแทนเฉลี่ย (%)": "{:+.4f}", "Reddit Volume Z สูงสุด (ข้อความที่พูดถึง)": "{:.2f}", "Trading Volume Z สูงสุด": "{:.2f}"}
+    st.dataframe(table.style.format(formats, na_rep="-"), hide_index=True, width="stretch", height=420)
+    st.caption("แถวละ สินทรัพย์ × Horizon (Current Return คือส่วนขยาย) เรียงเริ่มต้นตาม p ปรับ BH จากน้อยไปมาก  \n"
+               "ผลตอบแทนเฉลี่ยคิดจากชั่วโมงที่ผ่านตัวกรองและเกณฑ์ที่ตั้งไว้  \n"
+               "Z สองแบบ: Reddit Volume Z คือจำนวนโพสต์และความคิดเห็นที่พูดถึงสินทรัพย์นั้น ส่วน Trading Volume Z คือปริมาณซื้อขายของราคา (ทั้งคู่เทียบ 24 ชั่วโมงก่อนหน้า สูงสุดในช่วงที่เลือก)")
+
 
 # ---- the Logistic Regression is below the panels --------------------------------------------------------------------------
 st.subheader("Logistic Regression (ความรู้สึกทำนายทิศทางราคาขึ้นหรือลงได้หรือไม่)")

@@ -3,7 +3,7 @@ majority status, Reddit_volume, Volume Z-score, Sentiment Momentum).
 
 Dimensions of the dashboard (table 17): DimTime, DimTicker, DimSentimentSource, DimDetectionConfig, DimMajoritySentiment.  They are the
 four blocks of the sidebar: time range and level; asset classes and tickers (several tickers are taken together);
-communities of the sentiment source (the model is always VADER+FinBERT); majority status of the hour.
+communities of the sentiment source (and the model: VADER+FinBERT, VADER or FinBERT); majority status of the hour.
 Sentiment here = only the texts that MENTION the chosen tickers.  It is recombined from `reddit_hourly_community`
 (sums per community), so any choice of communities is exact; with every community ticked it equals the stored KPIs.
 Several tickers: one combined series (texts of all of them summed, price as an index) plus a table per ticker.
@@ -41,14 +41,16 @@ label = tickers[0] if one else "รวม %d ตัว" % len(tickers)
 
 # ---- prices of the ticked tickers (hours with a valid bar) and the sentiment KPIs recombined from the chosen communities
 prices = q("price_series_for", tickers, start, end)
-sent = q("sentiment_hourly", tickers, start, end, communities, common.selected_model(), "all", content_types)
+sent = q("sentiment_hourly", tickers, start, end, communities, common.selected_model(), common.text_variant(), content_types)      # the texts that pass the Sentiment Threshold
+sent_all = q("sentiment_hourly", tickers, start, end, communities, common.selected_model(), "all", content_types) if common.text_variant() != "all" else None   # the volume stays that of ALL the texts
 if prices.empty:
     st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
     st.stop()
-per_ticker = data.sentiment_frame(sent, start, end)                       # one series per ticker
+market = q("market_zscore", start, end, common.sentiment_source_ids())    # the Z-score of ALL the texts of the hour (the proposal's Reddit_volume), for every series
+per_ticker = data.sentiment_frame(sent, start, end, market=market, volume=sent_all)        # one series per ticker
 # the same filter on every ticker-hour: an hour that fails the thresholds loses its majority status, so the samples below skip it
-per_ticker_kept = per_ticker.assign(majority=per_ticker.majority.where(data.threshold_mask(per_ticker, z_th, s_th)))
-series_frame = data.sentiment_frame(sent, start, end, combined=not one)   # what the charts show
+per_ticker_kept = per_ticker.assign(majority=per_ticker.majority.where(data.threshold_mask(per_ticker, z_th, 0.0)))
+series_frame = data.sentiment_frame(sent, start, end, combined=not one, market=market, volume=sent_all)   # what the charts show
 
 
 def rebased(df):
@@ -69,12 +71,13 @@ else:
                                                          volume=("volume_index", "mean"))
 series = market.merge(series_frame.drop(columns="series"), on="hour_utc", how="left")
 series["texts"] = series.texts.fillna(0)
+series["sent_texts"] = series.sent_texts.fillna(0)                      # the texts the sentiment is made of (those that pass the Sentiment Threshold)
 series = series.rename(columns={"texts": "reddit_volume", "majority": "majority_final_status"})
 
 # hours whose majority status is not ticked lose every Reddit measure (price and market volume stay); no text = NULL
 series = data.mask_majority(series, statuses)
 # hours that do not meet the thresholds of DimDetectionConfig lose their Reddit measures too (0 / 0 = nothing removed)
-series = data.mask_thresholds(series, z_th, s_th)
+series = data.mask_thresholds(series, z_th, 0.0)
 
 
 def weighted_resample(df, how):
@@ -85,8 +88,8 @@ def weighted_resample(df, how):
     d = df.copy()
     has = d.sentiment_mean.notna()
     for col in ("sentiment_mean", "pos_ratio", "neg_ratio", "neu_ratio"):
-        d[col + "_w"] = (d[col] * d.reddit_volume).where(has)
-    d["texts_w"] = d.reddit_volume.where(has)
+        d[col + "_w"] = (d[col] * d.sent_texts).where(has)
+    d["texts_w"] = d.sent_texts.where(has)
     daily = d.set_index("time").resample(**common.RESAMPLE[how]).agg({
         "close": "last", "volume": "sum" if one else "mean", "reddit_volume": "sum", "zscore": "max", "momentum": "mean",
         **{c + "_w": "sum" for c in ("sentiment_mean", "pos_ratio", "neg_ratio", "neu_ratio")}, "texts_w": "sum"})
@@ -98,21 +101,21 @@ def weighted_resample(df, how):
 shown = weighted_resample(series, how)
 
 # KPI cards first: the three KPIs of dashboard 1 (tables 15 and 17): Sentiment Score, Sentiment Momentum, Reddit Volume Z-score
-w = series.reddit_volume.where(series.sentiment_mean.notna())
+w = series.sent_texts.where(series.sentiment_mean.notna())
 common.kpi_cards([
     ("Sentiment Score", "n/a" if not w.sum() else "{:+.3f}".format((series.sentiment_mean * w).sum() / w.sum()),
      "ผลรวม final_sentiment ÷ จำนวนความคิดเห็น เฉลี่ยถ่วงน้ำหนักด้วยจำนวนข้อความของแต่ละชั่วโมง"),
     ("Sentiment Momentum", common.money(series.momentum.mean()), "(sentiment_mean ชั่วโมงนี้ − ชั่วโมงก่อนหน้า) เฉลี่ย"),
-    ("Reddit Volume Z-score สูงสุด", common.money(series.zscore.max()), "เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน")])
+    ("Reddit Volume Z-score สูงสุด", common.money(series.zscore.max()), "เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน" + common.REDDIT_Z_NOTE)])
 
 st.subheader("ราคาปิดเทียบค่าความรู้สึกเฉลี่ย (%s)" % label)
 price_col = "close"
 if shown.sentiment_mean.notna().sum() == 0:
     st.info("ไม่มีข้อความที่พูดถึง %s ในช่วงนี้ จึงแสดงเฉพาะราคา" % label)
-    common.show(common.line(shown, "time", price_col, "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)",
+    common.show(common.line(shown, "time", price_col, "ราคาปิด (USD)" if one else "ราคาปิด (เฉลี่ยของที่เลือก)",
                                 bar=common.kind(st, "s_close")), width="stretch")
 else:
-    price_title = "ราคาปิด (USD)" if one else "ราคาปิด ดัชนี (ค่าแรก = 100)"
+    price_title = "ราคาปิด (USD)" if one else "ราคาปิด (เฉลี่ยของที่เลือก)"
     common.dual_chart(shown, "time", price_col, "sentiment_mean", price_title, "Sentiment Score", "s_price_sent", "ราคาปิด", "Sentiment Score")
     st.caption("สีน้ำเงินคือราคาปิด  \nสีเขียวอมฟ้าคือ Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น)  \n"
                "ช่วงที่เส้นสีเขียวอมฟ้าขาดหมายถึงไม่มีข้อความ ไม่ใช่ค่าความรู้สึกเป็นกลาง")
@@ -130,8 +133,8 @@ else:
 
 # ---- does higher sentiment go with a higher return?  every ticked ticker-hour with text is one sample
 st.subheader("ความสัมพันธ์ระหว่างระดับความรู้สึกกับผลตอบแทน")
-MEASURES = {"Current Return (ชั่วโมงเดียวกัน)": "log_return", **{"ผลตอบแทนล่วงหน้า %s" % h: "future_return_" + h for h in common.data.HORIZONS}}
-st.session_state.setdefault("s_bar_measure", "ผลตอบแทนล่วงหน้า " + common.data.HORIZONS[0])
+MEASURES = {"Current Return (ชั่วโมงเดียวกัน ส่วนขยาย)": "log_return", **{"ผลตอบแทนล่วงหน้า %s" % h: "future_return_" + h for h in common.data.HORIZONS}}
+st.session_state.setdefault("s_bar_measure", list(MEASURES)[0])        # default: Current Return
 picked = st.radio("วัดผลตอบแทนแบบ", list(MEASURES), horizontal=True, key="s_bar_measure", label_visibility="collapsed")
 column = MEASURES[picked]
 returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in common.data.HORIZONS]]]

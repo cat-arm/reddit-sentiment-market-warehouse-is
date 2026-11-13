@@ -26,8 +26,7 @@ how = common.granularity(start, end)
 src_ids = common.selected_sources()
 tickers = common.selected_tickers()
 if not src_ids or not tickers:
-    common.nothing_selected(["Ticker Mention Count รวม (ครั้ง)", "Ticker Mention Rate (%)", "Reddit Volume Z-score สูงสุด",
-                             "ชั่วโมงที่ Z-score > 1.5"])
+    common.nothing_selected(["Ticker Mention Count รวม (ครั้ง)", "Ticker Mention Rate (%)", "Reddit Volume Z-score สูงสุด (ของที่เลือก)"])
 many = len(tickers) > 1
 label = tickers[0] if not many else "%d ตัวรวมกัน" % len(tickers)
 
@@ -56,15 +55,9 @@ common.kpi_cards([
     ("Ticker Mention Count รวม (ครั้ง)", "{:,}".format(int(mentions.mentions.sum())), None),
     ("Ticker Mention Rate (%)", "n/a" if not all_texts else "{:.3f}".format(100.0 * mentions.mentions.sum() / all_texts),
      "Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดในช่วงเดียวกัน × 100"),
-    ("Reddit Volume Z-score สูงสุด", common.money(volume.zscore.max()),
-     "Z-score ของจำนวนที่พูดถึงสินทรัพย์ที่เลือก เทียบกับ 24 ชั่วโมงก่อนหน้าของตัวเอง"),
-    ("ชั่วโมงที่ Z-score > 1.5", "{:,}".format(int((volume.zscore > 1.5).sum())), "Spike ตามเกณฑ์ 1.5 ของ proposal")])
-if volume.empty or volume.basis.iloc[0] == "texts":
-    st.caption("Volume Z-score ของสินทรัพย์ คือการเทียบจำนวนข้อความที่กล่าวถึงตัวนี้กับ 24 ชั่วโมงก่อนหน้าของตัวเอง "
-               "(ใช้ในชุดข้อมูล panel_Ticker_spike)")
-else:
-    st.caption("Volume Z-score เมื่อเลือกหลายตัวหรือแหล่งข้อมูลบางส่วน คือการเทียบจำนวนครั้งที่ถูกกล่าวถึงรวมของที่เลือกกับ 24 ชั่วโมงก่อนหน้า "
-               "กฎเดียวกับปกติ แต่นับจาก Ticker Mention Count เพราะไม่ได้เก็บจำนวนข้อความต่อแหล่งข้อมูล และข้อความเดียวอาจพูดถึงหลายตัว")
+    ("Reddit Volume Z-score สูงสุด (ของที่เลือก)", common.money(volume.zscore.max()),
+     "Z-score ของจำนวนโพสต์และความคิดเห็นที่พูดถึงสินทรัพย์ที่เลือก เทียบกับ 24 ชั่วโมงก่อนหน้า (ไม่ใช่ของทั้งตลาดในหน้า 5–8)" + common.REDDIT_Z_NOTE)])
+st.caption("Z-score คิดจากจำนวนโพสต์และความคิดเห็นที่พูดถึงสินทรัพย์ที่เลือก (ไม่ใช่จำนวนครั้งที่ถูกเมนชัน) เทียบกับ 24 ชั่วโมงก่อนหน้า (ใช้ในชุดข้อมูล panel_Ticker_spike)")
 
 # ================================================================================================ ranking
 st.header("สินทรัพย์ที่ถูกพูดถึงมากที่สุด")
@@ -96,9 +89,9 @@ else:
                                 common.C_REDDIT, fmt=common.DATE_FORMAT[how], bar=common.kind(st, "m_count")), width="stretch")
 common.show(common.line(shown, "time", "rate", "Ticker Mention Rate (%)", common.C_RATE, fmt=common.DATE_FORMAT[how],
                             bar=common.kind(st, "m_rate")), width="stretch")
-common.show(common.line(shown, "time", "zscore", "Volume Z-score ของ %s" % label, common.C_Z,
-                            fmt=common.DATE_FORMAT[how], bar=common.kind(st, "m_z")), width="stretch")
+
 
 st.subheader("พูดถึงที่ไหน (ชุมชน × ประเภทเนื้อหา)")
 source = q("volume_by_source", tickers, start, end, src_ids)
-common.table(source.rename(columns={"mentions": "ครั้งที่ถูกพูดถึง"}), hide_index=True, width="stretch")
+common.community_table(source, "mentions")
+st.caption("จำนวนครั้งที่สินทรัพย์ที่เลือกถูกพูดถึง (Ticker Mention Count) แยกตามชุมชนและประเภทเนื้อหา เปอร์เซ็นต์คิดจากผลรวมของคอลัมน์นั้น (รวมลงมาได้ 100)")
