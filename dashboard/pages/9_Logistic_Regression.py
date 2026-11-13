@@ -138,6 +138,32 @@ def logistic_compare(lg, a_key, b_key):
                "เป็นการเทียบเชิงพรรณนา โมเดลของสอง panel ฝึกจากข้อมูลคนละชุด (strong / quality เป็นส่วนย่อยของ ทุกข้อความ) และ AUC ของโมเดลใกล้ 0.5 ผลต่างที่เห็นจึงมักเป็นเสียงรบกวน ไม่ควรตีความเกินจริง")
 
 
+def auc_rows(lg_all, picked):
+    """The AUC of the picked panel(s) at every horizon, with the random Baseline as the yardstick (proposal 7.4: AUC against the Random Baseline AUC)."""
+    names = list(dict.fromkeys([*picked, "panel_baseline"]))
+    d = lg_all[(lg_all.metric == "auc") & lg_all.panel.isin(names)].copy()
+    labels = {p: "%s (%s)" % (p.replace("panel_", ""), data.STORED_PANELS[p]) for p in data.STORED_PANELS}
+    d["panel_label"] = d.panel.map(labels)
+    d["ช่วง"] = d.horizon.map(TARGET_LABEL)
+    d["label"] = ["ข้อมูลไม่พอ" if pd.isna(v) else "{:.3f}".format(v) for v in d.value]
+    d["n_label"] = [("⚠ " if n < 30 else "") + "n=" + "{:,}".format(int(n)) for n in d.n]
+    d["dark"] = dark_cell(d.value, (0.47, 0.53))
+    chart = alt.Chart(d).encode(
+        x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+        y=alt.Y("panel_label:N", sort=[labels[p] for p in names], title=None, axis=alt.Axis(labelLimit=260)))
+    rect = chart.mark_rect().encode(
+        color=alt.Color("value:Q", title="AUC", scale=alt.Scale(domain=[0.47, 0.53], scheme="redyellowgreen", clamp=True)),
+        tooltip=["panel_label", "ช่วง", alt.Tooltip("value:Q", title="AUC", format=".4f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=",")])
+    text = chart.mark_text(fontSize=12, dy=-7).encode(text="label:N", color=ink("#222222"))
+    count = chart.mark_text(fontSize=9, dy=10).encode(text="n_label:N", color=ink("#555555"))
+    st.write("AUC ของ panel ที่เลือก เทียบกับ Baseline สุ่ม (แต่ละ Horizon)")
+    common.show((rect + text + count).properties(height=56 * len(names) + 130))
+    st.caption("AUC คือโอกาสที่โมเดลจะให้คะแนนชั่วโมงที่ราคาขึ้นจริง สูงกว่าชั่วโมงที่ราคาลงจริง: 0.5 เท่ากับสุ่ม (สีเหลือง) เขียวคือดีกว่าสุ่ม แดงคือแย่กว่าสุ่ม  \n"
+               "แถว Baseline คือโมเดลที่ใช้ทิศทางสุ่มแทนความรู้สึก ควรอยู่ราว 0.50 ถ้า panel ที่เลือกไม่สูงกว่า Baseline ชัดเจน แปลว่าตัวแปรความรู้สึกไม่ได้ช่วยทำนาย  \n"
+               "ในช่องมี n (จำนวนแถวที่ฝึกโมเดล) ⚠ = น้อยกว่า 30 และ \"ข้อมูลไม่พอ\" = ข้อมูลน้อยเกินไปสำหรับแบ่งฝึกและทดสอบข้ามเวลา 5 รอบ ค่า AUC ที่ใช้ข้อมูลน้อยแกว่งได้มาก  \n"
+               "Current Return คือผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักสูงกว่าช่วงอื่น")
+
+
 def logistic_view():
     """The stored Logistic Regression: AUC of every panel and horizon, then the coefficients and the importance of the variable groups."""
     st.caption("ฝึกโมเดลสดจากชั่วโมงที่ผ่านตัวกรองด้านซ้าย (ฝึกและทดสอบข้ามช่วงเวลา 5 รอบ ไม่สลับเวลา) ไม่ใช่ผลที่เก็บไว้ ตอนไม่กรองได้ผลเท่ากับตารางที่เก็บไว้  "
@@ -145,29 +171,11 @@ def logistic_view():
                "panel ทุกข้อความตามเกณฑ์ด้านซ้าย ส่วน panel อื่นใช้เกณฑ์ตายตัวของตาราง 12 (แถบเกณฑ์เป็นสีเทาเมื่อเลือก panel เหล่านั้น)")
     with st.expander("รายละเอียดวิธีทำ (Logistic Regression)"):
         st.markdown(METHOD_NOTE)
-    lg = live_rows("ALL")                                                                  # the assets are chosen in the sidebar (class and ticker boxes)
-    lg = lg[lg.status == "ok"]
-    auc_grid = lg[lg.metric == "auc"].copy()
-    if auc_grid.empty:
+    lg_all = live_rows("ALL")                                                              # the assets are chosen in the sidebar (class and ticker boxes)
+    lg = lg_all[lg_all.status == "ok"]
+    if lg_all[lg_all.metric == "auc"].empty:
         st.info("ไม่มีผล Logistic ของขอบเขตนี้")
         return
-    labels = {p: "%s (%s)" % (p.replace("panel_", ""), data.STORED_PANELS[p]) for p in data.STORED_PANELS}
-    auc_grid["panel_label"] = auc_grid.panel.map(labels)
-    auc_grid["ช่วง"] = auc_grid.horizon.map(TARGET_LABEL)
-    auc_grid["label"] = auc_grid.value.map("{:.3f}".format)
-    auc_grid["dark"] = dark_cell(auc_grid.value, (0.47, 0.53))
-    chart = alt.Chart(auc_grid).encode(
-        x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-        y=alt.Y("panel_label:N", sort=[labels[p] for p in data.STORED_PANELS], title=None, axis=alt.Axis(labelLimit=260)))
-    rect = chart.mark_rect().encode(
-        color=alt.Color("value:Q", title="AUC", scale=alt.Scale(domain=[0.47, 0.53], scheme="redyellowgreen", clamp=True)),
-        tooltip=["panel_label", "ช่วง", alt.Tooltip("value:Q", title="AUC", format=".4f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=",")])
-    text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
-    st.write("AUC แต่ละ panel × Horizon (รูป a3_auc)")
-    common.show((rect + text).properties(height=34 * auc_grid.panel.nunique() + 30))
-    st.caption("สีเหลืองคือ 0.5 (เท่ากับการสุ่ม) สีเขียวคือสูงกว่า 0.5 สีแดงคือต่ำกว่า 0.5 (สีเดียวกับ heat map ด้านบน)  \nค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 หมายความว่าทำนายได้ไม่ดีกว่าการสุ่ม  \n"
-               "Current Return คือ ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)")
-    st.write("สัมประสิทธิ์ของแต่ละตัวแปร (ตัวแปรใดมีผลต่อทิศทางราคา) เลือก panel ได้")
     with common.sticky_bar("l9_bar"):                                                     # the picker stays at the top while the long heat maps below scroll
         log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="l9_family",
                               label_visibility="collapsed")                                  # the same layers as the heat map of Statistical Analysis
@@ -178,6 +186,11 @@ def logistic_view():
             if st.session_state.get("l9_kind") not in log_kinds:
                 st.session_state["l9_kind"] = "all"
             log_kind = st.radio("ชนิดข้อความ", list(log_kinds), format_func=log_kinds.get, horizontal=True, key="l9_kind", label_visibility="collapsed")
+    if log_family == "compare":
+        picked = [data.panel_name(k.split(":")[1], k.split(":")[0]) for k in (a_key, b_key)]
+    else:
+        picked = [data.panel_name(log_kind, log_family)]
+    auc_rows(lg_all, picked)
     if log_family == "compare":
         logistic_compare(lg, a_key, b_key)
         return
