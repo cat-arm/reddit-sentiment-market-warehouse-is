@@ -329,7 +329,13 @@ else:                                                                           
                    "Win Rate ของ panel อื่นต้องสูงกว่า Baseline อย่างชัดเจน ส่วน Baseline เองควรอยู่ราว 50% และสหสัมพันธ์ใกล้ 0 (ถ้าไม่ใช่ แปลว่าราคาเองมีแนวโน้มที่ทำให้ Win Rate เบี่ยง ไม่ใช่เพราะความรู้สึก)  \n"
                    "panel นี้ใช้เกณฑ์ตายตัว ไม่ตาม Reddit Volume Threshold และ Sentiment Threshold ด้านซ้าย (ตัวกรองอื่นยังมีผล)")
     else:
-        st.caption("panel นี้ใช้เกณฑ์ตายตัวของตาราง 12 (%s) ไม่ตาม Reddit Volume Threshold และ Sentiment Threshold ด้านซ้าย ตัวกรองอื่น (ช่วงเวลา สินทรัพย์ ชุมชน โมเดล ประเภทข้อความ ความรู้สึกส่วนใหญ่) ยังมีผล" % KINDS[kind])
+        rule = {"strong": "ตัดแถว (ชั่วโมง × สินทรัพย์) ที่ |Sentiment Score เฉลี่ยของชั่วโมง| ต่ำกว่า 0.05 ออก",
+                "quality": "เก็บเฉพาะแถวที่ |Sentiment Score เฉลี่ยของชั่วโมง| ตั้งแต่ 0.30",
+                "spike": "เก็บเฉพาะแถวของชั่วโมงที่ Reddit Volume Z-score > 1.5"}[kind]
+        st.caption("ข้อมูลของหน้านี้คือตาราง ชั่วโมง × สินทรัพย์ × Sentiment Score เฉลี่ย / ทิศทางส่วนใหญ่ แต่ละ panel **กรองแถว**ของตารางนี้ก่อน แล้วค่อยคำนวณ Spearman, Pearson และ Win Rate ใหม่  \n"
+                   "**%s**: %s  \n"
+                   "ไม่ตาม Reddit Volume Threshold และ Sentiment Threshold ด้านซ้าย ตัวกรองอื่น (ช่วงเวลา สินทรัพย์ ชุมชน โมเดล ประเภทข้อความ ความรู้สึกส่วนใหญ่) ยังมีผล  \n"
+                   "ทั้งโหมดคะแนนและโหมด majority กรองแถวด้วย Sentiment Score เฉลี่ยของชั่วโมงเดียวกัน (majority เปลี่ยนแค่วิธีอ่านทิศทาง)" % (KINDS[kind], rule))
 panel_view(chosen, "all")
 
 

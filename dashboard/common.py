@@ -126,7 +126,7 @@ def panel_stat(family, variant, tickers, start, end, communities, model, statuse
         return data.sentiment_frame(sent, start, end, market=market)
 
     base = frame("global" if variant == "baseline" else family, cut)
-    own = frame(family, variant) if variant in ("strong", "quality") else None
+    own = None                                                         # strong / quality are row filters of the hourly table (data.ROW_CUTS), not a per-text filter
     samples = data.panel_samples(base, own, returns, family, variant, statuses, z_th, 0.0, predictor=predictor, v_min=v_th)
     if samples.empty:
         return pd.DataFrame(columns=data.STAT_COLUMNS)

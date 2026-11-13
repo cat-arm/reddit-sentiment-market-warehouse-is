@@ -811,6 +811,9 @@ LOOKUP_HORIZONS = {"log_return": "Current Return", "1h": "1h", "2h": "2h", "3h":
 PREDICTORS = {"sentiment_mean": "คะแนนความรู้สึก (sentiment_mean)", "majority": "ทิศทางส่วนใหญ่ (majority_final_status: บวก / ลบ)"}      # the two ways of the proposal 7.4 to read the sentiment
 
 
+ROW_CUTS = {"strong": 0.05, "quality": 0.30}          # the panels strong / quality of the dashboard keep the rows (hour x asset) with |hourly sentiment| >= the cut
+
+
 def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, seed=42, spike_z=1.5, predictor="sentiment_mean", v_min=0):
     """The ticker-hours of ONE panel of the proposal (table 12), live, after every filter of the dashboard.
     `base` = `sentiment_frame` of ALL the texts of the family (series = the tickers for the family 'Ticker', the one series 'ALL'
@@ -838,6 +841,8 @@ def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, s
     if own is not None and variant in ("strong", "quality"):
         v = own[[c for c in cols if c in own and c in ("series", "hour_utc", "sentiment_mean", "texts", "momentum", "majority")]].rename(columns={"series": "ticker"})
         b = b.drop(columns=[c for c in ("sentiment_mean", "texts", "momentum", "majority") if c in v]).merge(v, on=["ticker", "hour_utc"], how="left")
+    if own is None and variant in ROW_CUTS:                                       # the dashboard's strong / quality panel (2026-11-13): drop the ROWS (hour x asset) whose hourly mean is weak
+        s_min = max(float(s_min), ROW_CUTS[variant])
     b["predictor"] = b.sentiment_mean if predictor == "sentiment_mean" else b.majority.map({"positive": 1.0, "negative": -1.0, "neutral": 0.0})
     keep = (b.majority.isin(statuses) & threshold_mask(b, z_min, s_min, v_min=v_min) & b.sentiment_mean.notna() & b.predictor.notna())
     if variant == "spike":
