@@ -255,32 +255,32 @@ def logistic_view():
     coefs["label"] = coefs.effect.map("{:+.1f}".format)
     row_order = [data.variable_label(c) for c in data.VARIABLES if c in set(coefs.column)]         # grouped: Level, Direction, Vote, Volume, Lag, Momentum
 
-    # 1. one bar per variable: the mean effect over the future horizons and how steady its direction is
-    summary = data.effect_summary(coefs)
+    # 1. one bar per variable at the horizon that is picked (the same switch of horizons as the heat maps above; no average over horizons)
+    st.session_state.setdefault("p5_log_h", "Current Return")
+    horizon = st.radio("Horizon ของสัมประสิทธิ์", [TARGET_LABEL[t] for t in data.STAT_TARGETS], horizontal=True, key="p5_log_h")
+    summary = coefs[coefs.ช่วง == horizon].copy()
     summary = summary.assign(ตัวแปร=summary.column.map(data.variable_label), กลุ่ม=summary.column.map(
         lambda c: data.VARIABLE_GROUPS.get(data.VARIABLES.get(c, ("", ""))[1], "")))
-    summary["ทิศทางเดียวกัน"] = ["%d/%d Horizon" % (s, h) for s, h in zip(summary.same_sign, summary.horizons)]
-    st.write("สรุปผลของแต่ละตัวแปรต่อโอกาสที่ราคาจะขึ้น (จุดเปอร์เซ็นต์) เฉลี่ยจาก 6 ช่วง ได้แก่ Current Return และ Horizon 1h ถึง 12h")
-    pad = max(summary.effect.abs().max(), 0.5) * 1.45                                       # room at both ends for the label after the bar
-    x_scale = alt.Scale(domain=[-pad, pad], nice=False)
-    bars = alt.Chart(summary).encode(y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
-    layer = bars.mark_bar().encode(
-        x=alt.X("effect:Q", title="เปลี่ยนโอกาสที่ราคาขึ้น (จุดเปอร์เซ็นต์) เมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน", scale=x_scale),
-        color=alt.condition(alt.datum.effect > 0, alt.value("#2ca02c"), alt.value("#d62728")),
-        tooltip=["ตัวแปร", "กลุ่ม", alt.Tooltip("effect:Q", title="ผลเฉลี่ย (จุด%)", format="+.2f"), "ทิศทางเดียวกัน"])
-    tag_up = bars.mark_text(fontSize=10, color="#444444", align="left", dx=6).transform_filter("datum.effect > 0").encode(x=alt.X("effect:Q", scale=x_scale), text="ทิศทางเดียวกัน:N")
-    tag_down = bars.mark_text(fontSize=10, color="#444444", align="right", dx=-6).transform_filter("datum.effect <= 0").encode(x=alt.X("effect:Q", scale=x_scale), text="ทิศทางเดียวกัน:N")
-    common.show((layer + tag_up + tag_down + common.zero_rule_x()).properties(height=28 * len(summary) + 40))
-    st.caption("**วิธีอ่าน**  \n"
-               "แท่งสีเขียวคือตัวแปรที่สูงขึ้นแล้วโอกาสที่ราคาขึ้นสูงขึ้น แท่งสีแดงคือตรงข้าม  \n"
-               "ความยาวแท่งคือจำนวนจุดเปอร์เซ็นต์ (เช่น −2 คือโอกาสขึ้นลดจาก 50% เหลือราว 48%)  \n"
-               "ข้อความท้ายแท่งบอกว่าใน 6 ช่วง (Current Return, 1h, 2h, 3h, 6h, 12h) มีกี่ช่วงที่ทิศทางตรงกับค่าเฉลี่ย (6/6 คือทิศทางเดียวกันตลอด)  \n"
-               "Current Return คือราคาของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) ค่าเฉลี่ยจึงมีส่วนของการเคลื่อนไหวพร้อมกันปนอยู่  \n"
-               "**ตัวแปรที่มีผลจริงต้องผ่านครบ 3 เงื่อนไข**  \n"
-               "แท่งยาวพอ (อย่างน้อยราว 1 จุดเปอร์เซ็นต์)  \n"
-               "ทิศทางเดียวกันทุกช่วง (6/6)  \n"
-               "โมเดลโดยรวมมี AUC ห่างจาก 0.5  \n"
-               "หากแท่งสั้นกว่า 1 จุดเปอร์เซ็นต์หรือทิศทางสลับไปมา แสดงว่าไม่มีผล")
+    if summary.empty:
+        st.info("panel นี้ไม่มีผลที่ Horizon %s (ข้อมูลไม่พอสำหรับโมเดล)" % horizon)
+    else:
+        st.write("ผลของแต่ละตัวแปรต่อโอกาสที่ราคาจะขึ้น (จุดเปอร์เซ็นต์) ที่ Horizon %s" % horizon)
+        pad = max(summary.effect.abs().max(), 0.5) * 1.25
+        x_scale = alt.Scale(domain=[-pad, pad], nice=False)
+        bars = alt.Chart(summary).encode(y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
+        layer = bars.mark_bar().encode(
+            x=alt.X("effect:Q", title="เปลี่ยนโอกาสที่ราคาขึ้น (จุดเปอร์เซ็นต์) เมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน", scale=x_scale),
+            color=alt.condition(alt.datum.effect > 0, alt.value("#2ca02c"), alt.value("#d62728")),
+            tooltip=["ตัวแปร", "กลุ่ม", alt.Tooltip("effect:Q", title="จุดเปอร์เซ็นต์", format="+.2f"),
+                     alt.Tooltip("value:Q", title="สัมประสิทธิ์มาตรฐาน (ค่าดิบของโมเดล)", format="+.4f")])
+        tag_up = bars.mark_text(fontSize=10, color="#444444", align="left", dx=6).transform_filter("datum.effect > 0").encode(x=alt.X("effect:Q", scale=x_scale), text="label:N")
+        tag_down = bars.mark_text(fontSize=10, color="#444444", align="right", dx=-6).transform_filter("datum.effect <= 0").encode(x=alt.X("effect:Q", scale=x_scale), text="label:N")
+        common.show((layer + tag_up + tag_down + common.zero_rule_x()).properties(height=28 * len(summary) + 40))
+        st.caption("**วิธีอ่าน**  \n"
+                   "แท่งสีเขียวคือตัวแปรที่สูงขึ้นแล้วโอกาสที่ราคาขึ้นสูงขึ้น แท่งสีแดงคือตรงข้าม ความยาวแท่งคือจำนวนจุดเปอร์เซ็นต์ (เช่น −2 คือโอกาสขึ้นลดจาก 50% เหลือราว 48%)  \n"
+                   "เลือก Horizon ได้ด้านบน (ชุดเดียวกับ heat map) ไม่ได้เฉลี่ยข้ามช่วง  Current Return คือผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) ส่วน 1h ถึง 12h คือผลตอบแทนล่วงหน้า  \n"
+                   "`sentiment_mean` คือความรู้สึกของชั่วโมงปัจจุบัน (lag 0) ส่วน sentiment_lag_1h ถึง 12h คือความรู้สึกของชั่วโมงก่อนหน้า  \n"
+                   "**ตัวแปรที่มีผลจริงต้องผ่านครบ**: แท่งยาวพอ (อย่างน้อยราว 1 จุดเปอร์เซ็นต์) ทิศทางเดียวกันในหลาย Horizon (ดูตารางรายละเอียดด้านล่าง) และโมเดลโดยรวมมี AUC ห่างจาก 0.5 หากแท่งสั้นหรือทิศทางสลับไปมา แสดงว่าไม่มีผล")
 
     # 2. the detail: every horizon
     st.write("รายละเอียดผลของแต่ละตัวแปรในแต่ละ Horizon (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")

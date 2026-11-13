@@ -737,7 +737,7 @@ STORED_PANELS = {"panel_global": "Global", "panel_global_strong": "Global strong
 VARIABLE_GROUPS = {"Level": "Level (ระดับความรู้สึก)", "Direction": "Direction (ทิศทาง บวก/ลบ)", "Vote": "Vote (โหวตส่วนใหญ่)",
                    "Volume": "Volume (ปริมาณโพสต์)", "Lag": "Lag (ความรู้สึกย้อนหลัง)", "Momentum": "Momentum (การเปลี่ยนแปลง)",
                    "Random": "Random (ทิศทางสุ่ม)"}
-VARIABLES = {"sentiment_mean": ("ค่าความรู้สึกเฉลี่ย", "Level"),
+VARIABLES = {"sentiment_mean": ("ความรู้สึกเฉลี่ยของชั่วโมงปัจจุบัน = lag 0", "Level"),
              "sentiment_abs_mean": ("ความแรงของความรู้สึก (ค่าสัมบูรณ์)", "Level"),
              "pos_ratio": ("สัดส่วนความคิดเห็นเชิงบวก", "Direction"),
              "neg_ratio": ("สัดส่วนความคิดเห็นเชิงลบ", "Direction"),
