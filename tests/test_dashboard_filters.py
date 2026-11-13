@@ -464,7 +464,7 @@ class FilterTests(unittest.TestCase):
         a higher cut lists fewer signals, cuts out of order stop the table, the reset button brings the defaults back, the sidebar still filters first."""
         at = self.run_page("pages/8_Hot_Events.py")
         base = at.metric[0].value
-        self.assertEqual(at.radio(key="h_wh").value, "Current Return")                      # the horizon of the Win Rate is a row of buttons like the other pages
+        self.assertNotIn("h_wh", [r.key for r in at.radio])                                 # no horizon of the Win Rate to pick: the statistics are those of the same hour
         at.number_input(key="hs_rz_t").set_value(3.5).run()                                 # a stricter threshold: fewer signals earn the 3 points of the volume
         self.assertNotEqual(at.metric[0].value, base)
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
@@ -479,9 +479,12 @@ class FilterTests(unittest.TestCase):
             self.assertIn("hs_%s_t" % metric, keys)
         self.assertNotIn("hs_wr_p", [n.key for n in at.number_input])                       # no statistic of the whole history is a point (look-ahead)
         for row in at.dataframe:
-            if "ชนิด" in row.value.columns:
-                self.assertTrue(set(row.value["ชนิด"]) <= {"volume_spike", "positive_sentiment_spike", "negative_sentiment_spike", "combined_signal"})
+            if "ระดับ" in row.value.columns and "คะแนน" in row.value.columns:
+                self.assertNotIn("ชนิด", row.value.columns)                                  # no signal type any more
                 self.assertTrue(set(row.value["ระดับ"]) <= {"low", "medium", "high"})
+                self.assertTrue((row.value["คะแนน"] >= 3).all(), "a signal below the level low is dropped")
+                for gone in ("Ticker Mention Rate (%)", "Reddit Volume Z-score (ทั้งตลาด)", "Trading Volume Z-score (ของสินทรัพย์)"):
+                    self.assertNotIn(gone, row.value.columns)
                 break
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
 
@@ -608,6 +611,8 @@ class DesignTests(unittest.TestCase):
             at = AppTest.from_file(str(ROOT / "dashboard" / page), default_timeout=120).run()
             self.assertEqual(len(at.exception), 0, page)
             kinds = [type(e).__name__ for e in at.main]
+            if page == "pages/8_Hot_Events.py":                       # the score and the levels are set first (before the cards), by design
+                continue
             first_metric = kinds.index("Metric")
             before = [k for k in kinds[:first_metric] if k in ("Subheader", "Header", "Dataframe", "UnknownElement", "Radio")]
             self.assertEqual(before, [], "%s has content before the KPI cards" % page)

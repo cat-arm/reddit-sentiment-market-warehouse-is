@@ -37,7 +37,7 @@ class HotEventsLookupTests(unittest.TestCase):
         seven.session_state["f_range"] = five.session_state["f_range"]
         seven.run()
         self.assertEqual(len(seven.exception), 0)
-        table = [t.value for t in seven.dataframe if "ความรู้สึก (ทั้งตลาด)" in t.value.columns][0]      # the tab of the score
+        table = [t.value for t in seven.dataframe if "ความรู้สึกเฉลี่ย (ทั้งตลาด)" in t.value.columns][0]      # the tab of the score
         self.assertIn("Win Rate ของสินทรัพย์ (%)", table.columns)
         checked = 0
         for row in table.itertuples(index=False):
