@@ -130,8 +130,14 @@ def listed_for(basis):
     for m, (threshold, points) in rules.items():
         score += (SOURCE[m](listed) > threshold).astype(float) * points         # a missing value never passes
     level = pd.Series("", index=listed.index).mask(score >= cuts["low"], "low").mask(score >= cuts["medium"], "medium").mask(score >= cuts["high"], "high")
-    listed = listed.assign(score=score, level_name=level)
-    return listed[level != ""], win_table
+    # the type of the signal follows the same thresholds: the volume side (Reddit Volume Z-score) and the sentiment side (|Sentiment Score|) of the proposal
+    nothing = pd.Series(False, index=listed.index)
+    volume_side = (SOURCE["rz"](listed) > rules["rz"][0]) if "rz" in rules else nothing
+    sentiment_side = (SOURCE["ss"](listed) > rules["ss"][0]) if "ss" in rules else nothing
+    kind = np.select([volume_side & sentiment_side, volume_side, sentiment_side & (listed.sentiment_mean > 0), sentiment_side],
+                     ["combined_signal", "volume_spike", "positive_sentiment_spike", "negative_sentiment_spike"], "")
+    listed = listed.assign(score=score, level_name=level, kind=kind)
+    return listed[(level != "") & (listed.kind != "")], win_table             # a signal needs the volume side or the sentiment side; the other measures only add points
 
 
 listed_score, _ = listed_for("sentiment_mean")
@@ -144,10 +150,11 @@ st.subheader("รายการสัญญาณ (Detected Signal List)")
 st.caption("Z-score และความรู้สึกในหน้านี้คิดจากข้อความทั้งหมดของตลาดในชั่วโมงนั้น (เหมือนหน้า Statistical Analysis) สินทรัพย์ต่างกันที่ราคาและ Ticker Mention Rate  \n"
            "เกณฑ์ปัจจุบันคือ Reddit Volume อย่างน้อย %s ข้อความต่อชั่วโมง และ Sentiment Threshold: %s (ค่า 0 คือไม่กรอง ปรับได้ที่แถบด้านซ้าย)  \n"
            "Z-score เทียบกับ 24 ชั่วโมงก่อนหน้า ทุกสินทรัพย์ในชั่วโมงเดียวกันจึงได้ Z และความรู้สึกเท่ากัน  \n"
-           "**ชนิดของสัญญาณ**  \n"
-           "volume_spike คือปริมาณพุ่งอย่างเดียว (Reddit Volume Z-score > 1.5 ตาม proposal)  \n"
-           "positive_sentiment_spike และ negative_sentiment_spike คือความรู้สึกบวกหรือลบอย่างเดียว  \n"
-           "combined_signal คือปริมาณพุ่งและความรู้สึกมีทิศทางพร้อมกัน  \n"
+           "**ชนิดของสัญญาณ** ตามเกณฑ์ของตัวชี้วัดด้านบน (ด้านปริมาณ = Reddit Volume Z-score ผ่านเกณฑ์, ด้านความรู้สึก = |Sentiment Score| ผ่านเกณฑ์):  \n"
+           "volume_spike คือผ่านเฉพาะด้านปริมาณ  \n"
+           "positive_sentiment_spike และ negative_sentiment_spike คือผ่านเฉพาะด้านความรู้สึก (บวกหรือลบตามเครื่องหมายของ sentiment_mean)  \n"
+           "combined_signal คือผ่านทั้งสองด้านพร้อมกัน  \n"
+           "สัญญาณต้องผ่านอย่างน้อยหนึ่งในสองด้านนี้ ตัวชี้วัดอื่นเพิ่มแค่คะแนน  \n"
            "Reddit Volume Z-score คือปริมาณข้อความทั้งหมดของตลาดเทียบ 24 ชั่วโมงก่อนหน้า (เหมือนกันทุกสินทรัพย์ในชั่วโมงเดียวกัน) ส่วน Trading Volume Z-score คือปริมาณซื้อขายของราคาของสินทรัพย์นั้นเอง (ตารางที่ 8 ข้อ 2) ว่างเมื่อไม่มีข้อมูลปริมาณซื้อขาย  \n**ระดับ (signal_level)** low / medium / high คือระดับจากคะแนนรวมตามเกณฑ์ที่ตั้งไว้ด้านบน (proposal ระบุแค่ว่ามี 3 ระดับ ส่วนวิธีให้คะแนนเป็นส่วนขยาย) คอลัมน์คะแนนคือผลรวม  \n"
            "รายการนี้ใช้ประกอบการวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน" % ("{:,}".format(v_min) if v_min else "0 (ไม่กรอง)", common.cut_label(s_min)))
 if found.empty:
@@ -184,7 +191,7 @@ def signal_table(basis):
     OUTCOME = "ราคาตามความรู้สึก (%s)" % horizon
     shown = pd.DataFrame({
         "เวลา (UTC)": pd.to_datetime(view.hour_utc, unit="s", utc=True).dt.strftime("%Y-%m-%d %H:%M"),
-        "สินทรัพย์": view.ticker, "กลุ่ม": view.big_group.map(GROUP_LABELS), "ชนิด": view.signal_type, "ระดับ": view.level_name, "คะแนน": view.score,
+        "สินทรัพย์": view.ticker, "กลุ่ม": view.big_group.map(GROUP_LABELS), "ชนิด": view.kind, "ระดับ": view.level_name, "คะแนน": view.score,
         "Reddit Volume (ทั้งตลาด)": view.market_volume, "Ticker Mention Count": view.mentions, "Ticker Mention Rate (%)": view.mention_rate,
         "Reddit Volume Z-score (ทั้งตลาด)": view.reddit_volume_zscore_24, "Trading Volume Z-score (ของสินทรัพย์)": pd.to_numeric(view.volume_zscore_24, errors="coerce"),
         ("ความรู้สึก (ทั้งตลาด)" if basis == "sentiment_mean" else "ทิศทางส่วนใหญ่"): view.sentiment_mean if basis == "sentiment_mean" else view.majority_final_status,
