@@ -33,7 +33,7 @@ state = st.session_state
 if state.get("p5_family_all") in ("Ticker", "compare") and state.get("p5_panel") == "baseline":        # the random baseline belongs to Global only
     state["p5_panel"] = "all"
 if state.get("p5_family_all") == "compare":                                              # the comparison: the thresholds act on the sides that are "all" only
-    fixed_panel = not (str(state.get("p5_cmp_a", "global:all")).endswith(":all") or str(state.get("p5_cmp_b", "global:baseline")).endswith(":all"))
+    fixed_panel = not (str(state.get("p5_cmp_a", "global:baseline")).endswith(":all") or str(state.get("p5_cmp_b", "global:all")).endswith(":all"))
 else:
     fixed_panel = state.get("p5_panel", "all") != "all"                                  # a fixed panel of table 12 ignores the two thresholds: the sidebar greys them out
 _, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True, detection_locked=fixed_panel)
@@ -334,8 +334,8 @@ def panel_table(choice):
 
 def compare_view():
     """Two panels side by side as one heat map of the difference B - A (a click picks which of the three measures)."""
-    st.session_state.setdefault("p5_cmp_a", "global:all")
-    st.session_state.setdefault("p5_cmp_b", "global:baseline")
+    st.session_state.setdefault("p5_cmp_a", "global:baseline")                # the base: the random direction
+    st.session_state.setdefault("p5_cmp_b", "global:all")                     # compared with: every text, as the sidebar thresholds set it
     left, right = st.columns(2)
     a_key = left.selectbox("A (ฝั่งซ้าย ฐานเปรียบเทียบ)", list(PANEL_CHOICES), format_func=PANEL_CHOICES.get, key="p5_cmp_a")
     b_key = right.selectbox("B (ฝั่งขวา เทียบกับ A)", list(PANEL_CHOICES), format_func=PANEL_CHOICES.get, key="p5_cmp_b")
