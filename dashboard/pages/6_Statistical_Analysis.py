@@ -241,8 +241,12 @@ def logistic_view():
     st.caption("สีเหลืองคือ 0.5 (เท่ากับการสุ่ม) สีเขียวคือสูงกว่า 0.5 สีแดงคือต่ำกว่า 0.5 (สีเดียวกับ heat map ด้านบน)  \nค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 หมายความว่าทำนายได้ไม่ดีกว่าการสุ่ม  \n"
                "Current Return คือ ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)")
     st.write("สัมประสิทธิ์ของแต่ละตัวแปร (ตัวแปรใดมีผลต่อทิศทางราคา) เลือก panel ได้")
-    by_label = {v: k for k, v in labels.items()}                                          # the dropdown lists Global first, then Ticker
-    panel_pick = by_label[st.selectbox("panel", list(by_label), key="p5_log_panel", label_visibility="collapsed")]
+    log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", ["global", "Ticker"], format_func=FAMILIES.get, horizontal=True, key="p5_log_family")       # the same two layers as the heat map
+    log_kinds = data.PANEL_VARIANTS if log_family == "global" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}
+    if st.session_state.get("p5_log_kind") not in log_kinds:
+        st.session_state["p5_log_kind"] = "all"
+    log_kind = st.radio("ชนิดข้อความ", list(log_kinds), format_func=log_kinds.get, horizontal=True, key="p5_log_kind")
+    panel_pick = data.panel_name(log_kind, log_family)
     one = lg[lg.panel == panel_pick]
     coefs = one[one.metric.str.startswith("coef:")].assign(column=lambda d: d.metric.str[5:])
     if coefs.empty:

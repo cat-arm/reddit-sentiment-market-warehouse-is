@@ -280,10 +280,13 @@ class FilterTests(unittest.TestCase):
         for scope in at.radio(key="p5_scope").options:                                       # the Logistic Regression is a section below the tabs
             at.radio(key="p5_scope").set_value(scope).run()
             self.assertEqual(len(at.exception), 0, scope)
-        for i in range(len(at.selectbox(key="p5_log_panel").options)):                        # the coefficients of every one of the nine panels
-            at.selectbox(key="p5_log_panel").select_index(i).run()
-            self.assertEqual(len(at.exception), 0, i)
-        at.selectbox(key="p5_log_panel").select_index(0)
+        for family, kinds in (("global", ("all", "strong", "quality", "spike", "baseline")), ("Ticker", ("all", "strong", "quality", "spike"))):       # the coefficients of every one of the nine panels
+            at.radio(key="p5_log_family").set_value(family).run()
+            for kind in kinds:
+                at.radio(key="p5_log_kind").set_value(kind).run()
+                self.assertEqual(len(at.exception), 0, (family, kind, [e.value for e in at.exception]))
+        at.radio(key="p5_log_family").set_value("global").run()
+        at.radio(key="p5_log_kind").set_value("all").run()
         self.assertNotIn("p5_predictor", [r.key for r in at.radio])                          # the proposal measures only the mean Sentiment Score
         at.sidebar.slider(key="d_v").set_value(1500).run()                                     # the Z-score narrows every panel and says what it means in texts
         self.assertEqual(len(at.exception), 0)
