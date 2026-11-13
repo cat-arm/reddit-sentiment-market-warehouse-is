@@ -1,9 +1,10 @@
 """Dashboard extension 9  Logistic Regression  (proposal 7.4: AUC-ROC and the coefficients of the variables, "to help the interpretation").
 
-The STORED result of system 7.4 (`analysis_results`, analysis = logistic): a model per panel of table 12 and per horizon, trained and tested over the whole
-data set with TimeSeriesSplit (5 folds, gap 12 hours).  Nothing here follows a filter of the other pages (time, communities, model, thresholds), so this
-page has no sidebar filter.  Moved out of Statistical Analysis on 2026-11-13 (that page is computed live from its filters).
-Descriptive only: no investment advice.
+The model of system 7.4 (`analysis.logistic`: a model per panel of table 12 and per horizon, TimeSeriesSplit with 5 folds and a gap of 12 hours, scaler
+fitted on the training part only) TRAINED LIVE on the ticker-hours that pass the filters of the sidebar (time, assets, communities, model, types of text,
+majority status; the Reddit Volume and Sentiment Thresholds act on the panels "all" only, the fixed panels strong / quality / spike / baseline ignore
+them, like on Statistical Analysis).  With no filter it gives the stored result of `analysis_results` (checked by a test).
+Moved out of Statistical Analysis on 2026-11-13.  Descriptive only: no investment advice.
 """
 
 import sys
@@ -20,13 +21,43 @@ from dashboard import common, data  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
 common.setup("Logistic Regression (ส่วนขยาย: โมเดลทายทิศทางราคาจากความรู้สึก)", "📈")
+state = st.session_state
+if state.get("l9_family") in ("Ticker", "compare") and state.get("l9_kind") == "baseline":        # the random baseline belongs to Global only
+    state["l9_kind"] = "all"
+if state.get("l9_family") == "compare":                                                         # the comparison: the thresholds act on the sides that are "all" only
+    fixed_panel = not (str(state.get("l9_cmp_a", "global:all")).endswith(":all") or str(state.get("l9_cmp_b", "global:strong")).endswith(":all"))
+else:
+    fixed_panel = state.get("l9_kind", "all") != "all"                                          # a fixed panel of table 12 ignores the two thresholds: the sidebar greys them out
+_, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True, detection_locked=fixed_panel)
+tickers = common.selected_tickers()
+communities = common.selected_communities()
+statuses = common.selected_statuses()
+content_types = common.selected_content_types()
+if not tickers or not communities or not statuses or not content_types:
+    st.info("ไม่ได้เลือกหลักทรัพย์ ชุมชน ประเภทเนื้อหา หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
+    st.stop()
+z_th = state.get("d_z", 0.0)
+v_th = int(state.get("d_v", 0))
+s_th = common.sentiment_cut()
+model = common.selected_model()
 TARGET_LABEL = {"log_return": "Current Return", "1h": "1h", "2h": "2h", "3h": "3h", "6h": "6h", "12h": "12h"}
 FAMILIES = {"global": "Global (ความรู้สึกรวมของทั้งตลาด)", "Ticker": "Ticker (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น)", "compare": "เปรียบเทียบ 2 panel"}
 PANEL_CHOICES = {"%s:%s" % (f, k): "%s · %s" % ("Global" if f == "global" else "Ticker", v) for f in ("global", "Ticker") for k, v in data.PANEL_VARIANTS.items()
                  if not (f == "Ticker" and k == "baseline")}
 universe = q("tickers")
-groups_chosen = sorted(set(universe.big_group))                                       # every asset class: the stored models do not follow a filter
-logi = q("logistic_results")
+group_of = dict(zip(universe.ticker, universe.big_group))
+groups_chosen = sorted({group_of[t] for t in tickers})
+
+
+def live_rows(scope):
+    """The Logistic Regression of the nine panels at `scope` ('ALL' or an asset class), trained live (cached per set of filters)."""
+    parts = []
+    for choice in PANEL_CHOICES:
+        fam, kd = choice.split(":")
+        fixed = kd != "all"                                                                 # the fixed panels of table 12 ignore the two thresholds
+        parts.append(common.logistic_live(fam, kd, scope, tuple(tickers), start, end, tuple(communities), model, tuple(statuses),
+                                          0.0 if fixed else z_th, 0.0 if fixed else s_th, tuple(content_types), 0 if fixed else v_th))
+    return pd.concat(parts, ignore_index=True)
 
 
 def dark_cell(values, domain):
@@ -63,11 +94,11 @@ AUC เท่ากับ 0.5 คือการสุ่ม และ 1.0 ค�
 def logistic_compare(lg):
     """Two stored Logistic panels as one heat map of the difference B - A of the effect of every variable at every horizon (percentage points)."""
     choices = {k: v for k, v in PANEL_CHOICES.items() if not k.endswith(":baseline")}          # the random baseline has no variable in common with the others
-    st.session_state.setdefault("p5_log_cmp_a", "global:all")
-    st.session_state.setdefault("p5_log_cmp_b", "global:strong")
+    st.session_state.setdefault("l9_cmp_a", "global:all")
+    st.session_state.setdefault("l9_cmp_b", "global:strong")
     left, right = st.columns(2)
-    a_key = left.selectbox("A (ฝั่งซ้าย ฐานเปรียบเทียบ)", list(choices), format_func=choices.get, key="p5_log_cmp_a")
-    b_key = right.selectbox("B (ฝั่งขวา เทียบกับ A)", list(choices), format_func=choices.get, key="p5_log_cmp_b")
+    a_key = left.selectbox("A (ฝั่งซ้าย ฐานเปรียบเทียบ)", list(choices), format_func=choices.get, key="l9_cmp_a")
+    b_key = right.selectbox("B (ฝั่งขวา เทียบกับ A)", list(choices), format_func=choices.get, key="l9_cmp_b")
     if a_key == b_key:
         st.info("เลือก panel สองอันที่ต่างกัน")
         return
@@ -105,16 +136,17 @@ def logistic_compare(lg):
 
 def logistic_view():
     """The stored Logistic Regression: AUC of every panel and horizon, then the coefficients and the importance of the variable groups."""
-    st.caption("ผลเต็มช่วงข้อมูลของระบบ 7.4 (ไม่เปลี่ยนตามเวลา/ชุมชน/เกณฑ์ เพราะเป็นโมเดลที่ตรวจสอบข้ามช่วงเวลา)  โมเดลทายว่าผลตอบแทนจะ \"ขึ้น\" หรือ \"ลง\" "
-               "จากตัวแปรความรู้สึกทั้ง 6 กลุ่ม  AUC เท่ากับ 0.5 หมายถึงทำนายได้ไม่ดีกว่าการสุ่ม")
+    st.caption("ฝึกโมเดลสดจากชั่วโมงที่ผ่านตัวกรองด้านซ้าย (ฝึกและทดสอบข้ามช่วงเวลา 5 รอบ ไม่สลับเวลา) ไม่ใช่ผลที่เก็บไว้ ตอนไม่กรองได้ผลเท่ากับตารางที่เก็บไว้  "
+               "โมเดลทายว่าผลตอบแทนจะ \"ขึ้น\" หรือ \"ลง\" จากตัวแปรความรู้สึกทั้ง 6 กลุ่ม  AUC เท่ากับ 0.5 หมายถึงทำนายได้ไม่ดีกว่าการสุ่ม  "
+               "panel ทุกข้อความตามเกณฑ์ด้านซ้าย ส่วน panel อื่นใช้เกณฑ์ตายตัวของตาราง 12 (แถบเกณฑ์เป็นสีเทาเมื่อเลือก panel เหล่านั้น)")
     with st.expander("รายละเอียดวิธีทำ (Logistic Regression)"):
         st.markdown(METHOD_NOTE)
-    scopes = {"ทุกสินทรัพย์รวมกัน": ("all", "ALL")}
-    scopes.update({GROUP_LABELS[g]: ("big_group", g) for g in groups_chosen})
-    default_scope = list(scopes)[0] if len(groups_chosen) > 1 else GROUP_LABELS[groups_chosen[0]]
-    scope_pick = st.radio("ขอบเขต", list(scopes), index=list(scopes).index(default_scope), horizontal=True, key="p5_scope", label_visibility="collapsed")
-    level, group = scopes[scope_pick]
-    lg = logi[(logi.status == "ok") & (logi.level == level) & (logi.big_group == group)]
+    scopes = {"ทุกสินทรัพย์ที่เลือกรวมกัน": "ALL"}
+    scopes.update({GROUP_LABELS[g]: g for g in groups_chosen} if len(groups_chosen) > 1 else {})
+    default_scope = list(scopes)[0] if len(groups_chosen) > 1 else "ทุกสินทรัพย์ที่เลือกรวมกัน"
+    scope_pick = st.radio("ขอบเขต", list(scopes), index=list(scopes).index(default_scope), horizontal=True, key="l9_scope", label_visibility="collapsed")
+    lg = live_rows(scopes[scope_pick])
+    lg = lg[lg.status == "ok"]
     auc_grid = lg[lg.metric == "auc"].copy()
     if auc_grid.empty:
         st.info("ไม่มีผล Logistic ของขอบเขตนี้")
@@ -136,14 +168,14 @@ def logistic_view():
     st.caption("สีเหลืองคือ 0.5 (เท่ากับการสุ่ม) สีเขียวคือสูงกว่า 0.5 สีแดงคือต่ำกว่า 0.5 (สีเดียวกับ heat map ด้านบน)  \nค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 หมายความว่าทำนายได้ไม่ดีกว่าการสุ่ม  \n"
                "Current Return คือ ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)")
     st.write("สัมประสิทธิ์ของแต่ละตัวแปร (ตัวแปรใดมีผลต่อทิศทางราคา) เลือก panel ได้")
-    log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="p5_log_family")       # the same layers as the heat map
+    log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="l9_family")       # the same layers as the heat map
     if log_family == "compare":
         logistic_compare(lg)
         return
     log_kinds = data.PANEL_VARIANTS if log_family == "global" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}
-    if st.session_state.get("p5_log_kind") not in log_kinds:
-        st.session_state["p5_log_kind"] = "all"
-    log_kind = st.radio("ชนิดข้อความ", list(log_kinds), format_func=log_kinds.get, horizontal=True, key="p5_log_kind")
+    if st.session_state.get("l9_kind") not in log_kinds:
+        st.session_state["l9_kind"] = "all"
+    log_kind = st.radio("ชนิดข้อความ", list(log_kinds), format_func=log_kinds.get, horizontal=True, key="l9_kind")
     panel_pick = data.panel_name(log_kind, log_family)
     one = lg[lg.panel == panel_pick]
     coefs = one[one.metric.str.startswith("coef:")].assign(column=lambda d: d.metric.str[5:])

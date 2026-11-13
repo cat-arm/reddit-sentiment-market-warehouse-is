@@ -449,7 +449,7 @@ def sentiment_hourly(db_path, tickers, start, end, communities, model="VADER+Fin
     types = ",".join("?" * len(content_types))
     return _read(db_path, """
         SELECT ticker, hour_utc, SUM(texts) AS texts, SUM(sentiment_sum) AS sentiment_sum, SUM(pos_n) AS pos_n,
-               SUM(neg_n) AS neg_n, SUM(neu_n) AS neu_n
+               SUM(neg_n) AS neg_n, SUM(neu_n) AS neu_n, SUM(abs_sum) AS abs_sum
         FROM reddit_hourly_community
         WHERE model = ? AND variant = ? AND hour_utc BETWEEN ? AND ? AND subreddit IN (%s) AND content_type IN (%s)%s GROUP BY ticker, hour_utc"""
                  % (marks, types, tf), (model, variant, start - 86400, end, *communities, *content_types, *symbols))
@@ -814,7 +814,7 @@ PREDICTORS = {"sentiment_mean": "คะแนนความรู้สึก (
 ROW_CUTS = {"strong": 0.05, "quality": 0.30}          # the panels strong / quality of the dashboard keep the rows (hour x asset) with |hourly sentiment| >= the cut
 
 
-def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, seed=42, spike_z=1.5, predictor="sentiment_mean", v_min=0):
+def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, seed=42, spike_z=1.5, predictor="sentiment_mean", v_min=0, extra=()):
     """The ticker-hours of ONE panel of the proposal (table 12), live, after every filter of the dashboard.
     `base` = `sentiment_frame` of ALL the texts of the family (series = the tickers for the family 'Ticker', the one series 'ALL'
     for 'global'); `own` = the same for the texts of the variant ('strong' / 'quality'), else None; `returns` = DataFrame(ticker,
@@ -829,7 +829,7 @@ def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, s
     `predictor` = how the sentiment is read against the returns (proposal 7.4, directional matching): 'sentiment_mean' = the Sentiment Score,
     'majority' = the majority status of the hour as +1 / -1 / 0 (no score); the thresholds always judge the Sentiment Score and the Z-score of the hour.
     -> DataFrame(ticker, hour_utc, sentiment_mean, predictor, zscore, returns...)."""
-    cols = ["series", "hour_utc", "zscore", "own_zscore", "majority", "sentiment_mean", "texts", "momentum", "market_volume"]
+    cols = ["series", "hour_utc", "zscore", "own_zscore", "majority", "sentiment_mean", "texts", "momentum", "market_volume", *extra]
     b = base[[c for c in cols if c in base]].rename(columns={"series": "ticker"})
     if "own_zscore" not in b:
         b["own_zscore"] = b.zscore
@@ -857,6 +857,22 @@ def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, s
         samples["sentiment_mean"] = np.random.default_rng(seed).choice([-1.0, 1.0], size=len(samples))
         samples["predictor"] = samples["sentiment_mean"]
     return samples
+
+
+LOGISTIC_FEATURES = ("abs_mean", "pos_ratio", "neg_ratio", "voter_agreement", "sentiment_lag_1h", "sentiment_lag_2h", "sentiment_lag_3h",
+                     "sentiment_lag_6h", "sentiment_lag_12h")          # the columns `logistic_features` adds to an hourly frame (the other variables are columns of the frame)
+
+
+def logistic_features(frame):
+    """The variables of the Logistic Regression (proposal table 13) that `sentiment_frame` does not carry: the agreement of the texts with the majority (the
+    share of the most frequent status) and the Sentiment Score of the clock hours t-1, t-2, t-3, t-6 and t-12 (NULL when that hour has no text; the frame
+    is a full hourly grid per series, so a shift of k rows is k clock hours).  Works on a copy sorted by series and hour."""
+    out = frame.sort_values(["series", "hour_utc"]).reset_index(drop=True).copy()
+    out["voter_agreement"] = out[["pos_ratio", "neg_ratio", "neu_ratio"]].max(axis=1, skipna=False)
+    by = out.groupby("series", sort=False).sentiment_mean
+    for k in (1, 2, 3, 6, 12):
+        out["sentiment_lag_%dh" % k] = by.shift(k)
+    return out
 
 
 STAT_TARGETS = ("log_return", "1h", "2h", "3h", "6h", "12h")      # Current Return, then the future returns of the proposal

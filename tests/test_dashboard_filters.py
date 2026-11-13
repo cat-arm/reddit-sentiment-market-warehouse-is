@@ -74,6 +74,13 @@ def sidebar_signature(at):
 
 
 @unittest.skipUnless(DB.exists(), "real database not available")
+def live_n_global_all(common, data, tickers, info, communities, statuses):
+    """Rows of the panel Global with no filter (the biggest n of its models)."""
+    full = common.logistic_live("global", "all", "ALL", tickers, info["reddit_lo"], info["reddit_hi"], communities, "VADER+FinBERT", statuses, 0.0, 0.0,
+                                ("Post", "Comment"), 0)
+    return full[full.metric == "auc"].n.max()
+
+
 class FilterTests(unittest.TestCase):
     def run_page(self, page, **state):
         from streamlit.testing.v1 import AppTest
@@ -263,26 +270,49 @@ class FilterTests(unittest.TestCase):
             at = at.run()
             self.assertEqual(len(at.exception), 0, "%s: %s" % (page, [e.value for e in at.exception]))
 
-    def test_logistic_page_has_no_sidebar_and_every_panel_opens(self):
-        """The Logistic Regression is a page of its own (stored result, no filter): every scope, panel and comparison opens."""
+    def test_logistic_page_follows_the_filters_and_every_panel_opens(self):
+        """The Logistic Regression is a page of its own, trained live on the filters of the sidebar: every scope, panel and comparison opens, the two thresholds
+        grey out on the fixed panels."""
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(ROOT / "dashboard" / "pages" / "9_Logistic_Regression.py"), default_timeout=300).run()
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
-        self.assertEqual(len(at.sidebar.slider), 0)                                         # no threshold slider: nothing here follows a filter
-        for scope in at.radio(key="p5_scope").options:                                       # the Logistic Regression is a section below the tabs
-            at.radio(key="p5_scope").set_value(scope).run()
+        self.assertFalse(at.sidebar.slider(key="d_v").disabled)                              # the panel "all" follows the two thresholds
+        for scope in at.radio(key="l9_scope").options:                                       # the Logistic Regression is a section below the tabs
+            at.radio(key="l9_scope").set_value(scope).run()
             self.assertEqual(len(at.exception), 0, scope)
         for family, kinds in (("global", ("all", "strong", "quality", "spike", "baseline")), ("Ticker", ("all", "strong", "quality", "spike"))):       # the coefficients of every one of the nine panels
-            at.radio(key="p5_log_family").set_value(family).run()
+            at.radio(key="l9_family").set_value(family).run()
             for kind in kinds:
-                at.radio(key="p5_log_kind").set_value(kind).run()
+                at.radio(key="l9_kind").set_value(kind).run()
                 self.assertEqual(len(at.exception), 0, (family, kind, [e.value for e in at.exception]))
-        at.radio(key="p5_log_family").set_value("compare").run()                              # the coefficients of two panels: the difference B - A
+                self.assertEqual(at.sidebar.slider(key="d_v").disabled, kind != "all", (family, kind))
+        at.radio(key="l9_family").set_value("compare").run()                              # the coefficients of two panels: the difference B - A
         for left, right in (("global:all", "global:strong"), ("global:all", "Ticker:all"), ("Ticker:spike", "global:quality")):
-            at.selectbox(key="p5_log_cmp_a").set_value(left)
-            at.selectbox(key="p5_log_cmp_b").set_value(right).run()
+            at.selectbox(key="l9_cmp_a").set_value(left)
+            at.selectbox(key="l9_cmp_b").set_value(right).run()
             self.assertEqual(len(at.exception), 0, (left, right, [e.value for e in at.exception]))
         
+    def test_live_logistic_equals_the_stored_result_when_nothing_is_filtered(self):
+        """The live model is the model of `analysis.logistic` on the same rows: with every filter open its AUC is the stored one (the first and last
+        hours of the range differ by a few rows, hence the tolerance), and a threshold changes it."""
+        from dashboard import common, data
+        info = common.q("data_range")
+        src = common.q("sources")
+        communities = tuple(dict.fromkeys(src.subreddit))
+        tickers = tuple(common.q("tickers").ticker)
+        statuses = ("positive", "negative", "neutral")
+        for family, kind in (("global", "all"), ("global", "strong"), ("Ticker", "all"), ("Ticker", "quality")):
+            live = common.logistic_live(family, kind, "ALL", tickers, info["reddit_lo"], info["reddit_hi"], communities, "VADER+FinBERT", statuses, 0.0, 0.0,
+                                        ("Post", "Comment"), 0)
+            stored = data.logistic_results(str(DB))
+            stored = stored[(stored.panel == data.panel_name(kind, family)) & (stored.level == "all") & (stored.metric == "auc")].set_index("horizon").value
+            auc = live[live.metric == "auc"].set_index("horizon").value
+            for horizon, value in auc.items():
+                self.assertAlmostEqual(value, stored[horizon], delta=0.003, msg=(family, kind, horizon))
+        narrow = common.logistic_live("global", "all", "ALL", tickers, info["reddit_lo"], info["reddit_hi"], communities, "VADER+FinBERT", statuses, 0.0, 0.30,
+                                      ("Post", "Comment"), 0)
+        self.assertLess(narrow[narrow.metric == "auc"].n.max(), live_n_global_all(common, data, tickers, info, communities, statuses))
+
     def test_ranking_and_statistics_page(self):
         """Same filters as Market and Sentiment and every one changes the numbers: the time range changes the p-values, two tickers = two
         tickers, nothing ticked = cards 0; every kind of text and both families open."""

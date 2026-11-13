@@ -133,6 +133,60 @@ def panel_stat(family, variant, tickers, start, end, communities, model, statuse
     return data.stat_table(samples, sentiment="predictor")
 
 
+@st.cache_data(show_spinner=False, max_entries=12)
+def hourly_base(family, cut, tickers, start, end, communities, model, content_types):
+    """The hourly frame of a family ('global': the one series ALL, 'Ticker': one series per asset) for the texts that pass the Sentiment Threshold `cut`
+    (a variant name), with the variables of the Logistic Regression added (`data.logistic_features`).  Cached: the nine panels share two of them."""
+    src = q("sources")
+    market = q("market_zscore", start, end, tuple(int(i) for i in src[src.subreddit.isin(communities) & src.content_type.isin(content_types)].source_id))
+    if family == "global":
+        sent = q("global_hourly", start, end, communities, model, cut, content_types)
+    else:
+        sent = q("sentiment_hourly", tickers, start, end, communities, model, cut, content_types)
+    return data.logistic_features(data.sentiment_frame(sent, start, end, market=market))
+
+
+@st.cache_data(show_spinner="กำลังฝึกโมเดล Logistic Regression ...", max_entries=60)
+def logistic_live(family, variant, scope, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, v_th=0):
+    """The Logistic Regression of one panel of table 12, trained live on the ticker-hours that pass the filters of the sidebar (the very model of
+    `analysis.logistic`: TimeSeriesSplit 5 folds with a gap of 12 hours, scaler fitted on the training part only).  `scope` = 'ALL' (every chosen asset)
+    or an asset class.  The panels 'strong' / 'quality' / 'spike' / 'baseline' ignore the two thresholds (the caller passes 0).
+    -> DataFrame(panel, level, big_group, horizon, metric, value, n, status) like `data.logistic_results`."""
+    from analysis import logistic as L
+    from etl.reddit_hourly_community import variant_of
+    prices = q("price_series_for", tickers, start, end)
+    returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in data.HORIZONS]]]
+    cut = variant_of(s_th)
+    fam = "global" if variant == "baseline" else family
+    base = hourly_base(fam, cut, tickers, start, end, communities, model, content_types)
+    extra = ("abs_mean", "pos_ratio", "neg_ratio", "voter_agreement", *["sentiment_lag_%dh" % k for k in (1, 2, 3, 6, 12)])
+    samples = data.panel_samples(base, None, returns, family, variant, statuses, z_th, 0.0, v_min=v_th, extra=extra)
+    columns = ["panel", "level", "big_group", "horizon", "metric", "value", "n", "status"]
+    if samples.empty:
+        return pd.DataFrame(columns=columns)
+    universe = q("tickers")
+    samples["big_group"] = samples.ticker.map(dict(zip(universe.ticker, universe.big_group)))
+    z_col = "own_zscore" if family == "Ticker" else "zscore"                                   # the volume of the asset itself, or of the whole market
+    frame = samples.rename(columns={"majority": "majority_final_status", "abs_mean": "sentiment_abs_mean", "voter_agreement": "voter_agreement_ratio"})
+    frame["reddit_volume_zscore_24"] = samples[z_col]
+    frame["sentiment_momentum_1h"] = samples["momentum"]
+    if variant == "baseline":
+        frame["random_direction"] = samples["sentiment_mean"]                                     # panel_samples put the random +1 / -1 there
+    if scope != "ALL":
+        frame = frame[frame.big_group == scope]
+    name = data.panel_name(variant, family)
+    gmap = L.feature_groups(name)
+    part = L.prepare(frame)
+    rows = []
+    for target, horizon in L.HORIZONS.items():
+        metrics, status, n = L.fit_one(part, target, gmap)
+        if metrics is None:
+            rows.append((name, "all" if scope == "ALL" else "big_group", scope, horizon, "auc", float("nan"), n, status))
+            continue
+        rows += [(name, "all" if scope == "ALL" else "big_group", scope, horizon, metric, value, n, status) for metric, value in metrics.items()]
+    return pd.DataFrame(rows, columns=columns)
+
+
 def setup(title, icon="📊"):
     """Page config + title + the shared disclaimer; call first on every page."""
     st.set_page_config(page_title=title, page_icon=icon, layout="wide")
