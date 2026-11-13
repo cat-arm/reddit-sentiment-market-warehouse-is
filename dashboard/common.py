@@ -189,10 +189,12 @@ def logistic_live(family, variant, scope, tickers, start, end, communities, mode
 
 def sticky_bar(key):
     """A container that stays at the top of the page while the page scrolls under it (the picker of a long heat map: the choices stay in reach).
-    Streamlit has no sticky widget, so the container gets a CSS class from its key and a style sticks it just below the top navigation."""
-    st.markdown("<style>.st-key-%s{position:sticky;top:3.75rem;z-index:100;background:#ffffff;padding:0.35rem 0 0.1rem 0;"
-                "border-bottom:1px solid rgba(128,128,128,0.25);}"
-                "@media (prefers-color-scheme: dark){.st-key-%s{background:#0e1117;}}</style>" % (key, key), unsafe_allow_html=True)
+    Streamlit has no sticky widget.  `st.container(key=...)` is wrapped in a `stLayoutWrapper` that is exactly as tall as the container, so a sticky
+    container would have no room to stick: the style therefore sticks the WRAPPER (found by the key class of its child), just below the top navigation."""
+    st.markdown("<style>div[data-testid='stLayoutWrapper']:has(> .st-key-%s){position:sticky;top:3.75rem;z-index:100;background:#ffffff;"
+                "padding:0.35rem 0 0.1rem 0;border-bottom:1px solid rgba(128,128,128,0.25);}"
+                "@media (prefers-color-scheme: dark){div[data-testid='stLayoutWrapper']:has(> .st-key-%s){background:#0e1117;}}</style>" % (key, key),
+                unsafe_allow_html=True)
     return st.container(key=key)
 
 
