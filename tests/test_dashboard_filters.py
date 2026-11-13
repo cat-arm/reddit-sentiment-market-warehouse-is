@@ -474,8 +474,12 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(at.metric[0].value, base)                                          # the defaults are back
         at.sidebar.slider(key="d_v").set_value(1500).run()                                  # the sidebar thresholds filter the hours before the points
         self.assertNotEqual(at.metric[0].value, base)
-        at.number_input(key="hs_wr_p").set_value(2.0).run()                                 # an asset statistic in the score: the warning of the selection after the results
-        self.assertTrue(any("คัดหลังเห็นผลแล้ว" in w.value for w in at.warning))
+        self.assertNotIn("hs_wr_p", [n.key for n in at.number_input])                       # no statistic of the whole history is a point (look-ahead)
+        for row in at.dataframe:
+            if "ชนิด" in row.value.columns:
+                self.assertTrue(set(row.value["ชนิด"]) <= {"volume_spike", "positive_sentiment_spike", "negative_sentiment_spike", "combined_signal"})
+                self.assertTrue(set(row.value["ระดับ"]) <= {"low", "medium", "high"})
+                break
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
 
     def test_majority_vote_chart_follows_every_filter(self):

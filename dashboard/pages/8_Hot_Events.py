@@ -50,11 +50,11 @@ cards_slot = st.container()                                       # the cards co
 # (EXTENSION: the proposal names the three levels, not how they are reached)
 state = st.session_state
 LEVELS = ("low", "medium", "high")
-METRICS = [("rz", "Reddit Volume Z-score (ทั้งตลาด) >", 1.5, 3, 0.5), ("tz", "Trading Volume Z-score (ของสินทรัพย์) >", 2.0, 1, 0.5),
-           ("mr", "Ticker Mention Rate (%) >", 0.5, 1, 0.5), ("ss", "|Sentiment Score| ของชั่วโมง >", 0.05, 2, 0.01),
-           ("sp", "Spearman ρ ของสินทรัพย์ >", 0.02, 1, 0.01), ("pe", "Pearson ρ ของสินทรัพย์ >", 0.02, 1, 0.01),
-           ("wr", "Win Rate ของสินทรัพย์ (%) >", 51.0, 1, 0.5)]                        # (key, label, default threshold, default points, step); the points add up to 10
-DEFAULT_CUTS = {"low": 5, "medium": 7, "high": 8}                                      # the total points a signal needs for the level (of 10)
+METRICS = [("rz", "Reddit Volume Z-score (ทั้งตลาด) >", 1.5, 4, 0.5), ("tz", "Trading Volume Z-score (ของสินทรัพย์) >", 2.0, 2, 0.5),
+           ("mr", "Ticker Mention Rate (%) >", 0.5, 1, 0.5), ("ss", "|Sentiment Score| ของชั่วโมง >", 0.05, 3, 0.01)]
+# (key, label, default threshold, default points, step); the points add up to 10.  Only what is known in the hour itself and from the hours before it: no statistic of the
+# whole history (Spearman, Win Rate ...) is a point, because it could not be known when the signal appeared (look-ahead); those stay as columns beside the signal.
+DEFAULT_CUTS = {"low": 4, "medium": 6, "high": 8}                                      # the total points a signal needs for the level (of 10)
 
 
 def reset_scoring():
@@ -73,7 +73,7 @@ for lv in LEVELS:
 st.subheader("ตั้งค่าคะแนนและระดับของสัญญาณ (low / medium / high)")
 st.caption("แต่ละตัวชี้วัดมี **เกณฑ์เดียว** และ **คะแนน**: ถ้าสัญญาณนั้นผ่านเกณฑ์ (ค่า > เกณฑ์) ได้คะแนนของตัวชี้วัดนั้น แล้วเอาคะแนนที่ได้มาบวกกัน ผลรวมถึงกี่คะแนนก็ได้ระดับนั้น "
            "(เช่น คะแนนเต็ม 10 ผลรวมตั้งแต่ 8 = high)  เว้นเกณฑ์ว่างหรือใส่คะแนน 0 = ไม่ใช้ตัวชี้วัดนั้น  \n"
-           "ตัวชี้วัดของสินทรัพย์ (Trading Volume Z, Spearman, Pearson, Win Rate) ใช้ค่าของสินทรัพย์นั้นที่ Horizon และแท็บ (คะแนน / majority) ที่เลือกด้านล่าง  \n"
+           "คะแนนใช้เฉพาะสิ่งที่รู้ ณ ชั่วโมงนั้นและย้อนหลัง (Z-score เทียบ 24 ชั่วโมงก่อนหน้า, Mention Rate, ความรู้สึกของชั่วโมง) ไม่ใช้สถิติย้อนหลังทั้งช่วง (Win Rate, Spearman, Pearson) เพราะตอนที่สัญญาณเกิดยังรู้ค่าเหล่านั้นไม่ได้ ค่าเหล่านั้นแสดงเป็นคอลัมน์ประกอบการตีความ  \n"
            "ตัวกรองด้านซ้าย (รวมสองเกณฑ์ Reddit Volume / Sentiment Threshold) ยังทำงานเหมือนเดิม คือกรองชั่วโมงและข้อความออกก่อน แล้วค่อยให้คะแนน  \n"
            "สัญญาณที่ได้คะแนนไม่ถึงระดับ low จะไม่ถูกแสดง ค่าเริ่มต้นตั้งตามการกระจายของข้อมูลจริง")
 with st.expander("เกณฑ์ คะแนน และระดับ", expanded=True):
@@ -107,10 +107,9 @@ if not cuts["low"] <= cuts["medium"] <= cuts["high"] or cuts["low"] <= 0:
     st.stop()
 if cuts["high"] > total:
     st.warning("ระดับ high ต้องการ %g คะแนน แต่คะแนนเต็มมีแค่ %g จึงไม่มีสัญญาณระดับ high" % (cuts["high"], total))
-filtering = any(m in ("sp", "pe", "wr") for m in rules)                                  # an asset statistic in the score: the assets are picked after the results are seen
 GREEN, RED = "color: #1a9850; font-weight: 600", "color: #d73027; font-weight: 600"
 SOURCE = {"rz": lambda d: d.reddit_volume_zscore_24, "tz": lambda d: pd.to_numeric(d.volume_zscore_24, errors="coerce"), "mr": lambda d: d.mention_rate,
-          "ss": lambda d: d.sentiment_mean.abs(), "sp": lambda d: d.pair_rho, "pe": lambda d: d.pair_pearson, "wr": lambda d: d.pair_win_rate}
+          "ss": lambda d: d.sentiment_mean.abs()}
 
 
 def listed_for(basis):
@@ -220,10 +219,5 @@ with tab_score:
     signal_table("sentiment_mean")
 with tab_major:
     signal_table("majority")
-if filtering:
-    st.warning("**คัดหลังเห็นผลแล้ว ใช้เป็นข้อมูลสำรวจเท่านั้น**  \n"
-               "การเลือกสินทรัพย์จาก Win Rate หรือ Correlation ที่สูงจากหลายสิบคู่ มักได้คู่ที่สูงเพราะโชค โดยเฉพาะเมื่อ n น้อย ดูช่วงเชื่อมั่นและ p ปรับ BH ประกอบเสมอ คู่ที่ไม่มี ★ แยกจากการสุ่มไม่ได้")
-
-
 st.warning("**ดูเหตุการณ์ย้อนหลัง ไม่ใช่สัญญาณซื้อขาย**  \n"
            "ผลทดสอบทั้งโครงการพบว่าความรู้สึกบน Reddit ทำนายทิศทางราคาได้ไม่ดีกว่าการสุ่ม (ราว 50%)  ค่าที่ดูสูงในบางช่องมักเป็นความบังเอิญ โดยเฉพาะเมื่อ n น้อย")
