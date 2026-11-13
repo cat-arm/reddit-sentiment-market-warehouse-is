@@ -276,6 +276,8 @@ proposal ที่อนุมัติแล้ว (`data/Proposal_6782094726_R
 | G12 grain ของ fact (เดิมอยู่ใน PROPOSAL_REVISIONS.md §6 ซึ่งลบแล้ว 2026-10-24; สรุปใน docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md ข้อ 8) | **A ทั้ง 3 ข้อ**: `FactMarketSentiment` = 1 แถวต่อ ชั่วโมง × Ticker (sentiment รวม 6 ชุมชน); เกณฑ์ตรวจจับใช้ตอน query ไม่ซ้ำแถว; `winrate_*` เก็บใน `analysis_results` แล้วคัดลอกลง fact | W2: PK = (`TimeID`,`TickerID`); W4: `DimSentimentSource` ต้องมีแถว "ALL" (รวม 6 ชุมชน) เพิ่ม → 7 แถว ไม่ใช่ 6; โหลด fact หลัง `analysis_results` |
 | ชื่อ `log_return` (proposal 2026-10-12 เปลี่ยนเป็น Current Return / `current_return`) | **ทาง 2**: เปลี่ยนเฉพาะป้ายที่คนเห็น (แดชบอร์ด, coverage check, ชื่อกราฟ, เอกสาร); คอลัมน์ในฐานข้อมูลยังชื่อ `log_return` | เพราะไม่ต้อง rebuild/รันขั้น 11–22 ใหม่; ตอนเขียนเล่มต้องจำว่าชื่อในเล่มต่างจากชื่อคอลัมน์ — รายละเอียดและวิธีเปลี่ยนชื่อจริงภายหลังอยู่ใน `docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md` §6 |
 | S5 ทดสอบกฎรวมผลรอบใหม่ (2026-11-04) | สุ่มใหม่ทุกกลุ่ม 400 คอมเมนต์ เทียบรูปแบบข้อความ A/B/C + cascade ด้วยป้ายที่อ่านพร้อมบริบทโพสต์ (**ส่วนขยาย**) | **เสร็จ 2026-11-04**: ติดป้ายครบ 400 รัน `evaluate` แล้ว — คงกฎรวมผลทุกกลุ่มและคงรูปแบบ B (A แยกไม่ออก, C และ cascade แย่กว่า B); ดู docs/METHOD_DECISIONS §9.2 |
+| หน้า 7 Hot Events (2026-11-11) | Z-score = ข้อความทั้งตลาด; Win Rate / ρ / p ดึงจากผล 7.4 (Historical Statistic Lookup); ตัดตัวกรอง n / ข้อความขั้นต่ำ / ระดับ | ดู `docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md`; `signal_events` ที่เก็บไว้ยังใช้ Z เดิม รอผู้ใช้ตัดสิน |
+| ชุดตรวจเทียบ proposal (2026-11-11 รอบสาม) | p-value Win Rate เทียบ 50%; วัดด้วยคะแนน/majority; ตารางจัดอันดับหน้า 5; หน้า 7 ตัวกรองเท่าหน้า 5 + แท็บ + Mention Rate; Reddit Volume ของที่เลือกนับข้อความ; `signal_events` สร้างใหม่ | รายละเอียดใน `docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md` ท้ายไฟล์ |
 
 **FinBERT บนเครื่องนี้ — ผลวัดจริง (S0) เมื่อ 2026-10-09 สรุปไว้ที่ `docs/benchmark_finbert.md`**: 5,300–6,150 ข้อความ/วินาที (ตัดที่ 256 token, batch 128 ≈ 6,000/วินาที, VRAM 0.8 GB), ทั้งชุด ≈ 1.0–1.2 ชั่วโมง (เฉพาะส่วนคำนวณ). ข้อความข้างล่างเป็นประมาณการก่อนวัด เก็บไว้เป็นบันทึกเหตุผลเท่านั้น ถ้าขัดกับผลวัด ให้ยึดผลวัด:
 - ความยาวข้อความจากตัวอย่าง 1:200 ของ 6 ชุมชน: คอมเมนต์เฉลี่ย 106 ตัวอักษร (median 58, p90 232, p99 813) ≈ 26 token โดยเฉลี่ย; โพสต์เฉลี่ย 557 ตัวอักษร (p90 1,335)
@@ -528,7 +530,7 @@ FactMarketSentiment(TimeID, TickerID, SentimentSourceID, DetectionConfigID, Majo
 - **คอลัมน์ที่ต้องได้** (ตารางที่ 7–8): `close`, `volume`, `future_return_1h/2h/3h/6h/12h`, `RSI`, `ATR` และ KPI: `log_return`, `volume_zscore_24`, `normalized_atr`
 - **ขั้นตอน**:
   - `log_return = ln(close_t / close_{t-1}) × 100` (หน่วย %) ต่อ ticker — **แก้จากฉบับก่อน** (ตารางที่ 8 คูณ 100)
-  - `future_return_nh = (close_{t+n} − close_t) / close_t × 100` (หน่วย % ตามตารางที่ 7; โค้ดเก่า cell 28 ใช้ log — ยึด proposal)
+  - `future_return_nh = ln(close_{t+n} / close_t) × 100` (หน่วย % ตามตารางที่ 7; **เปลี่ยน 2026-11-13** จาก (close_{t+n} − close_t) / close_t × 100 ให้ทุกผลตอบแทนใช้ ln เหมือน Current Return — proposal ระบุสูตรเฉพาะ Current Return ต้องเพิ่มข้อความใน proposal ว่า Future Return ก็เป็น log return)
   - `valid_for_{n}h` flag: true เฉพาะเมื่อ `ts_{t+n} − ts_t == n ชั่วโมงจริง` (กันข้ามวันหยุด/gap; proposal §4.2: "ใช้เฉพาะช่วงเวลาที่มีข้อมูลเพียงพอ")
   - `volume_zscore_24 = (volume_t − μ_24h) / σ_24h` โดยใช้ 24 ชั่วโมงย้อนหลัง
   - `ATR` ช่วง **24 ชั่วโมง**; `normalized_atr = ATR_24h ÷ close × 100` (**แก้จาก ATR 14 เดิม**)

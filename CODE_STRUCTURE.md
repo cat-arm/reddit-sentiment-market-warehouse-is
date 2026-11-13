@@ -26,11 +26,11 @@ reddit-sentiment-market-warehouse/
   db/                         ✅  schema.sql (รูปที่ 2–4), indexes.sql
   etl/                        ✅  T1–T5, S1–S5, M1, P1–P4, Fact loaders (ดูตารางข้อ 3)
   analysis/                   ✅  correlation, winrate, logistic, evaluate, signals, results_store, figure_style (สี/คำอธิบายของ heatmap)
-  dashboard/                  ✅  Streamlit หน้าแรก + 7 หน้า (หน้า 5 Statistical Analysis (แดชบอร์ดที่ 2 ตามตารางที่ 17), หน้า 6 Lead and Lag) (หน้า 7 Hot Events = ส่วนขยาย; data.py = ชั้น query อ่านอย่างเดียว)
+  dashboard/                  ✅  Streamlit หน้าแรก + 7 หน้า (หน้า 6 Statistical Analysis (แดชบอร์ดที่ 2 ตามตารางที่ 17), หน้า 7 Lead and Lag) (หน้า 7 Hot Events = ส่วนขยาย; data.py = ชั้น query อ่านอย่างเดียว)
   steps/                      ✅  ตัวเรียกที่มีเลขลำดับ 00–33 (เริ่มที่ 01) ดู steps/README.md
   scripts/                    ✅  ตรวจ/ทดสอบ/สรุปผล: system_tests, dashboard_kpi_check, rule_validation(+extras), neutral_band, super_signal, make_book_tables, dashboard_answers, build_final_reports ฯลฯ
   reports/                    —   (ใช้ scripts/make_book_tables.py แทน → output/tables, output/figures/book_*)
-  docs/                       ✅  benchmark_finbert.md, METHOD_DECISIONS_NOT_IN_PROPOSAL.md, USER_MANUAL_TH.md (§8.5)
+  docs/                       ✅  benchmark_finbert.md, METHOD_DECISIONS_NOT_IN_PROPOSAL.md, USER_MANUAL_TH.md (§8.5), DEMO_CASE_TH.md, BH_EXPLAINED_TH.md
   tests/                      ✅  มี 4 ไฟล์ (เสีย 9/18 บน Windows) + 1 ไฟล์ว่าง
   old_code/                   —   MVP เก่า อ้างอิงเท่านั้น (gitignored)
   data/  output/              —   ข้อมูล/ผลลัพธ์ (gitignored)
@@ -58,9 +58,11 @@ reddit-sentiment-market-warehouse/
 | 7.1 พิสูจน์รูปแบบ final_text (2 แบบ) | — | `scripts/verify_final_text_forms.py` | `output/reports/final_text_forms.md` | ✅ 2026-10-25 |
 | 8.4 ทดสอบระบบกับข้อมูลจริง (ตรรกะ + เชื่อมโยง) | Q | `scripts/system_tests.py` | `output/reports/system_tests.md` | ✅ 2026-10-25 |
 | 8.4 ทดสอบ dashboard (ตัวเลขเทียบ SQL ตรง) | Q4 | `scripts/dashboard_kpi_check.py` (step 30), `tests/test_dashboard_smoke.py` | `output/reports/dashboard_kpi_check.md` | ✅ 2026-10-25 |
-| ส่วนขยาย: หน้า Hot Events (ชั่วโมงคึกคัก + ช่วงความเชื่อมั่น) | D6 | `dashboard/pages/6_Hot_Events.py`, `dashboard.data.hot_events` | — | ✅ 2026-10-25 |
-| 7.5 แดชบอร์ดที่ 2 Statistical Analysis (แดชบอร์ดที่ 2 ตามตารางที่ 17) (Win Rate, p-value Spearman/Pearson คำนวณสดตามตัวกรอง 9 panel; Logistic ผลเก็บไว้) | — | `dashboard/pages/5_Statistical_Analysis.py`, `dashboard/data.py` (`panel_samples`, `stat_table`, `bh_adjust`, `global_hourly`, `logistic_results`), `tests/test_dashboard_filters.py`, `tests/test_dashboard_sentiment.py` | คำนวณสดจาก `reddit_hourly_community`, `reddit_hourly_global` + `market_hourly_features`; อ่าน `analysis_results` (Logistic) | ✅ 2026-10-30 |
-| ส่วนขยาย: หน้า 6 Lead and Lag (ใครขยับก่อน ความรู้สึกหรือราคา) | — | `dashboard/pages/7_Lead_and_Lag.py`, `dashboard/data.py` (`lag_correlation`, `past_return`, `return_buckets`) | คำนวณสดจากชั่วโมงที่ผ่านตัวกรอง | ✅ 2026-10-30 |
+| ส่วนขยาย: `configs/tickers.yaml` คีย์ `instrument` (หุ้น / ETF ดัชนี / ETF บิตคอยน์) ใช้แยกตารางความผันผวนหน้า 3 | — | `dashboard.common.instrument_of` | — | ✅ 2026-11-13 |
+| ส่วนขยาย: หน้า 4 Price and Reddit (หน้า Price and Return ที่เพิ่มปริมาณ Reddit และ Z-score ลงบนแกนเวลาเดียวกัน) | — | `dashboard/pages/4_Price_and_Reddit.py` | ราคา + `reddit_volume_hourly` | ✅ 2026-11-12 |
+| 7.6 หน้า 8 Hot Events = ดักจับสัญญาณ (ทั้งตลาด Z + ความรู้สึก × สินทรัพย์; ดึง Win Rate / ρ / p จากระบบ 7.4 เป็นแท็บคะแนน / majority) | D6 | `dashboard/pages/8_Hot_Events.py`, `dashboard.data.market_signals` (ฟังก์ชันเดียวกับ `analysis/signals.py build`), `dashboard.common.panel_stat` | `signal_events` ถูกสร้างใหม่ 2026-11-11 ด้วยกติกาเดียวกัน | ✅ 2026-11-11 |
+| 7.5 แดชบอร์ดที่ 2 Statistical Analysis (แดชบอร์ดที่ 2 ตามตารางที่ 17) (Win Rate, p-value Spearman/Pearson คำนวณสดตามตัวกรอง 9 panel; Logistic ผลเก็บไว้) | — | `dashboard/pages/6_Statistical_Analysis.py`, `dashboard/data.py` (`panel_samples`, `stat_table`, `bh_adjust`, `global_hourly`, `logistic_results`), `tests/test_dashboard_filters.py`, `tests/test_dashboard_sentiment.py` | คำนวณสดจาก `reddit_hourly_community`, `reddit_hourly_global` + `market_hourly_features`; อ่าน `analysis_results` (Logistic) | ✅ 2026-10-30 |
+| ส่วนขยาย: หน้า 7 Lead and Lag (ใครขยับก่อน ความรู้สึกหรือราคา) | — | `dashboard/pages/7_Lead_and_Lag.py`, `dashboard/data.py` (`lag_correlation`, `past_return`, `return_buckets`) | คำนวณสดจากชั่วโมงที่ผ่านตัวกรอง | ✅ 2026-10-30 |
 | 7.4 ส่วนขยาย: เกณฑ์ที่เข้มขึ้น super quality / super spike | — | `scripts/super_signal_sensitivity.py` (step 27) | `output/reports/super_signal_sensitivity.md/.csv` | ✅ 2026-10-25 |
 | 7.6 ส่วนขยาย: ความแม่นของเกณฑ์ Z-score × ความรู้สึก (กริด) | — | `scripts/z_sentiment_grid.py` (step 32) | `output/reports/z_sentiment_grid.md/.csv` | ✅ 2026-10-25 |
 | สรุปเล่ม: ส่วนที่ทำเกิน proposal / การทดสอบและสมมติฐาน / สรุปผลสุดท้าย | — | `scripts/build_final_reports.py` (step 28) | `output/reports/final/1_*.md, 2_*.md, 3_*.md` | ✅ 2026-10-25 |
@@ -71,6 +73,7 @@ reddit-sentiment-market-warehouse/
 | ตัวเลขเรื่องเล่า BTC-USD ในสไลด์ defence (ส่วนขยาย ไม่ใช่ขั้นตอนใน proposal) | — | `scripts/deck_story_btc.py` (เรียกฟังก์ชันเดียวกับหน้า dashboard) | `output/reports/deck_story_btc.md/.json` (อ่านโดย `docs/presentation/build_deck_en.js`) | ✅ 2026-11-08 |
 | กราฟ + ตัวเลขผลทดสอบ 400 ป้าย (ระบบ 1 และ 3) ในสไลด์ defence (ส่วนขยาย) | S5 | `scripts/deck_charts.py` (อ่านผลของ step 26 และ 29) | `output/figures/deck/*.png`, `output/reports/deck_rule_test.json` (อ่านโดย `docs/presentation/build_deck_en.js`) | ✅ 2026-11-08 |
 | ตัวเลขเรื่องเล่าเชิงข้อมูล (ความรู้สึกขยับพร้อมราคาตอนไหน) ใน `docs/USER_STORY_INSIGHTS_TH.md` (ส่วนขยาย) | A | `scripts/deck_insights.py` | `output/reports/insight_stories.md/.json` | ✅ 2026-11-08 |
+| ตัวเลขของเคส demo สด สัปดาห์ 7–11 เม.ย. 2025 ทีละหน้า dashboard ใน `docs/DEMO_CASE_TH.md` (ส่วนขยาย; เปิดหน้าจริงด้วย Streamlit AppTest) | A | `scripts/demo_case.py` | `output/reports/demo_case.md/.json` | ✅ 2026-11-09 |
 | 7.3 QA | S5 | `etl/sentiment_qa.py` | `sentiment_qa` | ✅ รันแล้ว 2026-10-10 |
 | 7.3 ซ่อมป้าย neutral band | — | `scripts/recompute_status_band.py` | แก้ `vader_status` 771 แถว | ✅ 2026-10-10 |
 | 7.4 สรุปรายชั่วโมง | P1, P2 | `etl/reddit_hourly.py`, `etl/reddit_features.py` | `reddit_hourly`, `reddit_hourly_features` | ✅ รันแล้ว 2026-10-10 |
@@ -81,7 +84,7 @@ reddit-sentiment-market-warehouse/
 | 7.4 Logistic | A3 | `analysis/logistic.py` | `analysis_results` (AUC, coef) + `output/figures/a3_auc.png` | ✅ รันแล้ว 2026-10-10 |
 | 7.4 กลุ่มสินทรัพย์ + สรุปผล | A4, A5 | `analysis/evaluate.py` (รวม A4 ไว้ในไฟล์เดียว) | `evaluation_*` + `output/reports/a5_evaluation.md` | ✅ รันแล้ว 2026-10-10 |
 | 7.5 โหลด Fact ของ 7.5 | F1 | `etl/load_fact_market_sentiment.py` | `FactMarketSentiment` (250,253 แถว) | ✅ รันแล้ว 2026-10-10 |
-| 7.6 ตรวจจับสัญญาณ | G1–G3 | `analysis/signals.py`, `configs/detection.yaml` | `signal_events`, `signal_summary`, view `v_signal_list` (= ตาราง 18) | ✅ รันแล้ว 2026-10-11 |
+| 7.6 ตรวจจับสัญญาณ | G1–G3 | `analysis/signals.py`, `configs/detection.yaml` | `signal_events`, `signal_summary`, view `v_signal_list` (= ตาราง 18; ดูไฟล์นี้บรรทัด Hot Events) | ✅ รันแล้ว 2026-10-11; สร้างใหม่ 2026-11-11 (Z + ความรู้สึกทั้งตลาด, 86,978 สัญญาณที่ z 1.5 / s 0.05) |
 | 7.5 dashboard | D0, D3, D4 | `dashboard/app.py` (เมนูแท็บ), `dashboard/home.py`, `dashboard/data.py`, `dashboard/common.py`, `dashboard/pages/4_*.py`, `5_*.py` | — | ✅ รันแล้ว 2026-10-11 (เปิดด้วย `streamlit run dashboard/app.py`) |
 | ลำดับรัน + ตรวจ proposal | — | `steps/00_*.py` ถึง `26_*.py` (ตัวเรียกมีเลขลำดับ), `scripts/check_proposal_coverage.py` | `output/reports/proposal_coverage.md` | ✅ 2026-10-11 |
 | ตัวเลข/กราฟลงเล่ม | — | `scripts/make_book_tables.py` (step 31) | `output/tables/t1..t12_*.csv` (t10, t11 = ตัวอย่างตรวจกฎรวมผล ไม่มีข้อความ Reddit; t12 = ตัวเลขเดี่ยวที่อ้างในข้อความ 7.4), `output/figures/book_*.png` | ✅ ร่างแรก 2026-10-25 (ผู้ใช้ปรับรูปแบบต่อ) |
