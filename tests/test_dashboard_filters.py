@@ -460,24 +460,30 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(len(at.exception), 0)
 
     def test_hot_events_score_and_levels_are_set_by_the_user_and_the_sidebar_still_filters(self):
-        """Every measure has one threshold and points; the points a signal earns add up and the total decides low / medium / high.  A stricter threshold or
-        a higher cut lists fewer signals, cuts out of order stop the table, the reset button brings the defaults back, the sidebar still filters first."""
+        """Every measure has one threshold and points; the points a signal earns add up and the total decides low / medium / high.  Nothing changes until
+        the button Apply is pressed; a stricter threshold or a higher cut lists fewer signals, cuts out of order stop the table, the reset button brings the
+        defaults back, the sidebar still filters first."""
         at = self.run_page("pages/8_Hot_Events.py")
         base = at.metric[0].value
         self.assertNotIn("h_wh", [r.key for r in at.radio])                                 # no horizon of the Win Rate to pick: the statistics are those of the same hour
-        at.number_input(key="hs_rz_t").set_value(3.5).run()                                 # a stricter threshold: fewer signals earn the 3 points of the volume
+        self.assertEqual(at.number_input(key="hs_cut_high").value, 8.0)                     # the default of the level high
+        at.number_input(key="hs_rz_t").set_value(3.5).run()                                 # typed, not applied yet: the numbers below do not move
+        self.assertEqual(at.metric[0].value, base)
+        at.number_input(key="hs_rz_t").set_value(3.5)
+        at.button(key="h_apply").click().run()                                              # applied: a stricter threshold, fewer signals earn the 3 points of the volume
         self.assertNotEqual(at.metric[0].value, base)
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
-        at.number_input(key="hs_cut_low").set_value(9.0).run()                              # low above medium: the cuts are out of order
+        at.number_input(key="hs_cut_low").set_value(9.0)
+        at.button(key="h_apply").click().run()                                              # low above medium: the cuts are out of order
         self.assertTrue(any("เรียงจากน้อยไปมาก" in i.value for i in at.info))
         at.button(key="h_level_reset").click().run()
         self.assertEqual(at.metric[0].value, base)                                          # the defaults are back
         at.sidebar.slider(key="d_v").set_value(1500).run()                                  # the sidebar thresholds filter the hours before the points
         self.assertNotEqual(at.metric[0].value, base)
         keys = [n.key for n in at.number_input]
-        for metric in ("rz", "mr", "ss", "sm", "tz", "na", "cr"):      # every KPI of the proposal that is known in the hour has a threshold and points
+        for metric in ("rz", "mr", "ss", "sm", "tz", "na", "cr"):                            # every KPI of the proposal that is known in the hour has a threshold and points
             self.assertIn("hs_%s_t" % metric, keys)
-        self.assertNotIn("hs_wr_p", [n.key for n in at.number_input])                       # no statistic of the whole history is a point (look-ahead)
+        self.assertNotIn("hs_wr_p", keys)                                                   # no statistic of the whole history is a point (look-ahead)
         for row in at.dataframe:
             if "ระดับ" in row.value.columns and "คะแนน" in row.value.columns:
                 self.assertNotIn("ชนิด", row.value.columns)                                  # no signal type any more

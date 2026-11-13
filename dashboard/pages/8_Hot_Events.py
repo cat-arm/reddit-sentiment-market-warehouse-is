@@ -59,7 +59,7 @@ METRICS = [("rz", "Reddit Volume Z-score (ทั้งตลาด) >", 1.5, 3, 
 # (key, label, default threshold, default points, step); the default points add up to 10.  Only KPIs written in the proposal (the measure tables of the dashboards) and known in
 # the hour itself or from the hours before it; no statistic of the whole history (Spearman, Win Rate ...) is a point, because it could not be known when the signal appeared
 # (look-ahead): those stay as columns beside the signal.
-DEFAULT_CUTS = {"low": 3, "medium": 5, "high": 7}                                      # the total points a signal needs for the level (of 10)
+DEFAULT_CUTS = {"low": 3, "medium": 5, "high": 8}                                      # the total points a signal needs for the level (of 10)
 
 
 def reset_scoring():
@@ -80,23 +80,27 @@ st.caption("แต่ละตัวชี้วัดมี **เกณฑ์�
            "(เช่น คะแนนเต็ม 10 ผลรวมตั้งแต่ 8 = high)  เว้นเกณฑ์ว่างหรือใส่คะแนน 0 = ไม่ใช้ตัวชี้วัดนั้น  \n"
            "คะแนนมาจาก KPI ที่เขียนไว้ใน proposal (Reddit Volume Z-score, Ticker Mention Rate, Sentiment Score และ Momentum, Trading Volume Z-score, Normalized ATR, Current Return) ซึ่งรู้ ณ ชั่วโมงนั้นและย้อนหลังเท่านั้น (Z-score เทียบ 24 ชั่วโมงก่อนหน้า) ไม่ใช้สถิติย้อนหลังทั้งช่วง (Win Rate, Spearman, Pearson) เพราะตอนที่สัญญาณเกิดยังรู้ค่าเหล่านั้นไม่ได้ ค่าเหล่านั้นแสดงเป็นคอลัมน์ประกอบการตีความ  \n"
            "ตัวกรองด้านซ้าย (รวมสองเกณฑ์ Reddit Volume / Sentiment Threshold) ยังทำงานเหมือนเดิม คือกรองชั่วโมงและข้อความออกก่อน แล้วค่อยให้คะแนน  \n"
-           "สัญญาณที่ได้คะแนนไม่ถึงระดับ low จะไม่ถูกแสดง ค่าเริ่มต้นตั้งตามการกระจายของข้อมูลจริง")
+           "สัญญาณที่ได้คะแนนไม่ถึงระดับ low จะไม่ถูกแสดง ค่าเริ่มต้นตั้งตามการกระจายของข้อมูลจริง (low ≥ 3, medium ≥ 5, high ≥ 8)")
 with st.expander("เกณฑ์ คะแนน และระดับ", expanded=True):
-    head = st.columns([4, 2, 2])
-    head[0].markdown("**ตัวชี้วัด**")
-    head[1].markdown("**เกณฑ์ (ผ่านเมื่อค่า >)**")
-    head[2].markdown("**คะแนนที่ได้**")
-    for m, label, _, _, step in METRICS:
-        row = st.columns([4, 2, 2])
-        row[0].write(label)
-        row[1].number_input(label + " เกณฑ์", value=None, step=step, key="hs_%s_t" % m, placeholder="ไม่ใช้", label_visibility="collapsed")
-        row[2].number_input(label + " คะแนน", min_value=0.0, step=0.5, key="hs_%s_p" % m, label_visibility="collapsed")
-    total = sum(float(state["hs_%s_p" % m]) for m, *_ in METRICS if state.get("hs_%s_t" % m) is not None)
-    st.markdown("**คะแนนเต็ม = %g** (รวมคะแนนของตัวชี้วัดที่ใช้)  ระดับต้องการคะแนนรวมตั้งแต่:" % total)
-    cuts_row = st.columns(3)
-    for col, lv in zip(cuts_row, LEVELS):
-        col.number_input(lv, min_value=0.0, step=0.5, key="hs_cut_" + lv)
-    st.button("คืนค่าเริ่มต้น", on_click=reset_scoring, key="h_level_reset")
+    with st.form("h_score_form", border=False):                                       # nothing below changes until the button Apply is pressed
+        head = st.columns([4, 2, 2])
+        head[0].markdown("**ตัวชี้วัด**")
+        head[1].markdown("**เกณฑ์ (ผ่านเมื่อค่า >)**")
+        head[2].markdown("**คะแนนที่ได้**")
+        for m, label, _, _, step in METRICS:
+            row = st.columns([4, 2, 2])
+            row[0].write(label)
+            row[1].number_input(label + " เกณฑ์", value=None, step=step, key="hs_%s_t" % m, placeholder="ไม่ใช้", label_visibility="collapsed")
+            row[2].number_input(label + " คะแนน", min_value=0.0, step=0.5, key="hs_%s_p" % m, label_visibility="collapsed")
+        total = sum(float(state["hs_%s_p" % m]) for m, *_ in METRICS if state.get("hs_%s_t" % m) is not None)
+        st.markdown("**คะแนนเต็ม = %g** (ของเกณฑ์ที่ใช้อยู่ตอนนี้)  ระดับต้องการคะแนนรวมตั้งแต่:" % total)
+        cuts_row = st.columns(3)
+        for col, lv in zip(cuts_row, LEVELS):
+            col.number_input(lv, min_value=0.0, step=0.5, key="hs_cut_" + lv)
+        apply_col, reset_col, _ = st.columns([2, 2, 6])
+        apply_col.form_submit_button("ใช้เกณฑ์นี้ (Apply)", type="primary", key="h_apply")
+        reset_col.form_submit_button("คืนค่าเริ่มต้น", on_click=reset_scoring, key="h_level_reset")
+    st.caption("แก้เกณฑ์ คะแนน หรือระดับแล้วกด **ใช้เกณฑ์นี้ (Apply)** เกณฑ์จึงจะทำงานกับการ์ดและตารางด้านล่าง (ยังไม่กด ตัวเลขด้านล่างยังเป็นของเกณฑ์เดิม)")
 
 horizon, column = "Current Return", "log_return"                          # the statistics beside a signal are those of the same hour (Current Return); no horizon to pick
 rules = {m: (float(state["hs_%s_t" % m]), float(state["hs_%s_p" % m])) for m, *_ in METRICS if state.get("hs_%s_t" % m) is not None and float(state["hs_%s_p" % m]) > 0}
