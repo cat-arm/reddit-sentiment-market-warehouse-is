@@ -269,7 +269,7 @@ class FilterTests(unittest.TestCase):
         """Same filters as Market and Sentiment and every one changes the numbers: the time range changes the p-values, two tickers = two
         tickers, nothing ticked = cards 0; every kind of text and both families open."""
         at = self.run_page(RANKING_PAGE)
-        self.assertEqual([m.label for m in at.metric], ["Historical Win Rate", "Spearman p-value", "Pearson p-value", "Logistic AUC"])
+        self.assertEqual([m.label for m in at.metric], ["Historical Win Rate", "Spearman p-value", "Pearson p-value", "Logistic AUC"] * 2)      # two rows: Global, Ticker
         full = [m.value for m in at.metric]
         self.assertRegex(full[0], r"^\d+\.\d%$")
         for view in at.radio(key="p5_measure_all").options:                                 # the three measures (value and p-value in one cell)
@@ -291,14 +291,18 @@ class FilterTests(unittest.TestCase):
         self.assertFalse(any("Z-score เกิน" in c.value for c in at.sidebar.caption), "no texts-per-hour hint under the Z-score slider (it misled: the Z-score is relative to each hour)")
         at.sidebar.slider(key="d_v").set_value(0)
         self.assertEqual(at.radio(key="p5_family_all").value, "global")                    # the default: the sentiment of the whole market
-        at.radio(key="p5_family_all").set_value("Ticker").run()
+        self.assertEqual(len(at.radio(key="p5_family_all").options), 3)
+        for family in ("Ticker", "global"):                                                  # every kind of text of both families opens; a fixed panel does not move the sidebar
+            at.radio(key="p5_family_all").set_value(family).run()
+            for panel in ("all", "strong", "quality", "spike"):
+                at.radio(key="p5_panel").set_value(panel).run()
+                self.assertEqual(len(at.exception), 0, "%s %s: %s" % (family, panel, [e.value for e in at.exception]))
+                self.assertEqual((at.sidebar.slider(key="d_v").value, at.sidebar.slider(key="d_s").value), (0, 0.0), (family, panel))
+        at.radio(key="p5_family_all").set_value("baseline").run()                            # the random baseline: no kind of text
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
-        at.radio(key="p5_family_all").set_value("global")
-        for panel, (z_cut, s_cut) in (("strong", (0, 0.05)), ("quality", (0, 0.30)), ("all", (0, 0.0))):   # a panel moves the sidebar thresholds
-            at.radio(key="p5_panel").set_value(panel).run()
-            self.assertEqual(len(at.exception), 0, "%s: %s" % (panel, [e.value for e in at.exception]))
-            self.assertEqual((at.sidebar.slider(key="d_v").value, at.sidebar.slider(key="d_s").value), (z_cut, s_cut), panel)
-        self.assertNotIn("baseline", at.radio(key="p5_panel").options)                      # the random baseline is not a view
+        self.assertNotIn("p5_panel", [r.key for r in at.radio])
+        at.radio(key="p5_family_all").set_value("global").run()
+        at.radio(key="p5_panel").set_value("all").run()
         # the time range is a filter of the p-values
         at.sidebar.date_input(key="f_range").set_value((dt.date(2026, 3, 1), dt.date(2026, 3, 31))).run()
         self.assertEqual(len(at.exception), 0)

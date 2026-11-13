@@ -3,9 +3,10 @@ horizon; the figures a1_*, a2_*, a3_* of output/figures made interactive).
 
 Same filters as Market and Sentiment (table 17): time, assets, sentiment source (communities, model), the two thresholds, majority
 status.  EVERY number is computed live on the ticker-hours the filters leave, so changing the time range changes the p-values:
-  * the panels of table 12 (all / strong / quality / spike) are a radio that MOVES the two thresholds of the sidebar to that panel's cut (the
-    numbers follow; the Sentiment Threshold filters the TEXTS, in steps of 0.05, from the variants of `reddit_hourly_community`); no baseline view; the sentiment of the whole market (Global) or of the texts that mention the asset itself (Ticker);
-    the per-text panels and the random baseline are in analysis_results and the figures a1_*, a2_*;
+  * the nine panels of table 12 in two layers: Global / Ticker / Baseline, then the kind of text (all / strong / quality / spike).  The two panels
+    "all" follow every filter of the sidebar (also the Reddit Volume Threshold and the Sentiment Threshold); the other seven (strong, quality, spike
+    of both families and the random baseline) use their own fixed cut of table 12 and ignore those two thresholds (the other filters apply).  The
+    cards (two rows: Global, Ticker) are the two panels "all";
   * a switch for how the sentiment is read: the score or the majority status (+ / -);
   * a heat map asset x horizon of the Spearman / Pearson correlation or the Win Rate (value, n, a star when the
     Benjamini-Hochberg p < 0.05) and the table of the p-values behind it;
@@ -65,33 +66,42 @@ def stat(family, variant):
                       tuple(content_types), predictor, v_th)
 
 
-# ---- cards: the default panel (every text of the market), future horizons only ---------------------------------
-stat_all = stat("global", "all")
-base = stat_all[stat_all.target != "log_return"]
-hits, wins = base.win_hits.sum(), base.win_n.sum()
-win_p = stats.binomtest(int(hits), int(wins), 0.5).pvalue if wins else np.nan
+# ---- cards: two rows, the panel Global and the panel Ticker (every text; the filters of the sidebar apply), future horizons only ---------------------
 logi = q("logistic_results")
-logi_ok = logi[(logi.status == "ok") & (logi.panel == "panel_global") & (logi.metric == "auc")]
-auc = logi_ok[(logi_ok.level == "all")] if len(groups_chosen) > 1 else logi_ok[(logi_ok.level == "big_group") & (logi_ok.big_group == groups_chosen[0])]
-auc = auc[auc.horizon != "log_return"]                  # the prediction of the future only, like the other cards
 
 
-def p_card(column, label):
-    p = base[column].dropna()
-    n_sig, n_tests = data.significant_share(base, column)
-    return (label, "n/a" if p.empty else "{:.3f}".format(p.median()),
-            "ค่ากลางของ p-value ทุกคู่ (สินทรัพย์ × Horizon ล่วงหน้า) ที่เลือก โดย p ต่ำกว่า 0.05 ใน %d จาก %d คู่ (ก่อนปรับ BH)  \n"
-            "หากความรู้สึกไม่เกี่ยวกับราคา ค่ากลางควรอยู่ราว 0.5" % (n_sig, n_tests))
+def card_row(family):
+    """The four cards of one panel (Global: the sentiment of the whole market against every asset; Ticker: only the texts that mention the asset)."""
+    frame = stat(family, "all")
+    base = frame[frame.target != "log_return"]
+    hits, wins = base.win_hits.sum(), base.win_n.sum()
+    win_p = stats.binomtest(int(hits), int(wins), 0.5).pvalue if wins else np.nan
+    logi_ok = logi[(logi.status == "ok") & (logi.panel == "panel_" + family) & (logi.metric == "auc")]
+    auc = logi_ok[(logi_ok.level == "all")] if len(groups_chosen) > 1 else logi_ok[(logi_ok.level == "big_group") & (logi_ok.big_group == groups_chosen[0])]
+    auc = auc[auc.horizon != "log_return"]                  # the prediction of the future only, like the other cards
+
+    def p_card(column, label):
+        p = base[column].dropna()
+        n_sig, n_tests = data.significant_share(base, column)
+        return (label, "n/a" if p.empty else "{:.3f}".format(p.median()),
+                "ค่ากลางของ p-value ทุกคู่ (สินทรัพย์ × Horizon ล่วงหน้า) ที่เลือก โดย p ต่ำกว่า 0.05 ใน %d จาก %d คู่ (ก่อนปรับ BH)  \n"
+                "หากความรู้สึกไม่เกี่ยวกับราคา ค่ากลางควรอยู่ราว 0.5" % (n_sig, n_tests))
+
+    common.kpi_cards([
+        ("Historical Win Rate", "n/a" if not wins else "{:.1f}%".format(100.0 * hits / wins),
+         "สัดส่วนชั่วโมงที่ทิศทางของความรู้สึกตรงกับทิศทางผลตอบแทนอนาคต (ทุก Horizon รวมกัน)  \n50%% เท่ากับการสุ่ม  \np-value ของทั้งชุดเท่ากับ %s"
+         % ("n/a" if np.isnan(win_p) else "{:.3f}".format(win_p))),
+        p_card("spearman_p", "Spearman p-value"), p_card("pearson_p", "Pearson p-value"),
+        ("Logistic AUC", "n/a" if auc.empty else "{:.3f}".format(auc.value.mean()),
+         "AUC เฉลี่ยทุก Horizon ของ Logistic Regression (ผลเต็มช่วงข้อมูลของระบบ 7.4 ของกลุ่มสินทรัพย์ที่เลือก ไม่เปลี่ยนตามเวลา)  \n0.5 เท่ากับการสุ่ม")])
+    return frame
 
 
-common.kpi_cards([
-    ("Historical Win Rate", "n/a" if not wins else "{:.1f}%".format(100.0 * hits / wins),
-     "สัดส่วนชั่วโมงที่ทิศทางของความรู้สึกตรงกับทิศทางผลตอบแทนอนาคต (ทุก Horizon รวมกัน)  \n50%% เท่ากับการสุ่ม  \np-value ของทั้งชุดเท่ากับ %s"
-     % ("n/a" if np.isnan(win_p) else "{:.3f}".format(win_p))),
-    p_card("spearman_p", "Spearman p-value"), p_card("pearson_p", "Pearson p-value"),
-    ("Logistic AUC", "n/a" if auc.empty else "{:.3f}".format(auc.value.mean()),
-     "AUC เฉลี่ยทุก Horizon ของ Logistic Regression (ผลเต็มช่วงข้อมูลของระบบ 7.4 ของกลุ่มสินทรัพย์ที่เลือก ไม่เปลี่ยนตามเวลา)  \n0.5 เท่ากับการสุ่ม")])
-st.caption("การ์ดคิดจาก panel Global ทุกข้อความ (ความรู้สึกรวมของทั้งตลาด เทียบกับผลตอบแทนของแต่ละสินทรัพย์ที่เลือก) ของชั่วโมงที่ผ่านตัวกรองทุกอัน  ค่า p-value เป็นเชิงพรรณนา "
+st.markdown("**Panel Global** (ความรู้สึกรวมของทั้งตลาด เทียบกับผลตอบแทนของแต่ละสินทรัพย์ที่เลือก)")
+stat_all = card_row("global")
+st.markdown("**Panel Ticker** (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้นโดยตรง)")
+stat_ticker = card_row("Ticker")
+st.caption("การ์ดทั้งสองแถวคิดจาก panel ทุกข้อความของชั่วโมงที่ผ่านตัวกรองทุกอัน (รวม Reddit Volume Threshold และ Sentiment Threshold ในแถบซ้าย)  ค่า p-value เป็นเชิงพรรณนา "
            "เพราะข้อมูลรายชั่วโมงเกี่ยวเนื่องกันและกรอบเวลาซ้อนทับกัน")
 
 
@@ -299,32 +309,27 @@ st.radio("วัดความรู้สึกด้วย", list(PREDICTOR_O
 st.caption("proposal 7.4 เทียบทิศทางของทั้งคะแนนความรู้สึก (sentiment_mean) และประเภทความรู้สึกส่วนใหญ่ (majority_final_status)  \n"
            "แบบ majority ไม่ใช้คะแนน ใช้แค่ บวก (+1) ลบ (−1) หรือเป็นกลาง (0 = ไม่มีทิศทาง ไม่นับใน Win Rate)  การ์ด แท็บ และตารางจัดอันดับเปลี่ยนตามตัวเลือกนี้")
 
-# ---- the panels of table 12 as tabs: a click moves the Z-score / Sentiment thresholds of the sidebar to that panel's cut, the numbers follow ---------------
-PRESETS = {"all": (0, 0.0), "strong": (0, 0.05), "quality": (0, 0.30)}       # (Reddit Volume Threshold, absolute Sentiment Threshold); "spike" (Z > 1.5) has no slider any more
-PANELS = {k: v for k, v in data.PANEL_VARIANTS.items() if k not in ("baseline", "spike")}                                 # no random baseline view (the default of the Win Rate is 50%)
-
-
-def apply_preset():
-    if st.session_state["p5_panel"] in PRESETS:                                  # a click moves the sliders
-        st.session_state["d_z"] = 0.0
-        st.session_state["d_v"], st.session_state["d_s"] = PRESETS[st.session_state["p5_panel"]]
-        st.session_state["d_mode"] = "absolute"
-
-
-# the other way round: the radio always shows what the sliders say (the panel whose cut they match, else nothing is selected)
-now = (int(st.session_state.get("d_v", 0)), s_th if not isinstance(s_th, str) else None)       # the signed cut (a name) matches no panel
-if round(float(st.session_state.get("d_z", 0.0)), 2) != 0.0:
-    now = None
-st.session_state["p5_panel"] = next((k for k, v in PRESETS.items() if v == now), None)
-
-
-st.radio("ชนิดข้อความ (panel ตามตาราง 12)", list(PANELS), format_func=PANELS.get, horizontal=True, key="p5_panel", on_change=apply_preset, index=None)
-st.caption("กดเลือก panel แล้วแถบเกณฑ์ด้านซ้ายจะเลื่อนตาม ถ้าเลื่อนแถบเองปุ่มจะเปลี่ยนตาม (ไม่ตรงกับ panel ไหน = ไม่เลือกปุ่มใดเลย)  \n"
-           "ชัดเจน = absolute 0.05, คุณภาพ = absolute 0.30, ทุกข้อความ = ไม่กรอง (panel ปริมาณพุ่ง Z > 1.5 ของตาราง 12 ไม่มีแถบเลื่อนแล้ว ดูในตาราง analysis_results)  \n"
-           "Sentiment Threshold กรอง**ทีละข้อความ**ก่อน (ทิ้งคอมเมนต์ที่ |ความรู้สึก| ต่ำกว่าเกณฑ์) แล้วค่อยเฉลี่ยเป็นความรู้สึกของแต่ละชั่วโมง ตรงกับ panel strong / quality ของตาราง 12 ส่วน Reddit Volume Threshold กรอง**ทั้งชั่วโมง**  \n"
-           "Baseline ทิศทางสุ่มอยู่ในรูป a1_*, a2_* และตาราง analysis_results")
-family = st.radio("ข้อความที่ใช้", list(data.PANEL_FAMILIES), format_func=data.PANEL_FAMILIES.get, horizontal=True, key="p5_family_all")
-panel_view(stat_all if family == "global" else stat(family, "all"), "all")
+# ---- the nine panels of table 12 in two layers: the family (Global / Ticker / Baseline), then the kind of text (all / strong / quality / spike) ------------
+FAMILIES = {"global": "Global (ความรู้สึกรวมของทั้งตลาด)", "Ticker": "Ticker (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น)", "baseline": "Baseline ทิศทางสุ่ม"}
+KINDS = {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}
+family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="p5_family_all")
+if family == "baseline":
+    kind = "baseline"
+else:
+    kind = st.radio("ชนิดข้อความ", list(KINDS), format_func=KINDS.get, horizontal=True, key="p5_panel")
+if family != "baseline" and kind == "all":
+    chosen = stat_all if family == "global" else stat_ticker                       # the panels that follow the sidebar: the cards above
+    st.caption("panel นี้ตามตัวกรองด้านซ้ายทุกอัน รวม Reddit Volume Threshold และ Sentiment Threshold (กรอง**ทีละข้อความ**ก่อนเฉลี่ยเป็นความรู้สึกรายชั่วโมง ส่วน Volume กรอง**ทั้งชั่วโมง**)")
+else:                                                                              # the fixed panels: their own cut of table 12, whatever the two thresholds of the sidebar say
+    chosen = common.panel_stat("global" if family == "baseline" else family, kind, tuple(tickers), start, end, tuple(communities), model, tuple(statuses),
+                               0.0, 0.0, tuple(content_types), predictor, 0)
+    if kind == "baseline":
+        st.caption("**Baseline ทิศทางสุ่ม** คือเส้นเทียบ: เอาชั่วโมงเดียวกับ panel Global แต่ **โยนเหรียญแทนความรู้สึก** (ทิศทางบวก/ลบสุ่ม ด้วยเมล็ดตายตัว จึงได้ค่าเดิมทุกครั้ง) ถ้าความรู้สึกจริงช่วยทำนายราคาได้ "
+                   "Win Rate ของ panel อื่นต้องสูงกว่า Baseline อย่างชัดเจน ส่วน Baseline เองควรอยู่ราว 50% และสหสัมพันธ์ใกล้ 0 (ถ้าไม่ใช่ แปลว่าราคาเองมีแนวโน้มที่ทำให้ Win Rate เบี่ยง ไม่ใช่เพราะความรู้สึก)  \n"
+                   "panel นี้ใช้เกณฑ์ตายตัว ไม่ตาม Reddit Volume Threshold และ Sentiment Threshold ด้านซ้าย (ตัวกรองอื่นยังมีผล)")
+    else:
+        st.caption("panel นี้ใช้เกณฑ์ตายตัวของตาราง 12 (%s) ไม่ตาม Reddit Volume Threshold และ Sentiment Threshold ด้านซ้าย ตัวกรองอื่น (ช่วงเวลา สินทรัพย์ ชุมชน โมเดล ประเภทข้อความ ความรู้สึกส่วนใหญ่) ยังมีผล" % KINDS[kind])
+panel_view(chosen, "all")
 
 
 # ---- the ranking of the assets (proposal 7.5 dashboard 2): the panel Global (every text of the market) after every filter, sortable --------------
