@@ -816,8 +816,8 @@ def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, s
     `base` = `sentiment_frame` of ALL the texts of the family (series = the tickers for the family 'Ticker', the one series 'ALL'
     for 'global'); `own` = the same for the texts of the variant ('strong' / 'quality'), else None; `returns` = DataFrame(ticker,
     hour_utc, log_return, future_return_*).
-    The predictor is the Sentiment Score of the variant's texts (per-text filter, as in `reddit_hourly`); the Volume Z-score and the
-    majority status are always those of ALL the texts of the hour.  An hour is kept when its majority status is in `statuses`, it passes
+    The predictor is the Sentiment Score of the variant's texts (per-text filter, as in `reddit_hourly`) and, for the majority predictor, the
+    majority status of those same texts (the stored panels read `majority_final_status` of the variant too); the Volume Z-score is always that of ALL the texts of the hour.  An hour is kept when its majority status is in `statuses`, it passes
     `threshold_mask` (Z-score above `z_min`, |predictor| at least `s_min`; 0 = off) and has a predictor; the variant 'spike' also
     needs a Z-score above `spike_z` (that ticker's own volume, or the volume of the whole market for 'global'; `own_zscore`).
     `z_min` judges `zscore`: the Z-score the frames carry (the whole market's when they were built with `market`).  'global' uses the
@@ -836,8 +836,8 @@ def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, s
         if missing not in b:
             b[missing] = np.inf if missing == "texts" else np.nan
     if own is not None and variant in ("strong", "quality"):
-        v = own[[c for c in cols if c in own and c in ("series", "hour_utc", "sentiment_mean", "texts", "momentum")]].rename(columns={"series": "ticker"})
-        b = b.drop(columns=[c for c in ("sentiment_mean", "texts", "momentum") if c in v]).merge(v, on=["ticker", "hour_utc"], how="left")
+        v = own[[c for c in cols if c in own and c in ("series", "hour_utc", "sentiment_mean", "texts", "momentum", "majority")]].rename(columns={"series": "ticker"})
+        b = b.drop(columns=[c for c in ("sentiment_mean", "texts", "momentum", "majority") if c in v]).merge(v, on=["ticker", "hour_utc"], how="left")
     b["predictor"] = b.sentiment_mean if predictor == "sentiment_mean" else b.majority.map({"positive": 1.0, "negative": -1.0, "neutral": 0.0})
     keep = (b.majority.isin(statuses) & threshold_mask(b, z_min, s_min, v_min=v_min) & b.sentiment_mean.notna() & b.predictor.notna())
     if variant == "spike":

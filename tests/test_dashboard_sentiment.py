@@ -327,6 +327,16 @@ class ExtensionFilterTests(unittest.TestCase):
         self.assertEqual(list(majority.predictor), [1.0, -1.0, 0.0, 1.0])                             # + / - / 0, no score
         self.assertEqual(list(majority.hour_utc), [0, 3600, 7200, 10800])                             # the hour without text is not a sample
 
+    def test_a_strong_panel_reads_the_majority_of_its_own_texts(self):
+        """The panels strong / quality filter the texts first: both the score and the majority come from the texts that stay (as the stored panels do)."""
+        hours = [i * 3600 for i in range(3)]
+        base = pd.DataFrame({"series": "AAA", "hour_utc": hours, "zscore": 0.0, "majority": ["neutral", "neutral", "neutral"],
+                             "sentiment_mean": [0.01, 0.02, 0.03], "texts": [10, 10, 10], "momentum": np.nan})
+        own = pd.DataFrame({"series": "AAA", "hour_utc": hours[:2], "majority": ["positive", "negative"], "sentiment_mean": [0.4, -0.5], "texts": [3, 4], "momentum": np.nan})
+        returns = pd.DataFrame({"ticker": "AAA", "hour_utc": hours, "log_return": np.arange(3.0)})
+        samples = data.panel_samples(base, own, returns, "Ticker", "strong", ("positive", "negative", "neutral"), 0.0, 0.0, predictor="majority")
+        self.assertEqual(list(samples.predictor), [1.0, -1.0])                  # not the neutral majority of ALL the texts; the hour with no strong text has no sample
+
     def test_a_neutral_majority_has_no_direction_in_the_win_rate(self):
         samples = pd.concat([self.panel("majority")] * 20, ignore_index=True)
         for col in ("future_return_1h", "future_return_2h", "future_return_3h", "future_return_6h", "future_return_12h"):
