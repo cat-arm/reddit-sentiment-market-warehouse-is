@@ -15,11 +15,9 @@ SPIKE_PAGE = "pages/4_Price_and_Reddit.py"                                     #
 SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", SPIKE_PAGE}   # system 7.1: DimSource filter
 SENTIMENT_PAGE = "pages/5_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
 RANKING_PAGE = "pages/6_Statistical_Analysis.py"                              # 7.5-2: p-values, win rate, regression
-ANALYSIS_PAGE = "pages/7_Lead_and_Lag.py"                                      # extension: who moves first
-DETECTION_PAGES = {"pages/8_Hot_Events.py": ["d_v", "d_mode", "d_s"], SENTIMENT_PAGE: ["d_v", "d_mode", "d_s"], RANKING_PAGE: ["d_v", "d_mode", "d_s"],
-                   ANALYSIS_PAGE: ["d_v", "d_mode", "d_s"]}
-MAJORITY_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE, *DETECTION_PAGES}
-SENTIMENT_PAGES = {SENTIMENT_PAGE, RANKING_PAGE, ANALYSIS_PAGE, "pages/8_Hot_Events.py"}      # page 7 takes the same sentiment source as page 5
+DETECTION_PAGES = {"pages/8_Hot_Events.py": ["d_v", "d_mode", "d_s"], SENTIMENT_PAGE: ["d_v", "d_mode", "d_s"], RANKING_PAGE: ["d_v", "d_mode", "d_s"]}
+MAJORITY_PAGES = {SENTIMENT_PAGE, *DETECTION_PAGES}
+SENTIMENT_PAGES = {SENTIMENT_PAGE, RANKING_PAGE, "pages/8_Hot_Events.py"}
 COUNT_PAGES = (SOURCE_PAGES - {SPIKE_PAGE}) | {"pages/3_Price_and_Return.py"}                  # first card = a count that follows the ticks
 TIME_KEYS = ["f_range", "f_gran"]
 COMMUNITIES = ["r/wallstreetbets", "r/stocks", "r/investing", "r/StockMarket", "r/options", "r/CryptoCurrency"]
@@ -31,7 +29,7 @@ TICKERS = ["AAPL", "AMC", "AMD", "BITO", "BRK-B", "COIN", "GME", "HOOD", "IBIT",
            "MSTR", "NVDA", "PLTR", "QQQ", "SPY", "TSLA", "XOM", "CL=F", "ES=F", "GC=F", "NG=F", "NQ=F", "RTY=F",
            "BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD", "SOL-USD", "XRP-USD"]
 PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py", SPIKE_PAGE,
-         "pages/5_Market_and_Sentiment.py", RANKING_PAGE, ANALYSIS_PAGE,
+         "pages/5_Market_and_Sentiment.py", RANKING_PAGE,
          "pages/8_Hot_Events.py"]
 MULTI_PAGES = set(PAGES[1:])                                                  # every dashboard takes several tickers
 
@@ -126,7 +124,7 @@ class FilterTests(unittest.TestCase):
         at.sidebar.radio(key="f_ss_model").set_value("VADER")
         at.sidebar.checkbox(key="f_tk_SPY").set_value(False)
         at.sidebar.radio(key="f_gran").set_value("รายเดือน").run()
-        for other in ("pages/3_Price_and_Return.py", RANKING_PAGE, "pages/1_Reddit_Volume.py", ANALYSIS_PAGE):
+        for other in ("pages/3_Price_and_Return.py", RANKING_PAGE, "pages/1_Reddit_Volume.py"):
             at = at.switch_page(other).run()
             self.assertEqual(len(at.exception), 0, "%s raised %s" % (other, [e.value for e in at.exception]))
             self.assertFalse(at.sidebar.checkbox(key="f_tk_SPY").value, other)           # a filter shared by the pages stays
@@ -138,7 +136,7 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(at.sidebar.radio(key="f_ss_model").value, "VADER")
         self.assertFalse(at.sidebar.checkbox(key="f_tk_SPY").value)
         self.assertEqual(at.sidebar.radio(key="f_gran").value, "รายเดือน")
-        at = at.switch_page(ANALYSIS_PAGE).run()                                         # two pages that both draw the model radio
+        at = at.switch_page(RANKING_PAGE).run()                                          # two pages that both draw the model radio
         self.assertEqual(at.sidebar.radio(key="f_ss_model").value, "VADER")
 
     def test_every_source_box_starts_ticked_and_changes_the_numbers(self):
@@ -347,22 +345,6 @@ class FilterTests(unittest.TestCase):
         at = tick_only(at, ["SPY", "QQQ"])
         self.assertEqual(len(at.exception), 0)
         self.assertEqual(len([d for d in at.dataframe if "p ต่ำสุด" in list(d.value.columns)]), 0)       # no separate table of p-values any more
-        for key in TICKERS:
-            at.sidebar.checkbox(key="f_tk_" + key).set_value(False)
-        at = at.run()
-        self.assertEqual([m.value for m in at.metric], ["0"] * 3)
-
-    def test_lead_and_lag_page(self):
-        """The live analysis follows every filter; nothing ticked = cards 0."""
-        at = self.run_page(ANALYSIS_PAGE)
-        self.assertEqual(len(at.metric), 3)
-        full = [m.value for m in at.metric]
-        for hours in ("2 ชั่วโมงก่อนหน้า", "12 ชั่วโมงก่อนหน้า"):
-            at.radio(key="s_past_hours").set_value(hours).run()
-            self.assertEqual(len(at.exception), 0, hours)
-        at = tick_only(at, ["SPY"])
-        self.assertEqual(len(at.exception), 0)
-        self.assertNotEqual([m.value for m in at.metric], full)
         for key in TICKERS:
             at.sidebar.checkbox(key="f_tk_" + key).set_value(False)
         at = at.run()

@@ -121,20 +121,6 @@ def collect(db):
     futures = logistic[(logistic.status == "ok") & (logistic.panel == "panel_global") & (logistic.metric == "auc") & (logistic.level == "big_group") & (logistic.big_group == "futures")]
     out["p5_logistic_futures_auc"] = {r.horizon: round(float(r.value), 4) for r in futures.itertuples()}
 
-    # page 6: cards and the bars of the chart
-    out["p6"] = {}
-    for z in (0.0, 1.5):
-        cards, _, at = run_page("7_Lead_and_Lag.py", FULL, DAILY, ONE, full=True, d_z=z, d_s=0.0)
-        bars = [f for mark, f in chart_frames(at) if mark == "bar" and f is not None and {"lag", "rho"} <= set(f.columns)]
-        out["p6"]["z=%.1f" % z] = {"cards": cards, "lags": [{"lag": int(r.lag), "rho": round(float(r.rho), 3), "n": int(r.n)} for r in bars[0].itertuples()] if bars else None}
-
-    # the same page for BTC-USD, the asset whose bars carry enough hours to read (an optional switch in the demo)
-    out["p6_btc"] = {}
-    for z in (0.0, 1.5):
-        cards, _, at = run_page("7_Lead_and_Lag.py", FULL, DAILY, {"BTC-USD"}, full=True, d_z=z, d_s=0.0)
-        bars = [f for mark, f in chart_frames(at) if mark == "bar" and f is not None and {"lag", "rho"} <= set(f.columns)]
-        out["p6_btc"]["z=%.1f" % z] = {"cards": cards, "lags": [{"lag": int(r.lag), "rho": round(float(r.rho), 3), "n": int(r.n)} for r in bars[0].itertuples()]}
-
     out["p7"], tables = run_page("8_Hot_Events.py", WEEK, HOURLY, None, d_z=1.5, d_s=0.05)
     out["p7_by_type"] = tables[0].to_dict("records")
     found = data.market_signals(db, epoch(FULL[0]), epoch(FULL[1], end=True), tuple(data.tickers(db).ticker), ("positive", "negative", "neutral"), 1.5, 0.05)   # the page's own function

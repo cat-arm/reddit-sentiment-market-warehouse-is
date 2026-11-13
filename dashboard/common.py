@@ -276,7 +276,7 @@ def _majority_filter():
 
 def _detection_filter(kind, sentiment=False, locked=False):
     """DimDetectionConfig: Z-score Threshold, Sentiment Threshold and Horizon ('overview' =
-    Market and Sentiment, Statistical Analysis, Lead and Lag and Hot Events: two thresholds that filter the whole page, 0 = off, the same two
+    Market and Sentiment, Statistical Analysis and Hot Events: two thresholds that filter the whole page, 0 = off, the same two
     values on all four pages; the Horizon is chosen inside the charts that need it)."""
     state = st.session_state
     st.sidebar.markdown("**เกณฑ์การตรวจจับสัญญาณ (DimDetectionConfig)**")
