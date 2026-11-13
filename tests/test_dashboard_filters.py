@@ -285,6 +285,11 @@ class FilterTests(unittest.TestCase):
             for kind in kinds:
                 at.radio(key="p5_log_kind").set_value(kind).run()
                 self.assertEqual(len(at.exception), 0, (family, kind, [e.value for e in at.exception]))
+        at.radio(key="p5_log_family").set_value("compare").run()                              # the coefficients of two panels: the difference B - A
+        for left, right in (("global:all", "global:strong"), ("global:all", "Ticker:all"), ("Ticker:spike", "global:quality")):
+            at.selectbox(key="p5_log_cmp_a").set_value(left)
+            at.selectbox(key="p5_log_cmp_b").set_value(right).run()
+            self.assertEqual(len(at.exception), 0, (left, right, [e.value for e in at.exception]))
         at.radio(key="p5_log_family").set_value("global").run()
         at.radio(key="p5_log_kind").set_value("all").run()
         self.assertNotIn("p5_predictor", [r.key for r in at.radio])                          # the proposal measures only the mean Sentiment Score

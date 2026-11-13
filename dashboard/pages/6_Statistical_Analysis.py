@@ -208,6 +208,49 @@ AUC เท่ากับ 0.5 คือการสุ่ม และ 1.0 ค�
 """
 
 
+def logistic_compare(lg):
+    """Two stored Logistic panels as one heat map of the difference B - A of the effect of every variable at every horizon (percentage points)."""
+    choices = {k: v for k, v in PANEL_CHOICES.items() if not k.endswith(":baseline")}          # the random baseline has no variable in common with the others
+    st.session_state.setdefault("p5_log_cmp_a", "global:all")
+    st.session_state.setdefault("p5_log_cmp_b", "global:strong")
+    left, right = st.columns(2)
+    a_key = left.selectbox("A (ฝั่งซ้าย ฐานเปรียบเทียบ)", list(choices), format_func=choices.get, key="p5_log_cmp_a")
+    b_key = right.selectbox("B (ฝั่งขวา เทียบกับ A)", list(choices), format_func=choices.get, key="p5_log_cmp_b")
+    if a_key == b_key:
+        st.info("เลือก panel สองอันที่ต่างกัน")
+        return
+
+    def effects(choice):
+        fam, kd = choice.split(":")
+        part = lg[lg.panel == data.panel_name(kd, fam)]
+        c = part[part.metric.str.startswith("coef:")].assign(column=lambda d: d.metric.str[5:])
+        return c.assign(effect=data.effect_points(c.value))[["column", "horizon", "effect"]]
+
+    ea, eb = effects(a_key), effects(b_key)
+    d = ea.merge(eb, on=["column", "horizon"], suffixes=("_a", "_b"))
+    if d.empty:
+        st.info("ไม่มีตัวแปรและ Horizon ที่ทั้งสอง panel มีผลพร้อมกัน (panel ที่ข้อมูลน้อยไม่มีผลโมเดล)")
+        return
+    d["diff"] = d.effect_b - d.effect_a
+    d["ตัวแปร"] = d.column.map(data.variable_label)
+    d["ช่วง"] = d.horizon.map(TARGET_LABEL)
+    d["label"] = d["diff"].map("{:+.1f}".format)
+    d["dark"] = dark_cell(d["diff"], (-2.5, 2.5))
+    row_order = [data.variable_label(c) for c in data.VARIABLES if c in set(d.column)]
+    chart = alt.Chart(d).encode(
+        x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+        y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
+    rect = chart.mark_rect().encode(
+        color=alt.Color("diff:Q", title="B − A (จุด%)", scale=alt.Scale(domain=[-2.5, 2.5], scheme="redyellowgreen", clamp=True)),
+        tooltip=["ตัวแปร", "ช่วง", alt.Tooltip("effect_a:Q", title="A (จุด%)", format="+.2f"), alt.Tooltip("effect_b:Q", title="B (จุด%)", format="+.2f"),
+                 alt.Tooltip("diff:Q", title="B − A", format="+.2f")])
+    text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
+    st.write("ผลต่างของผลแต่ละตัวแปร B − A (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")
+    common.show((rect + text).properties(height=30 * len(row_order) + 40))
+    st.caption("ค่าในช่องคือผลของตัวแปรใน B ลบด้วยผลของตัวแปรเดียวกันใน A (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น เมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน) สีเขียวคือ B ดันให้ขึ้นมากกว่า A สีแดงคือน้อยกว่า ชี้ที่ช่องเพื่อดูค่าของ A และ B  \n"
+               "เป็นการเทียบเชิงพรรณนา โมเดลของสอง panel ฝึกจากข้อมูลคนละชุด (strong / quality เป็นส่วนย่อยของ ทุกข้อความ) และ AUC ของโมเดลใกล้ 0.5 ผลต่างที่เห็นจึงมักเป็นเสียงรบกวน ไม่ควรตีความเกินจริง")
+
+
 def logistic_view():
     """The stored Logistic Regression: AUC of every panel and horizon, then the coefficients and the importance of the variable groups."""
     st.caption("ผลเต็มช่วงข้อมูลของระบบ 7.4 (ไม่เปลี่ยนตามเวลา/ชุมชน/เกณฑ์ เพราะเป็นโมเดลที่ตรวจสอบข้ามช่วงเวลา)  โมเดลทายว่าผลตอบแทนจะ \"ขึ้น\" หรือ \"ลง\" "
@@ -241,7 +284,10 @@ def logistic_view():
     st.caption("สีเหลืองคือ 0.5 (เท่ากับการสุ่ม) สีเขียวคือสูงกว่า 0.5 สีแดงคือต่ำกว่า 0.5 (สีเดียวกับ heat map ด้านบน)  \nค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 หมายความว่าทำนายได้ไม่ดีกว่าการสุ่ม  \n"
                "Current Return คือ ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)")
     st.write("สัมประสิทธิ์ของแต่ละตัวแปร (ตัวแปรใดมีผลต่อทิศทางราคา) เลือก panel ได้")
-    log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", ["global", "Ticker"], format_func=FAMILIES.get, horizontal=True, key="p5_log_family")       # the same two layers as the heat map
+    log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="p5_log_family")       # the same layers as the heat map
+    if log_family == "compare":
+        logistic_compare(lg)
+        return
     log_kinds = data.PANEL_VARIANTS if log_family == "global" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}
     if st.session_state.get("p5_log_kind") not in log_kinds:
         st.session_state["p5_log_kind"] = "all"
@@ -259,35 +305,8 @@ def logistic_view():
     coefs["label"] = coefs.effect.map("{:+.1f}".format)
     row_order = [data.variable_label(c) for c in data.VARIABLES if c in set(coefs.column)]         # grouped: Level, Direction, Vote, Volume, Lag, Momentum
 
-    # 1. one bar per variable at the horizon that is picked (the same switch of horizons as the heat maps above; no average over horizons)
-    st.session_state.setdefault("p5_log_h", "Current Return")
-    horizon = st.radio("Horizon ของสัมประสิทธิ์", [TARGET_LABEL[t] for t in data.STAT_TARGETS], horizontal=True, key="p5_log_h")
-    summary = coefs[coefs.ช่วง == horizon].copy()
-    summary = summary.assign(ตัวแปร=summary.column.map(data.variable_label), กลุ่ม=summary.column.map(
-        lambda c: data.VARIABLE_GROUPS.get(data.VARIABLES.get(c, ("", ""))[1], "")))
-    if summary.empty:
-        st.info("panel นี้ไม่มีผลที่ Horizon %s (ข้อมูลไม่พอสำหรับโมเดล)" % horizon)
-    else:
-        st.write("ผลของแต่ละตัวแปรต่อโอกาสที่ราคาจะขึ้น (จุดเปอร์เซ็นต์) ที่ Horizon %s" % horizon)
-        pad = max(summary.effect.abs().max(), 0.5) * 1.25
-        x_scale = alt.Scale(domain=[-pad, pad], nice=False)
-        bars = alt.Chart(summary).encode(y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
-        layer = bars.mark_bar().encode(
-            x=alt.X("effect:Q", title="เปลี่ยนโอกาสที่ราคาขึ้น (จุดเปอร์เซ็นต์) เมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน", scale=x_scale),
-            color=alt.condition(alt.datum.effect > 0, alt.value("#2ca02c"), alt.value("#d62728")),
-            tooltip=["ตัวแปร", "กลุ่ม", alt.Tooltip("effect:Q", title="จุดเปอร์เซ็นต์", format="+.2f"),
-                     alt.Tooltip("value:Q", title="สัมประสิทธิ์มาตรฐาน (ค่าดิบของโมเดล)", format="+.4f")])
-        tag_up = bars.mark_text(fontSize=10, color="#444444", align="left", dx=6).transform_filter("datum.effect > 0").encode(x=alt.X("effect:Q", scale=x_scale), text="label:N")
-        tag_down = bars.mark_text(fontSize=10, color="#444444", align="right", dx=-6).transform_filter("datum.effect <= 0").encode(x=alt.X("effect:Q", scale=x_scale), text="label:N")
-        common.show((layer + tag_up + tag_down + common.zero_rule_x()).properties(height=28 * len(summary) + 40))
-        st.caption("**วิธีอ่าน**  \n"
-                   "แท่งสีเขียวคือตัวแปรที่สูงขึ้นแล้วโอกาสที่ราคาขึ้นสูงขึ้น แท่งสีแดงคือตรงข้าม ความยาวแท่งคือจำนวนจุดเปอร์เซ็นต์ (เช่น −2 คือโอกาสขึ้นลดจาก 50% เหลือราว 48%)  \n"
-                   "เลือก Horizon ได้ด้านบน (ชุดเดียวกับ heat map) ไม่ได้เฉลี่ยข้ามช่วง  Current Return คือผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) ส่วน 1h ถึง 12h คือผลตอบแทนล่วงหน้า  \n"
-                   "`sentiment_mean` คือความรู้สึกของชั่วโมงปัจจุบัน (lag 0) ส่วน sentiment_lag_1h ถึง 12h คือความรู้สึกของชั่วโมงก่อนหน้า  \n"
-                   "**ตัวแปรที่มีผลจริงต้องผ่านครบ**: แท่งยาวพอ (อย่างน้อยราว 1 จุดเปอร์เซ็นต์) ทิศทางเดียวกันในหลาย Horizon (ดูตารางรายละเอียดด้านล่าง) และโมเดลโดยรวมมี AUC ห่างจาก 0.5 หากแท่งสั้นหรือทิศทางสลับไปมา แสดงว่าไม่มีผล")
-
-    # 2. the detail: every horizon
-    st.write("รายละเอียดผลของแต่ละตัวแปรในแต่ละ Horizon (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")
+    # the effect of every variable at every horizon, one heat map (the same layout as the heat maps above: no horizon to pick)
+    st.write("ผลของแต่ละตัวแปรในแต่ละ Horizon (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")
     chart = alt.Chart(coefs).encode(
         x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
         y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
@@ -298,7 +317,9 @@ def logistic_view():
     text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
     common.show((rect + text).properties(height=30 * len(row_order) + 40))
     st.caption("ค่าในช่องคือจำนวนจุดเปอร์เซ็นต์ที่โอกาสขึ้นเปลี่ยนไปเมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน (คิดจากสัมประสิทธิ์ ÷ 4 × 100 ซึ่งใช้ได้เมื่อโอกาสใกล้ 50% ดูสัมประสิทธิ์ดิบของโมเดลได้ที่ tooltip)  \n"
-               "สีเขียวคือดันให้ขึ้น สีแดงคือดันให้ลง  \nCurrent Return คือชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักแรงกว่าคอลัมน์อื่น เพราะราคากับความรู้สึกเปลี่ยนไปพร้อมกัน")
+               "สีเขียวคือดันให้ขึ้น สีแดงคือดันให้ลง  \nCurrent Return คือชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักแรงกว่าคอลัมน์อื่น เพราะราคากับความรู้สึกเปลี่ยนไปพร้อมกัน  \n"
+               "`sentiment_mean` คือความรู้สึกของชั่วโมงปัจจุบัน (lag 0) ส่วน sentiment_lag_1h ถึง 12h คือความรู้สึกของชั่วโมงก่อนหน้า  \n"
+               "**ตัวแปรที่มีผลจริงต้องผ่านครบ**: ค่าสูงพอ (อย่างน้อยราว 1 จุดเปอร์เซ็นต์) ทิศทางเดียวกันในหลาย Horizon และโมเดลโดยรวมมี AUC ห่างจาก 0.5 หากค่าน้อยหรือทิศทางสลับไปมา แสดงว่าไม่มีผล")
     imp = one[one.metric.str.startswith("group_importance:")].assign(
         กลุ่มตัวแปร=lambda d: d.metric.str[17:].map(lambda g: data.VARIABLE_GROUPS.get(g, g)), ช่วง=lambda d: d.horizon.map(TARGET_LABEL),
         label=lambda d: d.value.map("{:.3f}".format))
