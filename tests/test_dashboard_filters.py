@@ -291,7 +291,7 @@ class FilterTests(unittest.TestCase):
         self.assertFalse(any("Z-score เกิน" in c.value for c in at.sidebar.caption), "no texts-per-hour hint under the Z-score slider (it misled: the Z-score is relative to each hour)")
         at.sidebar.slider(key="d_v").set_value(0)
         self.assertEqual(at.radio(key="p5_family_all").value, "global")                    # the default: the sentiment of the whole market
-        self.assertEqual(len(at.radio(key="p5_family_all").options), 2)                    # Global, Ticker (the random baseline is a kind of Global)
+        self.assertEqual(len(at.radio(key="p5_family_all").options), 3)                    # Global, Ticker, compare (the random baseline is a kind of Global)
         for family in ("Ticker", "global"):                                                  # every kind of text of both families opens; a fixed panel does not move the sidebar
             at.radio(key="p5_family_all").set_value(family).run()
             self.assertEqual(len(at.radio(key="p5_panel").options), 5 if family == "global" else 4, family)     # the random baseline is a kind of Global only
@@ -308,6 +308,15 @@ class FilterTests(unittest.TestCase):
         at.radio(key="p5_family_all").set_value("Ticker").run()                              # Ticker has no baseline: back to the panel "all"
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
         self.assertEqual(at.radio(key="p5_panel").value, "all")
+        at.radio(key="p5_family_all").set_value("compare").run()                             # compare two panels: the difference B - A, the thresholds act on the sides "all" only
+        for left, right, locked in (("global:all", "global:baseline", False), ("global:all", "Ticker:quality", False), ("global:strong", "Ticker:spike", True)):
+            at.selectbox(key="p5_cmp_a").set_value(left)
+            at.selectbox(key="p5_cmp_b").set_value(right).run()
+            for measure in ("Spearman", "Pearson", "Win Rate"):
+                at.radio(key="p5_cmp_measure").set_value(measure).run()
+                self.assertEqual(len(at.exception), 0, "%s vs %s %s: %s" % (left, right, measure, [e.value for e in at.exception]))
+                self.assertTrue(any(c.value.startswith("**สรุป:**") for c in at.caption), (left, right, measure))
+            self.assertEqual(at.sidebar.slider(key="d_v").disabled, locked, (left, right))
         at.radio(key="p5_family_all").set_value("global").run()
         at.radio(key="p5_panel").set_value("all").run()
         # the time range is a filter of the p-values

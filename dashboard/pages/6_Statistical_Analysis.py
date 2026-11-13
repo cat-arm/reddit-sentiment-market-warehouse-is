@@ -30,9 +30,12 @@ from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
 common.setup("Statistical Analysis (วิเคราะห์เชิงสถิติ)", "🏆")
 state = st.session_state
-if state.get("p5_family_all") == "Ticker" and state.get("p5_panel") == "baseline":        # the random baseline belongs to Global only
+if state.get("p5_family_all") in ("Ticker", "compare") and state.get("p5_panel") == "baseline":        # the random baseline belongs to Global only
     state["p5_panel"] = "all"
-fixed_panel = state.get("p5_panel", "all") != "all"                                      # a fixed panel of table 12 ignores the two thresholds: the sidebar greys them out
+if state.get("p5_family_all") == "compare":                                              # the comparison: the thresholds act on the sides that are "all" only
+    fixed_panel = not (str(state.get("p5_cmp_a", "global:all")).endswith(":all") or str(state.get("p5_cmp_b", "global:baseline")).endswith(":all"))
+else:
+    fixed_panel = state.get("p5_panel", "all") != "all"                                  # a fixed panel of table 12 ignores the two thresholds: the sidebar greys them out
 _, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True, detection_locked=fixed_panel)
 tickers = common.selected_tickers()
 communities = common.selected_communities()
@@ -314,11 +317,87 @@ st.caption("proposal 7.4 เทียบทิศทางของทั้ง�
            "แบบ majority ไม่ใช้คะแนน ใช้แค่ บวก (+1) ลบ (−1) หรือเป็นกลาง (0 = ไม่มีทิศทาง ไม่นับใน Win Rate)  การ์ด แท็บ และตารางจัดอันดับเปลี่ยนตามตัวเลือกนี้")
 
 # ---- the nine panels of table 12 in two layers: the family (Global / Ticker / Baseline), then the kind of text (all / strong / quality / spike) ------------
-FAMILIES = {"global": "Global (ความรู้สึกรวมของทั้งตลาด)", "Ticker": "Ticker (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น)"}
+FAMILIES = {"global": "Global (ความรู้สึกรวมของทั้งตลาด)", "Ticker": "Ticker (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น)", "compare": "เปรียบเทียบ 2 panel"}
 family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="p5_family_all")
-KINDS = data.PANEL_VARIANTS if family == "global" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}       # the random baseline is a view of Global only
-kind = st.radio("ชนิดข้อความ", list(KINDS), format_func=KINDS.get, horizontal=True, key="p5_panel")
-if kind == "all":
+KINDS = data.PANEL_VARIANTS if family != "Ticker" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}       # the random baseline is a view of Global only
+PANEL_CHOICES = {"%s:%s" % (f, k): "%s · %s" % ("Global" if f == "global" else "Ticker", v) for f in ("global", "Ticker") for k, v in data.PANEL_VARIANTS.items()
+                 if not (f == "Ticker" and k == "baseline")}
+
+
+def panel_table(choice):
+    """The statistics table of one of the nine panels ('global:all', 'Ticker:strong', 'global:baseline', ...): the two panels "all" follow the sidebar, the others are fixed."""
+    fam, kd = choice.split(":")
+    if kd == "all":
+        return stat_all if fam == "global" else stat_ticker
+    return common.panel_stat(fam, kd, tuple(tickers), start, end, tuple(communities), model, tuple(statuses), 0.0, 0.0, tuple(content_types), predictor, 0)
+
+
+def compare_view():
+    """Two panels side by side as one heat map of the difference B - A (a click picks which of the three measures)."""
+    st.session_state.setdefault("p5_cmp_a", "global:all")
+    st.session_state.setdefault("p5_cmp_b", "global:baseline")
+    left, right = st.columns(2)
+    a_key = left.selectbox("A (ฝั่งซ้าย ฐานเปรียบเทียบ)", list(PANEL_CHOICES), format_func=PANEL_CHOICES.get, key="p5_cmp_a")
+    b_key = right.selectbox("B (ฝั่งขวา เทียบกับ A)", list(PANEL_CHOICES), format_func=PANEL_CHOICES.get, key="p5_cmp_b")
+    if a_key == b_key:
+        st.info("เลือก panel สองอันที่ต่างกัน")
+        return
+    measure = st.radio("แสดง", VIEWS, horizontal=True, key="p5_cmp_measure", label_visibility="collapsed")
+    value, _, _, fmt, domain, n_col = BASE[measure]
+    ta, tb = panel_table(a_key), panel_table(b_key)
+    cols = ["ticker", "target", value, n_col]
+    both = ta[ta.ticker.isin(tickers)][cols].merge(tb[tb.ticker.isin(tickers)][cols], on=["ticker", "target"], suffixes=("_a", "_b"))
+    d = both.rename(columns={value + "_a": "a", value + "_b": "b", n_col + "_a": "na", n_col + "_b": "nb"})
+    d = d.dropna(subset=["a", "b"]).copy()
+    if d.empty:
+        st.info("ไม่มีช่องที่ทั้งสอง panel คำนวณได้พร้อมกัน (ข้อมูลน้อยเกินไปหรือไม่มีชั่วโมงที่ผ่านตัวกรอง) ลองขยายช่วงเวลา")
+        return
+    pct = measure == "Win Rate"
+    d["diff"] = d.b - d.a
+    d["rel"] = np.where(d.a != 0, 100.0 * d["diff"] / d.a.abs(), np.nan)
+    d["period"] = d.target.map(TARGET_LABEL)
+    d["asset"] = [asset_label(t) for t in d.ticker]
+    scale = 5.0 if pct else 0.1
+    d["dark"] = dark_cell(d["diff"], [-scale, scale])
+    unit = " จุด" if pct else ""
+    d["lab_a"] = ["A " + ("{:%s}" % fmt).format(v) for v in d.a]
+    d["lab_b"] = ["B " + ("{:%s}" % fmt).format(v) for v in d.b]
+    d["lab_d"] = [("Δ %+.1f%s (%+.1f%%)" % (x, unit, r) if pct and not pd.isna(r) else "Δ %+.1f%s" % (x, unit)) if pct else "Δ %+.3f" % x for x, r in zip(d["diff"], d.rel)]
+    d["lab_n"] = [("⚠ " if min(x, y) < 30 else "") + "n A=%s · B=%s" % ("{:,}".format(int(x)), "{:,}".format(int(y))) for x, y in zip(d.na.fillna(0), d.nb.fillna(0))]
+    order = [TARGET_LABEL[t] for t in data.STAT_TARGETS]
+    chart = alt.Chart(d).encode(x=alt.X("period:O", sort=order, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+                                y=alt.Y("asset:N", sort=[asset_label(t) for t in ORDER], title=None, axis=alt.Axis(labelLimit=220)))
+    rect = chart.mark_rect().encode(
+        color=alt.Color("diff:Q", title="B − A (%s)" % ("จุดเปอร์เซ็นต์" if pct else "ผลต่างของ ρ"), scale=alt.Scale(domain=[-scale, scale], scheme="redyellowgreen", clamp=True)),
+        tooltip=["asset", "period", alt.Tooltip("a:Q", title="A", format=fmt), alt.Tooltip("b:Q", title="B", format=fmt), alt.Tooltip("diff:Q", title="B − A", format="+.4f"),
+                 alt.Tooltip("na:Q", title="n ของ A", format=","), alt.Tooltip("nb:Q", title="n ของ B", format=",")])
+    layers = [rect]
+    for line, field, bold in ((-22, "lab_a", False), (-8, "lab_b", False), (8, "lab_d", True), (24, "lab_n", False)):
+        layers.append(chart.mark_text(fontSize=11 if bold else 9, fontWeight="bold" if bold else "normal", dy=line).encode(
+            text=field + ":N", color=ink("#222222" if bold else "#555555")))
+    common.show(alt.layer(*layers).properties(height=max(170, 68 * len(ORDER) + 30)))
+    higher, total = int((d["diff"] > 0).sum()), len(d)
+    st.caption("**สรุป:** %s สูงกว่า %s ใน %d จาก %d ช่อง (ต่ำกว่า %d ช่อง) ผลต่างเฉลี่ย %s" % (PANEL_CHOICES[b_key], PANEL_CHOICES[a_key], higher, total, int((d["diff"] < 0).sum()),
+               ("%+.2f จุดเปอร์เซ็นต์" if pct else "%+.4f") % d["diff"].mean()))
+    st.caption("สีเขียวคือ B สูงกว่า A สีแดงคือ B ต่ำกว่า A ในช่องมีค่า A, ค่า B, ผลต่าง Δ (Win Rate เป็นจุดเปอร์เซ็นต์ ในวงเล็บคือเปอร์เซ็นต์เทียบกับค่า A ส่วน Spearman และ Pearson เป็นผลต่างของ ρ เพราะเปอร์เซ็นต์ของค่าใกล้ 0 ไม่มีความหมาย) และ n ของสองฝั่ง ⚠ = n ฝั่งใดน้อยกว่า 30  \n"
+               "เป็นการเทียบเชิงพรรณนา ยังไม่ผ่านการทดสอบนัยสำคัญของผลต่าง (panel strong / quality เป็นส่วนย่อยของ panel ทุกข้อความ ไม่ใช่ข้อมูลอิสระ)  \n"
+               "สไลเดอร์ Reddit Volume Threshold และ Sentiment Threshold ด้านซ้ายมีผลเฉพาะฝั่งที่เป็น **ทุกข้อความ** ฝั่งอื่นใช้เกณฑ์ตายตัวของตาราง 12 ตัวกรองอื่นมีผลกับทั้งสองฝั่ง")
+    table = pd.DataFrame({"สินทรัพย์": d.ticker, "Horizon": d.period, "A": d.a, "B": d.b, "B − A": d["diff"], "เปอร์เซ็นต์เทียบ A (%)": d.rel if pct else np.nan,
+                          "n A": d.na, "n B": d.nb, "n น้อย": np.where((d.na < 30) | (d.nb < 30), "⚠", "")}).sort_values("B − A", ascending=False)
+    if not pct:
+        table = table.drop(columns="เปอร์เซ็นต์เทียบ A (%)")
+    formats = {"A": "{:" + fmt + "}", "B": "{:" + fmt + "}", "B − A": "{:+.3f}" if not pct else "{:+.2f}", "n A": "{:,.0f}", "n B": "{:,.0f}", "เปอร์เซ็นต์เทียบ A (%)": "{:+.1f}"}
+    st.dataframe(table.style.format(formats, na_rep="-"), hide_index=True, width="stretch", height=320)
+
+
+kind = None
+if family == "compare":
+    compare_view()
+else:
+    kind = st.radio("ชนิดข้อความ", list(KINDS), format_func=KINDS.get, horizontal=True, key="p5_panel")
+if family == "compare":
+    pass
+elif kind == "all":
     chosen = stat_all if family == "global" else stat_ticker                       # the panels that follow the sidebar: the cards above
     st.caption("panel นี้ตามตัวกรองด้านซ้ายทุกอัน รวม Reddit Volume Threshold และ Sentiment Threshold (กรอง**ทีละข้อความ**ก่อนเฉลี่ยเป็นความรู้สึกรายชั่วโมง ส่วน Volume กรอง**ทั้งชั่วโมง**)")
 else:                                                                              # the fixed panels: their own cut of table 12, whatever the two thresholds of the sidebar say
@@ -336,7 +415,8 @@ else:                                                                           
                    "**%s**: %s  \n"
                    "ไม่ตาม Reddit Volume Threshold และ Sentiment Threshold ด้านซ้าย ตัวกรองอื่น (ช่วงเวลา สินทรัพย์ ชุมชน โมเดล ประเภทข้อความ ความรู้สึกส่วนใหญ่) ยังมีผล  \n"
                    "ทั้งโหมดคะแนนและโหมด majority กรองแถวด้วย Sentiment Score เฉลี่ยของชั่วโมงเดียวกัน (majority เปลี่ยนแค่วิธีอ่านทิศทาง)" % (KINDS[kind], rule))
-panel_view(chosen, "all")
+if family != "compare":
+    panel_view(chosen, "all")
 
 
 # ---- the ranking of the assets (proposal 7.5 dashboard 2): the panel Global (every text of the market) after every filter, sortable --------------
