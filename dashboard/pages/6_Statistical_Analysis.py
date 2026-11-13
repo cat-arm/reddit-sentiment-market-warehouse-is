@@ -161,12 +161,11 @@ def heatmap(stat, measure):
     return alt.layer(*layers).properties(height=max(170, 68 * len(ORDER) + 30))
 
 
-def panel_view(stat, key):
-    """The content of one panel: the switch between the three measures and the heat map."""
+def panel_view(stat, measure):
+    """The content of one panel: the heat map of the measure that is picked in the sticky bar above."""
     if stat.empty or stat.n.fillna(0).sum() == 0:
         st.info("ไม่มีข้อมูลเพียงพอสำหรับ panel นี้ตามตัวกรองที่เลือก (ไม่มีชั่วโมงที่ผ่านตัวกรองและมีทั้งความรู้สึกกับราคา ลองขยายช่วงเวลาหรือลดเกณฑ์)")
         return
-    measure = st.radio("แสดง", VIEWS, horizontal=True, key="p5_measure_" + key, label_visibility="collapsed")
     if stat[stat.ticker.isin(tickers)][BASE[measure][0]].notna().sum() == 0:
         st.info("ไม่มีค่า %s ของสินทรัพย์ที่เลือกใน panel นี้ (ข้อมูลน้อยกว่า 3 ชั่วโมงต่อคู่ คำนวณสหสัมพันธ์ไม่ได้)" % measure)
         return
@@ -187,8 +186,6 @@ st.caption("proposal 7.4 เทียบทิศทางของทั้ง�
 
 # ---- the nine panels of table 12 in two layers: the family (Global / Ticker / Baseline), then the kind of text (all / strong / quality / spike) ------------
 FAMILIES = {"global": "Global (ความรู้สึกรวมของทั้งตลาด)", "Ticker": "Ticker (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น)", "compare": "เปรียบเทียบ 2 panel"}
-family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="p5_family_all")
-KINDS = data.PANEL_VARIANTS if family != "Ticker" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}       # the random baseline is a view of Global only
 PANEL_CHOICES = {"%s:%s" % (f, k): "%s · %s" % ("Global" if f == "global" else "Ticker", v) for f in ("global", "Ticker") for k, v in data.PANEL_VARIANTS.items()
                  if not (f == "Ticker" and k == "baseline")}
 
@@ -201,17 +198,21 @@ def panel_table(choice):
     return common.panel_stat(fam, kd, tuple(tickers), start, end, tuple(communities), model, tuple(statuses), 0.0, 0.0, tuple(content_types), predictor, 0)
 
 
-def compare_view():
-    """Two panels side by side as one heat map of the difference B - A (a click picks which of the three measures)."""
+def compare_pickers():
+    """The two selectboxes of the comparison (drawn in the sticky bar): A = the base, B = compared with A."""
     st.session_state.setdefault("p5_cmp_a", "global:baseline")                # the base: the random direction
     st.session_state.setdefault("p5_cmp_b", "global:all")                     # compared with: every text, as the sidebar thresholds set it
     left, right = st.columns(2)
     a_key = left.selectbox("A (ฝั่งซ้าย ฐานเปรียบเทียบ)", list(PANEL_CHOICES), format_func=PANEL_CHOICES.get, key="p5_cmp_a")
     b_key = right.selectbox("B (ฝั่งขวา เทียบกับ A)", list(PANEL_CHOICES), format_func=PANEL_CHOICES.get, key="p5_cmp_b")
+    return a_key, b_key
+
+
+def compare_view(a_key, b_key, measure):
+    """Two panels as one heat map of the difference B - A for the measure picked in the sticky bar."""
     if a_key == b_key:
         st.info("เลือก panel สองอันที่ต่างกัน")
         return
-    measure = st.radio("แสดง", VIEWS, horizontal=True, key="p5_cmp_measure", label_visibility="collapsed")
     value, _, _, fmt, domain, n_col = BASE[measure]
     ta, tb = panel_table(a_key), panel_table(b_key)
     cols = ["ticker", "target", value, n_col]
@@ -260,12 +261,17 @@ def compare_view():
 
 
 kind = None
+with common.sticky_bar("p5_bar"):                                                  # the picker of the panel and of the measure stays at the top while the heat map scrolls
+    family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="p5_family_all", label_visibility="collapsed")
+    KINDS = data.PANEL_VARIANTS if family != "Ticker" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}       # the random baseline is a view of Global only
+    if family == "compare":
+        a_key, b_key = compare_pickers()
+        measure = st.radio("แสดง", VIEWS, horizontal=True, key="p5_cmp_measure", label_visibility="collapsed")
+    else:
+        kind = st.radio("ชนิดข้อความ", list(KINDS), format_func=KINDS.get, horizontal=True, key="p5_panel", label_visibility="collapsed")
+        measure = st.radio("แสดง", VIEWS, horizontal=True, key="p5_measure_all", label_visibility="collapsed")
 if family == "compare":
-    compare_view()
-else:
-    kind = st.radio("ชนิดข้อความ", list(KINDS), format_func=KINDS.get, horizontal=True, key="p5_panel")
-if family == "compare":
-    pass
+    compare_view(a_key, b_key, measure)
 elif kind == "all":
     chosen = stat_all if family == "global" else stat_ticker                       # the panels that follow the sidebar: the cards above
     st.caption("panel นี้ตามตัวกรองด้านซ้ายทุกอัน รวม Reddit Volume Threshold และ Sentiment Threshold (กรอง**ทีละข้อความ**ก่อนเฉลี่ยเป็นความรู้สึกรายชั่วโมง ส่วน Volume กรอง**ทั้งชั่วโมง**)")
@@ -285,7 +291,7 @@ else:                                                                           
                    "ไม่ตาม Reddit Volume Threshold และ Sentiment Threshold ด้านซ้าย ตัวกรองอื่น (ช่วงเวลา สินทรัพย์ ชุมชน โมเดล ประเภทข้อความ ความรู้สึกส่วนใหญ่) ยังมีผล  \n"
                    "ทั้งโหมดคะแนนและโหมด majority กรองแถวด้วย Sentiment Score เฉลี่ยของชั่วโมงเดียวกัน (majority เปลี่ยนแค่วิธีอ่านทิศทาง)" % (KINDS[kind], rule))
 if family != "compare":
-    panel_view(chosen, "all")
+    panel_view(chosen, measure)
 
 
 # ---- the ranking of the assets (proposal 7.5 dashboard 2): the panel Global (every text of the market) after every filter, sortable --------------

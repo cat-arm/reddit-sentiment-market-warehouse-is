@@ -90,14 +90,19 @@ AUC เท่ากับ 0.5 คือการสุ่ม และ 1.0 ค�
 """
 
 
-def logistic_compare(lg):
-    """Two stored Logistic panels as one heat map of the difference B - A of the effect of every variable at every horizon (percentage points)."""
+def logistic_pickers():
+    """The two selectboxes of the comparison (drawn in the sticky bar): A = the base, B = compared with A."""
     choices = {k: v for k, v in PANEL_CHOICES.items() if not k.endswith(":baseline")}          # the random baseline has no variable in common with the others
     st.session_state.setdefault("l9_cmp_a", "global:all")
     st.session_state.setdefault("l9_cmp_b", "global:strong")
     left, right = st.columns(2)
     a_key = left.selectbox("A (ฝั่งซ้าย ฐานเปรียบเทียบ)", list(choices), format_func=choices.get, key="l9_cmp_a")
     b_key = right.selectbox("B (ฝั่งขวา เทียบกับ A)", list(choices), format_func=choices.get, key="l9_cmp_b")
+    return a_key, b_key
+
+
+def logistic_compare(lg, a_key, b_key):
+    """Two Logistic panels as one heat map of the difference B - A of the effect of every variable at every horizon (percentage points)."""
     if a_key == b_key:
         st.info("เลือก panel สองอันที่ต่างกัน")
         return
@@ -163,14 +168,19 @@ def logistic_view():
     st.caption("สีเหลืองคือ 0.5 (เท่ากับการสุ่ม) สีเขียวคือสูงกว่า 0.5 สีแดงคือต่ำกว่า 0.5 (สีเดียวกับ heat map ด้านบน)  \nค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 หมายความว่าทำนายได้ไม่ดีกว่าการสุ่ม  \n"
                "Current Return คือ ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)")
     st.write("สัมประสิทธิ์ของแต่ละตัวแปร (ตัวแปรใดมีผลต่อทิศทางราคา) เลือก panel ได้")
-    log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="l9_family")       # the same layers as the heat map
+    with common.sticky_bar("l9_bar"):                                                     # the picker stays at the top while the long heat maps below scroll
+        log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="l9_family",
+                              label_visibility="collapsed")                                  # the same layers as the heat map of Statistical Analysis
+        if log_family == "compare":
+            a_key, b_key = logistic_pickers()
+        else:
+            log_kinds = data.PANEL_VARIANTS if log_family == "global" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}
+            if st.session_state.get("l9_kind") not in log_kinds:
+                st.session_state["l9_kind"] = "all"
+            log_kind = st.radio("ชนิดข้อความ", list(log_kinds), format_func=log_kinds.get, horizontal=True, key="l9_kind", label_visibility="collapsed")
     if log_family == "compare":
-        logistic_compare(lg)
+        logistic_compare(lg, a_key, b_key)
         return
-    log_kinds = data.PANEL_VARIANTS if log_family == "global" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}
-    if st.session_state.get("l9_kind") not in log_kinds:
-        st.session_state["l9_kind"] = "all"
-    log_kind = st.radio("ชนิดข้อความ", list(log_kinds), format_func=log_kinds.get, horizontal=True, key="l9_kind")
     panel_pick = data.panel_name(log_kind, log_family)
     one = lg[lg.panel == panel_pick]
     coefs = one[one.metric.str.startswith("coef:")].assign(column=lambda d: d.metric.str[5:])
