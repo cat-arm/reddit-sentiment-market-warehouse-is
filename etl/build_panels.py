@@ -5,17 +5,20 @@ Every panel is a filter over `merged_hourly_panel` and keeps ONLY rows that have
 
     panel_name              merged_hourly_panel block                       extra condition
     panel_global            scope=global,  variant=all
-    panel_global_strong     scope=global,  variant=strong   (|text score| >= 0.05, filtered per TEXT before averaging)
-    panel_global_quality    scope=global,  variant=quality  (|text score| >= 0.30, per text)
+    panel_global_strong     scope=global,  variant=all      |sentiment_mean| >= 0.05   (per ROW of the hourly table, from 2026-11-13)
+    panel_global_quality    scope=global,  variant=all      |sentiment_mean| >= 0.30   (per ROW)
     panel_global_spike      scope=global,  variant=all      reddit_volume_zscore_24 > 1.5   (per HOUR, market-wide)
     panel_Ticker            scope=ticker,  variant=all
-    panel_Ticker_strong     scope=ticker,  variant=strong
-    panel_Ticker_quality    scope=ticker,  variant=quality
+    panel_Ticker_strong     scope=ticker,  variant=all      |sentiment_mean| >= 0.05   (per ROW: hour x ticker)
+    panel_Ticker_quality    scope=ticker,  variant=all      |sentiment_mean| >= 0.30   (per ROW)
     panel_Ticker_spike      scope=ticker,  variant=all      reddit_volume_zscore_24 > 1.5   (that ticker's own volume)
     panel_baseline          = exactly the rows of panel_global, plus a RANDOM direction (+1/-1, fixed seed) in
                             column random_direction.  It never looks at sentiment, so it is the "no signal" yardstick
                             for win rate / AUC (proposal table 12, option "random direction").
 `random_direction` is NULL for every other panel.  Rebuilt on every run.
+Since 2026-11-13 (decision of the user) the panels strong / quality filter the ROWS of the hourly table (hour x asset x mean sentiment) by the
+hourly mean, like the spike panels filter the rows by the hourly Z-score; before they dropped the weak TEXTS before averaging (variant strong / quality
+of `merged_hourly_panel`, which still exist).  The dashboard (Statistical Analysis) computes the same rows live (`dashboard.data.ROW_CUTS`).
 Columns are copied as they are, so `log_return` (= the proposal's current_return / Current Return) keeps its DB name here.
 
 Usage:  python -m etl.build_panels [--db output/reddit.sqlite3] [--seed 42]
@@ -34,12 +37,12 @@ HAS_SENTIMENT = "has_reddit_data = 1 AND sentiment_mean IS NOT NULL"
 # (panel_name, scope, variant, extra WHERE)
 PANELS = (
     ("panel_global", "global", "all", ""),
-    ("panel_global_strong", "global", "strong", ""),
-    ("panel_global_quality", "global", "quality", ""),
+    ("panel_global_strong", "global", "all", "AND ABS(sentiment_mean) >= 0.05"),
+    ("panel_global_quality", "global", "all", "AND ABS(sentiment_mean) >= 0.30"),
     ("panel_global_spike", "global", "all", "AND reddit_volume_zscore_24 > %s" % SPIKE_Z),
     ("panel_Ticker", "ticker", "all", ""),
-    ("panel_Ticker_strong", "ticker", "strong", ""),
-    ("panel_Ticker_quality", "ticker", "quality", ""),
+    ("panel_Ticker_strong", "ticker", "all", "AND ABS(sentiment_mean) >= 0.05"),
+    ("panel_Ticker_quality", "ticker", "all", "AND ABS(sentiment_mean) >= 0.30"),
     ("panel_Ticker_spike", "ticker", "all", "AND reddit_volume_zscore_24 > %s" % SPIKE_Z),
 )
 

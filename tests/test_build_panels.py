@@ -32,7 +32,9 @@ class PanelTests(unittest.TestCase):
                 n = dict(db.execute("SELECT panel_name, COUNT(*) FROM panels GROUP BY 1").fetchall())
                 self.assertEqual(len(n), 9)
                 self.assertEqual(n["panel_global"], 3)                 # AAA h1, AAA h2, BBB h1 (row without sentiment dropped)
-                self.assertEqual(n["panel_global_strong"], 3)
+                self.assertEqual(n["panel_global_strong"], 3)          # |0.3|, |0.1|, |-0.2| are all >= 0.05: a ROW filter on the hourly mean of variant 'all'
+                self.assertEqual(n["panel_global_quality"], 1)         # only the hour with |mean| >= 0.30 (0.3)
+                self.assertEqual(n["panel_Ticker_quality"], 1)
                 self.assertEqual(n["panel_global_spike"], 1)           # only AAA h1 has z > 1.5 (NULL z never qualifies)
                 self.assertEqual(n["panel_Ticker_spike"], 1)
                 self.assertEqual(n["panel_baseline"], n["panel_global"])

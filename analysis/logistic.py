@@ -94,7 +94,11 @@ def fit_one(part, target, groups_map):
     X = sub[features].to_numpy(float)
     y = (sub[target].to_numpy() > 0).astype(int)
     aucs, coefs = [], []
-    for tr, te in hour_folds(hours):
+    try:
+        folds = hour_folds(hours)
+    except ValueError:                                                # too few distinct hours for 5 splits with a 12 hour gap (a panel that keeps few hours)
+        return None, "insufficient_data", n
+    for tr, te in folds:
         if len(np.unique(y[tr])) < 2 or len(np.unique(y[te])) < 2:
             return None, "insufficient_data", n
         scaler = StandardScaler().fit(X[tr])                         # train part only

@@ -49,6 +49,12 @@ class LogisticTests(unittest.TestCase):
         noise, _, _ = fit_one(prepare(panel(signal=False, seed=3)), "future_return_1h", GROUPS)
         self.assertLess(abs(noise["auc"] - 0.5), 0.06)
 
+    def test_enough_rows_but_too_few_hours_is_insufficient_not_a_crash(self):
+        """Many rows on few distinct hours (a panel that keeps few hours, many tickers per hour) cannot be split in 5 with a gap: flagged, no exception."""
+        df = prepare(panel(n_hours=20, tickers=tuple("T%d" % i for i in range(30))))        # 600 rows, 20 distinct hours
+        metrics, status, n = fit_one(df, "future_return_1h", GROUPS)
+        self.assertEqual((metrics, status, n), (None, "insufficient_data", 600))
+
     def test_missing_features_drop_rows_and_small_samples_flagged(self):
         df = prepare(panel(n_hours=100, tickers=("AAA",)))             # 100 rows < MIN_ROWS
         self.assertEqual(fit_one(df, "future_return_1h", GROUPS)[1:], ("insufficient_data", 100))
