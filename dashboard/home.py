@@ -5,7 +5,7 @@ Seven content pages live in dashboard/pages/ (the tabs at the top list them):
   2 Ticker Mentions        proposal 7.1-2   how often each asset is mentioned, mention rate (source + multi-ticker filters)
   3 Price and Return       proposal 7.2-1   close, volume, future returns, volatility
   4 Market and Sentiment   proposal 7.5-1   price next to Reddit sentiment, ratios, majority status
-  5 Statistical Analysis   proposal 7.5-2   p-values, win rate, logistic regression
+  5 Statistical Analysis   proposal 7.5-2   p-values, win rate (live); Logistic Regression is page 9 (stored, EXTENSION placement)
   6 Lead and Lag           EXTENSION        whether sentiment or price changes first
   7 Hot Events             EXTENSION        detected signal list (proposal 7.6): thresholds from the sidebar, returns after each signal (not a trading signal)
 """
@@ -105,7 +105,10 @@ st.markdown("""
 ราคาเทียบกับค่าความรู้สึกเฉลี่ย สัดส่วนบวก ลบ และเป็นกลาง และประเภทความรู้สึกส่วนใหญ่
 
 **Statistical Analysis**
-ความสัมพันธ์ระหว่างความรู้สึกกับผลตอบแทน (Win Rate, Spearman, Pearson) และ Logistic Regression
+ความสัมพันธ์ระหว่างความรู้สึกกับผลตอบแทน (Win Rate, Spearman, Pearson) ตามตัวกรอง เปรียบเทียบ panel ได้
+
+**Logistic Regression**
+AUC และสัมประสิทธิ์ของตัวแปรความรู้สึก (ผลที่เก็บไว้ทั้งชุดข้อมูล ไม่ตามตัวกรอง)
 
 **Lead and Lag**
 ตรวจว่าความรู้สึกหรือราคาเปลี่ยนก่อนกัน

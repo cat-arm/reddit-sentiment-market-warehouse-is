@@ -265,18 +265,12 @@ class FilterTests(unittest.TestCase):
             at = at.run()
             self.assertEqual(len(at.exception), 0, "%s: %s" % (page, [e.value for e in at.exception]))
 
-    def test_ranking_and_statistics_page(self):
-        """Same filters as Market and Sentiment and every one changes the numbers: the time range changes the p-values, two tickers = two
-        tickers, nothing ticked = cards 0; every kind of text and both families open."""
-        at = self.run_page(RANKING_PAGE)
-        self.assertEqual([m.label for m in at.metric], ["Historical Win Rate", "Spearman p-value", "Pearson p-value", "Logistic AUC"] * 2)      # two rows: Global, Ticker
-        full = [m.value for m in at.metric]
-        self.assertRegex(full[0], r"^\d+\.\d%$")
-        for view in at.radio(key="p5_measure_all").options:                                 # the three measures (value and p-value in one cell)
-            at.radio(key="p5_measure_all").set_value(view).run()
-            self.assertEqual(len(at.exception), 0, "%s: %s" % (view, [e.value for e in at.exception]))
-        self.assertEqual(at.radio(key="p5_measure_all").options, ["Spearman", "Pearson", "Win Rate"])
-        self.assertNotIn("ρ", "".join(at.radio(key="p5_measure_all").options))                 # the Greek rho looks like the p of p-value
+    def test_logistic_page_has_no_sidebar_and_every_panel_opens(self):
+        """The Logistic Regression is a page of its own (stored result, no filter): every scope, panel and comparison opens."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(ROOT / "dashboard" / "pages" / "9_Logistic_Regression.py"), default_timeout=300).run()
+        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
+        self.assertEqual(len(at.sidebar.slider), 0)                                         # no threshold slider: nothing here follows a filter
         for scope in at.radio(key="p5_scope").options:                                       # the Logistic Regression is a section below the tabs
             at.radio(key="p5_scope").set_value(scope).run()
             self.assertEqual(len(at.exception), 0, scope)
@@ -290,8 +284,19 @@ class FilterTests(unittest.TestCase):
             at.selectbox(key="p5_log_cmp_a").set_value(left)
             at.selectbox(key="p5_log_cmp_b").set_value(right).run()
             self.assertEqual(len(at.exception), 0, (left, right, [e.value for e in at.exception]))
-        at.radio(key="p5_log_family").set_value("global").run()
-        at.radio(key="p5_log_kind").set_value("all").run()
+        
+    def test_ranking_and_statistics_page(self):
+        """Same filters as Market and Sentiment and every one changes the numbers: the time range changes the p-values, two tickers = two
+        tickers, nothing ticked = cards 0; every kind of text and both families open."""
+        at = self.run_page(RANKING_PAGE)
+        self.assertEqual([m.label for m in at.metric], ["Historical Win Rate", "Spearman p-value", "Pearson p-value"] * 2)      # two rows: Global, Ticker
+        full = [m.value for m in at.metric]
+        self.assertRegex(full[0], r"^\d+\.\d%$")
+        for view in at.radio(key="p5_measure_all").options:                                 # the three measures (value and p-value in one cell)
+            at.radio(key="p5_measure_all").set_value(view).run()
+            self.assertEqual(len(at.exception), 0, "%s: %s" % (view, [e.value for e in at.exception]))
+        self.assertEqual(at.radio(key="p5_measure_all").options, ["Spearman", "Pearson", "Win Rate"])
+        self.assertNotIn("ρ", "".join(at.radio(key="p5_measure_all").options))                 # the Greek rho looks like the p of p-value
         self.assertNotIn("p5_predictor", [r.key for r in at.radio])                          # the proposal measures only the mean Sentiment Score
         at.sidebar.slider(key="d_v").set_value(1500).run()                                     # the Z-score narrows every panel and says what it means in texts
         self.assertEqual(len(at.exception), 0)
@@ -345,7 +350,7 @@ class FilterTests(unittest.TestCase):
         for key in TICKERS:
             at.sidebar.checkbox(key="f_tk_" + key).set_value(False)
         at = at.run()
-        self.assertEqual([m.value for m in at.metric], ["0"] * 4)
+        self.assertEqual([m.value for m in at.metric], ["0"] * 3)
 
     def test_lead_and_lag_page(self):
         """The live analysis follows every filter; nothing ticked = cards 0."""

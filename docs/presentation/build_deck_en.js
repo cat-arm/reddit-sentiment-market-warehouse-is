@@ -12,6 +12,7 @@ const NOTES = [];   // speaker notes: none attached in v4 (the Thai notes in not
 let SLIDE_IDX = 0;
 const INSIGHT = JSON.parse(fs.readFileSync(path.join(ROOT, "output", "reports", "insight_stories.json"), "utf8"));   // scripts/deck_insights.py
 const RULE = JSON.parse(fs.readFileSync(path.join(ROOT, "output", "reports", "deck_rule_test.json"), "utf8"));   // scripts/deck_charts.py
+const DEMO = JSON.parse(fs.readFileSync(path.join(ROOT, "output", "reports", "demo_case.json"), "utf8"));   // scripts/demo_case.py (runs the real pages)
 const DECK_FIG = (f) => path.join(ROOT, "output", "figures", "deck", f);
 let SIZES = {};
 try { SIZES = JSON.parse(fs.readFileSync(path.join(CROPS, "sizes.json"), "utf8")); } catch (e) { /* no screenshots */ }
@@ -469,6 +470,15 @@ function qslide(title, tag, rows) {
   shot(s, "home", 6.9, 1.85, 5.85, 4.75, "The dashboard itself is in Thai.");
 }
 
+{
+  const s = newSlide("DARK", "4 Six systems");
+  head(s, "Live dashboard demo.", "4 Six systems  ·  Demo", AMBER);
+  s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: 0.6, y: 1.9, w: 12.1, h: 4.1, fill: { color: SURF }, line: { color: TEAL, width: 2, dashType: "dash" }, rectRadius: 0.1, objectName: "DemoLinkFrame" });
+  T(s, "Place the dashboard link or window here", { x: 0.6, y: 3.45, w: 12.1, h: 0.6, fontSize: 26, bold: true, color: TEAL, align: "center", valign: "middle" });
+  T(s, "Home plus seven pages. The demo case follows in part 5.", { x: 0.6, y: 4.1, w: 12.1, h: 0.4, fontSize: 16, color: MUTE, align: "center" });
+  T(s, "Historical data. Not real-time. Not investment advice.", { x: 0.6, y: 6.3, w: 12.1, h: 0.4, fontSize: 14, color: MUTE });
+}
+
 // =============================================================== 5 DATA STORIES
 function storySlide(n, title, chart, cardTitle, bullets, so) {
   const s = newSlide("DARK", "5 Data stories");
@@ -482,7 +492,7 @@ function storySlide(n, title, chart, cardTitle, bullets, so) {
   const s = newSlide("HERO", "5 Data stories");
   glow(s);
   head(s, "Data stories: where does Reddit's mood line up with prices?", "5 Data stories", CORAL);
-  T(s, "The analyst looks for the places where the mood of Reddit and the market move together, and checks whether that helps to predict. Four stories, all from the full data set.", { x: 0.6, y: 1.95, w: 12.0, h: 0.9, fontSize: 18, color: SOFT });
+  T(s, "The analyst looks for the places where the mood of Reddit and the market move together, and checks whether that helps to predict. Four stories from the full data set, then one live demo case, page by page.", { x: 0.6, y: 1.95, w: 12.0, h: 0.9, fontSize: 18, color: SOFT });
   const acts = [["1", "Busy hours: mood moves with price", "Statistical Analysis"], ["2", "Price moves first, then people talk", "Lead and Lag"], ["3", "The busiest hour: 9 Apr 2025", "Reddit Volume, Price and Return"], ["4", "Signals that are significant but tiny", "Statistical Analysis"]];
   acts.forEach((a, i) => {
     const x = 0.6 + i * 3.08;
@@ -517,6 +527,97 @@ function storySlide(n, title, chart, cardTitle, bullets, so) {
   storySlide("4", "Some win rates pass the test, but sit within 1 to 2 points of a coin flip.", "story4.png", "What we see",
     [t.length + " cases pass the Benjamini–Hochberg test.", "Most are below 50%: a positive mood is slightly more often followed by a fall.", "Largest gap above 50%: NG=F at 12 hours, 51.4% (n = 8,971)."],
     "Statistically real, economically useless: costs would eat a 1 to 2 point edge.");
+}
+
+// ---- the live demo case: one volatile week, one slide per dashboard page (numbers from scripts/demo_case.py, which runs the real pages with these filters)
+const nz = (t) => parseFloat(String(t).replace(/,/g, ""));
+const sg = (v, d) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d);
+function demoPage(n, name, title, filters, stats, so) {
+  const s = newSlide("DARK", "5 Data stories");
+  head(s, title, "5 Data stories  ·  Demo case  ·  Page " + n + " " + name, VIOLET);
+  card(s, 0.6, 1.95, 4.4, 3.3, "Set these filters", bl(filters), { size: 12, headSize: 16, color: VIOLET });
+  sowhat(s, 0.6, 5.4, 4.4, 1.4, so);
+  stats.forEach((t, i) => stat(s, 5.25 + i * 2.5, 1.95, 2.35, t[0], t[1], t[2] || TEAL, 28));
+  s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: 5.25, y: 3.9, w: 7.45, h: 2.9, fill: { color: BG2 }, line: { color: EDGE, width: 1.5, dashType: "dash" }, rectRadius: 0.08, objectName: "ScreenshotSpace" });
+  T(s, "Screenshot or live demo", { x: 5.25, y: 3.9, w: 7.45, h: 2.9, fontSize: 18, color: MUTE, align: "center", valign: "middle" });
+  return s;
+}
+{
+  const s = newSlide("HERO", "5 Data stories");
+  glow(s);
+  head(s, "Demo case: the busiest week in two years, 7 to 11 April 2025.", "5 Data stories  ·  Demo case", VIOLET);
+  card(s, 0.6, 1.95, 4.5, 4.7, "Why this week", bl([
+    "Reddit's busiest week in the whole data set. Monday to Friday alone: " + fmt(nz(DEMO.p1["Reddit Volume รวม"])) + " texts.",
+    "Average " + DEMO.p1["เฉลี่ยต่อชั่วโมง"] + " texts an hour, against " + DEMO.p1_full["เฉลี่ยต่อชั่วโมง"] + " over the two years.",
+    "Prices jumped across stocks, futures and crypto at the same hour.",
+    "Seven pages, one story. Pages 5 and 6 switch to the full range."]), { size: 13.5, headSize: 20, color: VIOLET });
+  const route = [["Reddit Volume", "The crowd shows up"], ["Ticker Mentions", "What they talk about"], ["Price and Return", "Prices jump together"], ["Market and Sentiment", "Mood stays negative"],
+    ["Statistical Analysis", "A link, but only when busy"], ["Lead and Lag", "ES=F too thin; BTC-USD price first"], ["Hot Events", "Signals fire; top win rates are luck"]];
+  route.forEach((r, i) => {
+    const y = 1.95 + i * 0.68, c = [TEAL, TEAL, BLUE, BLUE, AMBER, CORAL, CORAL][i];
+    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: 5.4, y, w: 7.3, h: 0.58, fill: { color: SURF }, line: { color: EDGE, width: 0.75 }, rectRadius: 0.08, objectName: "RouteRow" });
+    s.addShape(pres.shapes.RECTANGLE, { x: 5.4, y: y + 0.09, w: 0.07, h: 0.4, fill: { color: c }, line: { color: c, width: 0 } });
+    T(s, String(i + 1), { x: 5.65, y, w: 0.5, h: 0.58, fontSize: 22, bold: true, color: c, valign: "middle" });
+    T(s, r[0], { x: 6.2, y, w: 2.9, h: 0.58, fontSize: 16, bold: true, valign: "middle" });
+    T(s, r[1], { x: 9.1, y, w: 3.5, h: 0.58, fontSize: 14, color: SOFT, valign: "middle" });
+  });
+}
+{
+  const p = DEMO.p1, f = DEMO.p1_full, ratio = nz(p["เฉลี่ยต่อชั่วโมง"]) / nz(f["เฉลี่ยต่อชั่วโมง"]);
+  demoPage("1", "Reddit Volume", "The crowd showed up: " + ratio.toFixed(1) + " times the usual hourly volume.",
+    ["Date range: 2025/04/07 to 2025/04/11", "Chart level: hourly", "Communities: all six, post and comment", "Assets: all (default)"],
+    [[p["ชั่วโมงที่ปริมาณสูงสุด"], "texts in the busiest hour, 9 Apr 17:00 UTC", CORAL], [p["เฉลี่ยต่อชั่วโมง"], "texts an hour, against " + f["เฉลี่ยต่อชั่วโมง"] + " over two years", TEAL],
+     [p["ชั่วโมงที่ Z-score > 1.5"], "hours above Z 1.5 (top Z " + p["Z-score สูงสุดในช่วง"] + ", 7 Apr 14:00)", AMBER]],
+    "The highest Z-score and the busiest hour are different hours: Z compares with the previous 24 hours.");
+}
+{
+  const p = DEMO.p2, top = DEMO.p2_top;
+  demoPage("2", "Ticker Mentions", "Most talked about: " + top[0].ticker + ", then " + top[1].ticker + " and " + top[2].ticker + ".",
+    ["Date range: 2025/04/07 to 2025/04/11", "Chart level: hourly", "Communities: all six, post and comment", "Assets: all 34 (default)", "Read the ranking chart, then the table"],
+    [[fmt(top[0].mentions), "mentions of " + top[0].ticker + ", the most mentioned", TEAL], [fmt(top[1].mentions), "mentions of " + top[1].ticker + ", second", BLUE],
+     [nz(p["Ticker Mention Rate (%)"]).toFixed(2) + "%", "of all texts mention a tracked asset", AMBER]],
+    "The broad market ETF drew more mentions than any single stock.");
+}
+{
+  const p = DEMO.p3, ev = INSIGHT.story3_event_returns["ES=F"];
+  demoPage("3", "Price and Return", "ES=F ended the week " + nz(p["Current Return (%)"]).toFixed(1) + "% higher, most of it in one hour.",
+    ["Date range: 2025/04/07 to 2025/04/11", "Chart level: hourly", "Assets: tick ES=F only", "Keep ES=F on pages 4, 5 and 6"],
+    [[sg(nz(p["Current Return (%)"]), 2) + "%", "Current Return of ES=F, whole week", TEAL], [sg(ev, 2) + "%", "ES=F in one hour, 9 Apr 17:00 UTC", CORAL],
+     [p["Normalized Average True Range (%)"] + "%", "Normalized ATR, the usual hourly range", AMBER]],
+    "9 April 17:00 UTC is also the busiest Reddit hour of the whole data set.");
+}
+{
+  const p = DEMO.p4, h = DEMO.p4_event_hours.find((x) => x.hour.endsWith("17:00"));
+  demoPage("4", "Market and Sentiment", "ES=F rose " + nz(DEMO.p3["Current Return (%)"]).toFixed(1) + "%, yet the mood around it stayed clearly negative.",
+    ["Date range: 2025/04/07 to 2025/04/11", "Chart level: hourly", "Asset: ES=F (kept)", "Sentiment source: six communities, VADER+FinBERT", "Thresholds: 0, all three classes ticked"],
+    [[p["Sentiment Score"].replace("-", "−"), "Sentiment Score of ES=F, whole week", CORAL], [p["Reddit Volume Z-score สูงสุด"], "top Z-score of all Reddit texts that week (whole market)", AMBER],
+     [sg(h.sentiment, 3), "ES=F mood at 9 Apr 17:00 (" + h.texts + " texts), price " + sg(INSIGHT.story3_event_returns["ES=F"], 1) + "%", BLUE]],
+    "Mood trails price. Few texts mention ES=F each hour (" + h.texts + " at 17:00): read single hours with care.");
+}
+{
+  const z0 = DEMO.p5["z=0.0"], z15 = DEMO.p5["z=1.5"], a = z0.all_texts_tab, b = z15.all_texts_tab;
+  demoPage("5", "Statistical Analysis", "Slide the Z-score threshold from 0 to 1.5: the same-hour link goes from " + sg(a.log_return.spearman, 2) + " to " + sg(b.log_return.spearman, 2) + ".",
+    ["Date range: 2024/10/01 to 2026/08/31", "Asset: ES=F (kept)", "Tab: All texts, whole-market text", "Show: Spearman, column Current Return", "Z-score threshold slider: 0, then 1.5"],
+    [[sg(a.log_return.spearman, 3), "same-hour correlation, slider at 0 (n = " + fmt(a.log_return.n) + ")", BLUE], [sg(b.log_return.spearman, 3), "same-hour correlation, slider at 1.5 (n = " + fmt(b.log_return.n) + ")", TEAL],
+     [b["1h"].win_rate.toFixed(1) + "%", "win rate one hour ahead at 1.5 (n = " + fmt(b["1h"].win_n) + ")", AMBER]],
+    "A same-hour link only. Logistic AUC " + z15.cards["Logistic AUC"] + " is stored for the futures group, not for ES=F alone.");
+}
+{
+  const es = Object.values(DEMO.p6["z=1.5"].cards).map(nz), bt = Object.values(DEMO.p6_btc["z=1.5"].cards).map(nz), btOff = Object.values(DEMO.p6_btc["z=0.0"].cards).map(nz);   // same hour, before, after
+  const span = (lags) => { const n = lags.filter((l) => l.lag !== 0).map((l) => l.n); return Math.min(...n) + " to " + Math.max(...n); };
+  demoPage("6", "Lead and Lag", "For ES=F the bars rest on too few hours to read; BTC-USD shows price first.",
+    ["Date range: 2024/10/01 to 2026/08/31", "Asset: ES=F, then switch to BTC-USD", "Reddit Volume Z-score Threshold: 1.5", "Read the bars, not only the cards", "BTC-USD at 0: " + sg(btOff[1], 3) + " before, " + sg(btOff[2], 3) + " after"],
+    [[sg(es[1], 3), "ES=F earlier returns (bars use " + span(DEMO.p6["z=1.5"].lags) + " hours)", AMBER], [sg(bt[1], 3), "BTC-USD earlier returns (" + span(DEMO.p6_btc["z=1.5"].lags) + " hours per bar)", CORAL],
+     [sg(bt[2], 3), "BTC-USD later returns", TEAL]],
+    "A pattern needs enough hours behind each bar. Price first is clear for BTC-USD, not readable for ES=F.");
+}
+{
+  const f = DEMO.p7_win_filter;
+  demoPage("7", "Hot Events", "Signals fire all week, but the top six-hour win rates are luck: none passes the test.",
+    ["Date range: 2025/04/07 to 2025/04/11 for the counts", "Assets: tick all 34; Z 1.5; Sentiment 0.05", "Then range 2024/10/01 to 2026/08/31", "Signal list: Horizon " + f.filter[2] + ", Win Rate at least " + f.filter[0] + "%", "Read the columns: win rate, star = passes the adjusted test"],
+    [[DEMO.p7["จำนวนสัญญาณ (ชั่วโมง × สินทรัพย์)"], "signals in five days across " + DEMO.p7["จำนวนสินทรัพย์ที่เกิดสัญญาณ"] + " assets", CORAL], [String(f.tested), "asset × horizon pairs tested over two years", BLUE],
+     [f.kept + " → " + f.kept_pass_bh, "assets kept by the filter → assets that pass the test", AMBER]],
+    f.top[0].ticker + " at " + f.top[0].horizon + " shows " + f.top[0].win_rate.toFixed(1) + "%, adjusted p " + f.top[0].p_bh.toFixed(2) + ". The same-hour moves of index futures do pass (about " + Math.round(f.bh_pairs.find((x) => x.horizon === "Current Return").win_rate) + "%): co-movement, not a forecast.");
 }
 {
   const s = newSlide("HERO", "5 Data stories");

@@ -1,4 +1,4 @@
-"""Dashboard 7.5-2  Statistical Analysis  (proposal 7.5 dashboard 2 "Ranking and Detection Configuration", table 17: Historical Win Rate, p-value, Logistic Regression per asset and
+"""Dashboard 7.5-2  Statistical Analysis  (proposal 7.5 dashboard 2 "Ranking and Detection Configuration", table 17: Historical Win Rate, p-value per asset and
 horizon; the figures a1_*, a2_*, a3_* of output/figures made interactive).
 
 Same filters as Market and Sentiment (table 17): time, assets, sentiment source (communities, model), the two thresholds, majority
@@ -10,7 +10,7 @@ status.  EVERY number is computed live on the ticker-hours the filters leave, so
   * a switch for how the sentiment is read: the score or the majority status (+ / -);
   * a heat map asset x horizon of the Spearman / Pearson correlation or the Win Rate (value, n, a star when the
     Benjamini-Hochberg p < 0.05) and the table of the p-values behind it;
-  * the Logistic Regression is the stored result of system 7.4 (whole data set; a cross-validated model is not recomputed per filter).
+  * the Logistic Regression (stored result of system 7.4, whole data set) is its own page, `9_Logistic_Regression.py` (moved out 2026-11-13).
 Descriptive only: hourly data are autocorrelated and the horizons overlap, so p-values are not exact; no investment advice.
 """
 
@@ -41,7 +41,7 @@ tickers = common.selected_tickers()
 communities = common.selected_communities()
 statuses = common.selected_statuses()
 content_types = common.selected_content_types()
-CARDS = ["Historical Win Rate", "Spearman p-value", "Pearson p-value", "Logistic AUC"]
+CARDS = ["Historical Win Rate", "Spearman p-value", "Pearson p-value"]
 st.caption("**หมายเหตุ:** ไม่มีเกณฑ์จำนวนตัวอย่างขั้นต่ำ ทุกค่าที่คำนวณได้จะแสดง (สหสัมพันธ์ต้องมีอย่างน้อย 3 ชั่วโมงจึงมีค่าทางคณิตศาสตร์) ค่าที่ n น้อยกว่า 30 ติดเครื่องหมาย ⚠ แปลว่าไม่น่าเชื่อถือ ให้ดู n และ ★ (p ปรับ BH) ประกอบเสมอ")
 if not tickers or not communities or not statuses or not content_types:
     common.nothing_selected(CARDS, "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
@@ -61,7 +61,6 @@ BASE = {"Spearman": ("spearman_rho", "spearman_p", "spearman_bh", "+.3f", [-0.1,
         "Pearson": ("pearson_rho", "pearson_p", "pearson_bh", "+.3f", [-0.1, 0.1], "n"),
         "Win Rate": ("winrate", "win_p", "win_bh", ".1f", [40, 60], "win_n")}
 VIEWS = ["Spearman", "Pearson", "Win Rate"]                                          # one switch: the cell shows the value AND its p-value
-groups_chosen = sorted({group_of[t] for t in tickers})
 
 prices = q("price_series_for", tickers, start, end)
 if prices.empty:
@@ -74,8 +73,6 @@ def stat(family, variant):
 
 
 # ---- cards: two rows, the panel Global and the panel Ticker (every text; the filters of the sidebar apply), future horizons only ---------------------
-logi = q("logistic_results")
-
 
 def card_row(family):
     """The four cards of one panel (Global: the sentiment of the whole market against every asset; Ticker: only the texts that mention the asset)."""
@@ -83,9 +80,6 @@ def card_row(family):
     base = frame[frame.target != "log_return"]
     hits, wins = base.win_hits.sum(), base.win_n.sum()
     win_p = stats.binomtest(int(hits), int(wins), 0.5).pvalue if wins else np.nan
-    logi_ok = logi[(logi.status == "ok") & (logi.panel == "panel_" + family) & (logi.metric == "auc")]
-    auc = logi_ok[(logi_ok.level == "all")] if len(groups_chosen) > 1 else logi_ok[(logi_ok.level == "big_group") & (logi_ok.big_group == groups_chosen[0])]
-    auc = auc[auc.horizon != "log_return"]                  # the prediction of the future only, like the other cards
 
     def p_card(column, label):
         p = base[column].dropna()
@@ -98,9 +92,7 @@ def card_row(family):
         ("Historical Win Rate", "n/a" if not wins else "{:.1f}%".format(100.0 * hits / wins),
          "สัดส่วนชั่วโมงที่ทิศทางของความรู้สึกตรงกับทิศทางผลตอบแทนอนาคต (ทุก Horizon รวมกัน)  \n50%% เท่ากับการสุ่ม  \np-value ของทั้งชุดเท่ากับ %s"
          % ("n/a" if np.isnan(win_p) else "{:.3f}".format(win_p))),
-        p_card("spearman_p", "Spearman p-value"), p_card("pearson_p", "Pearson p-value"),
-        ("Logistic AUC", "n/a" if auc.empty else "{:.3f}".format(auc.value.mean()),
-         "AUC เฉลี่ยทุก Horizon ของ Logistic Regression (ผลเต็มช่วงข้อมูลของระบบ 7.4 ของกลุ่มสินทรัพย์ที่เลือก ไม่เปลี่ยนตามเวลา)  \n0.5 เท่ากับการสุ่ม")])
+        p_card("spearman_p", "Spearman p-value"), p_card("pearson_p", "Pearson p-value")])
     return frame
 
 
@@ -187,154 +179,6 @@ def panel_view(stat, key):
                "%s"
                % ("สี: แดงคือต่ำกว่า 50 เขียวคือสูงกว่า 50 (50 เท่ากับการสุ่ม)" if measure == "Win Rate" else
                   "สี: แดงคือค่าลบ เขียวคือค่าบวก ค่า 0 คือไม่มีความสัมพันธ์"))
-
-
-METHOD_NOTE = """
-**เป้าหมายที่ให้โมเดลทาย**  
-ผลตอบแทนที่ Horizon นั้นเป็นบวก (ขึ้น = 1) หรือเป็นลบ (ลง = 0) ผลตอบแทนที่เท่ากับ 0 พอดีไม่นับ  Current Return คือ ทิศทางของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)
-
-**ตัวแปรที่ป้อนให้โมเดล (6 กลุ่มตามที่ proposal กำหนด)**  
-Level (ค่าความรู้สึกเฉลี่ย, ความแรง), Direction (สัดส่วนบวก/ลบ), Vote (ประเภทความรู้สึกส่วนใหญ่, สัดส่วนที่เห็นตรงกัน), Volume (Reddit Volume Z-score), Lag (ความรู้สึก 1, 2, 3, 6, 12 ชั่วโมงก่อนหน้า), Momentum (การเปลี่ยนแปลงจากชั่วโมงก่อน)  ไม่ใช้ score, upvote_ratio, num_comments และไม่ใช้ผลตอบแทนอนาคตเป็นตัวแปรป้อนเข้า
-
-**วิธีทดสอบ (เฉลี่ยจาก 5 รอบ)**  
-เรียงข้อมูลตามเวลา แล้วแบ่งแบบ TimeSeriesSplit เป็น 5 รอบ แต่ละรอบให้โมเดลเรียนจากข้อมูล**ช่วงก่อนหน้า**แล้วทดสอบกับข้อมูล**ช่วงถัดมา** (ไม่สลับช่วงเวลา) และเว้นห่าง 12 ชั่วโมงระหว่างชุดเรียนกับชุดทดสอบ เพื่อไม่ให้ผลตอบแทนล่วงหน้า 12 ชั่วโมงของชุดเรียนซ้อนกับชุดทดสอบ  ทุกรอบปรับสเกลตัวแปร (StandardScaler) ด้วยข้อมูลชุดเรียนเท่านั้น  **AUC และสัมประสิทธิ์ในหน้านี้คือค่าเฉลี่ยของ 5 รอบ**
-
-**แถวข้อมูล**  
-ใช้เฉพาะแถวที่ตัวแปรครบทุกตัว (ไม่เติม 0 แทนค่าที่ขาด เพราะ 0 หมายถึงเป็นกลาง) ต้องมีอย่างน้อย 500 แถวและทุกรอบต้องมีทั้งขึ้นและลง ไม่งั้นไม่แสดงผล  ตัวเลขนับรวมทุกสินทรัพย์ในกลุ่มที่เลือก (ทุกชั่วโมงของทุกสินทรัพย์ในที่เดียว)
-
-**วิธีอ่านผล**  
-AUC เท่ากับ 0.5 คือการสุ่ม และ 1.0 คือทายถูกทั้งหมด  
-สัมประสิทธิ์มาตรฐานคือการเปลี่ยนแปลงของโอกาสที่ราคาขึ้น (ในสเกลของโมเดล) เมื่อตัวแปรนั้นเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน ค่าบวกดันให้ขึ้น ค่าลบดันให้ลง  ผลทั้งหมดเป็นการบรรยายข้อมูลย้อนหลัง ไม่ใช่คำแนะนำการลงทุน
-"""
-
-
-def logistic_compare(lg):
-    """Two stored Logistic panels as one heat map of the difference B - A of the effect of every variable at every horizon (percentage points)."""
-    choices = {k: v for k, v in PANEL_CHOICES.items() if not k.endswith(":baseline")}          # the random baseline has no variable in common with the others
-    st.session_state.setdefault("p5_log_cmp_a", "global:all")
-    st.session_state.setdefault("p5_log_cmp_b", "global:strong")
-    left, right = st.columns(2)
-    a_key = left.selectbox("A (ฝั่งซ้าย ฐานเปรียบเทียบ)", list(choices), format_func=choices.get, key="p5_log_cmp_a")
-    b_key = right.selectbox("B (ฝั่งขวา เทียบกับ A)", list(choices), format_func=choices.get, key="p5_log_cmp_b")
-    if a_key == b_key:
-        st.info("เลือก panel สองอันที่ต่างกัน")
-        return
-
-    def effects(choice):
-        fam, kd = choice.split(":")
-        part = lg[lg.panel == data.panel_name(kd, fam)]
-        c = part[part.metric.str.startswith("coef:")].assign(column=lambda d: d.metric.str[5:])
-        return c.assign(effect=data.effect_points(c.value))[["column", "horizon", "effect"]]
-
-    ea, eb = effects(a_key), effects(b_key)
-    d = ea.merge(eb, on=["column", "horizon"], suffixes=("_a", "_b"))
-    if d.empty:
-        st.info("ไม่มีตัวแปรและ Horizon ที่ทั้งสอง panel มีผลพร้อมกัน (panel ที่ข้อมูลน้อยไม่มีผลโมเดล)")
-        return
-    d["diff"] = d.effect_b - d.effect_a
-    d["ตัวแปร"] = d.column.map(data.variable_label)
-    d["ช่วง"] = d.horizon.map(TARGET_LABEL)
-    d["label"] = d["diff"].map("{:+.1f}".format)
-    d["dark"] = dark_cell(d["diff"], (-2.5, 2.5))
-    row_order = [data.variable_label(c) for c in data.VARIABLES if c in set(d.column)]
-    chart = alt.Chart(d).encode(
-        x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-        y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
-    rect = chart.mark_rect().encode(
-        color=alt.Color("diff:Q", title="B − A (จุด%)", scale=alt.Scale(domain=[-2.5, 2.5], scheme="redyellowgreen", clamp=True)),
-        tooltip=["ตัวแปร", "ช่วง", alt.Tooltip("effect_a:Q", title="A (จุด%)", format="+.2f"), alt.Tooltip("effect_b:Q", title="B (จุด%)", format="+.2f"),
-                 alt.Tooltip("diff:Q", title="B − A", format="+.2f")])
-    text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
-    st.write("ผลต่างของผลแต่ละตัวแปร B − A (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")
-    common.show((rect + text).properties(height=30 * len(row_order) + 40))
-    st.caption("ค่าในช่องคือผลของตัวแปรใน B ลบด้วยผลของตัวแปรเดียวกันใน A (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น เมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน) สีเขียวคือ B ดันให้ขึ้นมากกว่า A สีแดงคือน้อยกว่า ชี้ที่ช่องเพื่อดูค่าของ A และ B  \n"
-               "เป็นการเทียบเชิงพรรณนา โมเดลของสอง panel ฝึกจากข้อมูลคนละชุด (strong / quality เป็นส่วนย่อยของ ทุกข้อความ) และ AUC ของโมเดลใกล้ 0.5 ผลต่างที่เห็นจึงมักเป็นเสียงรบกวน ไม่ควรตีความเกินจริง")
-
-
-def logistic_view():
-    """The stored Logistic Regression: AUC of every panel and horizon, then the coefficients and the importance of the variable groups."""
-    st.caption("ผลเต็มช่วงข้อมูลของระบบ 7.4 (ไม่เปลี่ยนตามเวลา/ชุมชน/เกณฑ์ เพราะเป็นโมเดลที่ตรวจสอบข้ามช่วงเวลา)  โมเดลทายว่าผลตอบแทนจะ \"ขึ้น\" หรือ \"ลง\" "
-               "จากตัวแปรความรู้สึกทั้ง 6 กลุ่ม  AUC เท่ากับ 0.5 หมายถึงทำนายได้ไม่ดีกว่าการสุ่ม")
-    with st.expander("รายละเอียดวิธีทำ (Logistic Regression)"):
-        st.markdown(METHOD_NOTE)
-    scopes = {"ทุกสินทรัพย์รวมกัน": ("all", "ALL")}
-    scopes.update({GROUP_LABELS[g]: ("big_group", g) for g in groups_chosen})
-    default_scope = list(scopes)[0] if len(groups_chosen) > 1 else GROUP_LABELS[groups_chosen[0]]
-    scope_pick = st.radio("ขอบเขต", list(scopes), index=list(scopes).index(default_scope), horizontal=True, key="p5_scope", label_visibility="collapsed")
-    level, group = scopes[scope_pick]
-    lg = logi[(logi.status == "ok") & (logi.level == level) & (logi.big_group == group)]
-    auc_grid = lg[lg.metric == "auc"].copy()
-    if auc_grid.empty:
-        st.info("ไม่มีผล Logistic ของขอบเขตนี้")
-        return
-    labels = {p: "%s (%s)" % (p.replace("panel_", ""), data.STORED_PANELS[p]) for p in data.STORED_PANELS}
-    auc_grid["panel_label"] = auc_grid.panel.map(labels)
-    auc_grid["ช่วง"] = auc_grid.horizon.map(TARGET_LABEL)
-    auc_grid["label"] = auc_grid.value.map("{:.3f}".format)
-    auc_grid["dark"] = dark_cell(auc_grid.value, (0.47, 0.53))
-    chart = alt.Chart(auc_grid).encode(
-        x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-        y=alt.Y("panel_label:N", sort=[labels[p] for p in data.STORED_PANELS], title=None, axis=alt.Axis(labelLimit=260)))
-    rect = chart.mark_rect().encode(
-        color=alt.Color("value:Q", title="AUC", scale=alt.Scale(domain=[0.47, 0.53], scheme="redyellowgreen", clamp=True)),
-        tooltip=["panel_label", "ช่วง", alt.Tooltip("value:Q", title="AUC", format=".4f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=",")])
-    text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
-    st.write("AUC แต่ละ panel × Horizon (รูป a3_auc)")
-    common.show((rect + text).properties(height=34 * auc_grid.panel.nunique() + 30))
-    st.caption("สีเหลืองคือ 0.5 (เท่ากับการสุ่ม) สีเขียวคือสูงกว่า 0.5 สีแดงคือต่ำกว่า 0.5 (สีเดียวกับ heat map ด้านบน)  \nค่าเกือบทุกช่องอยู่ที่ 0.50 ± 0.01 หมายความว่าทำนายได้ไม่ดีกว่าการสุ่ม  \n"
-               "Current Return คือ ผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)")
-    st.write("สัมประสิทธิ์ของแต่ละตัวแปร (ตัวแปรใดมีผลต่อทิศทางราคา) เลือก panel ได้")
-    log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="p5_log_family")       # the same layers as the heat map
-    if log_family == "compare":
-        logistic_compare(lg)
-        return
-    log_kinds = data.PANEL_VARIANTS if log_family == "global" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}
-    if st.session_state.get("p5_log_kind") not in log_kinds:
-        st.session_state["p5_log_kind"] = "all"
-    log_kind = st.radio("ชนิดข้อความ", list(log_kinds), format_func=log_kinds.get, horizontal=True, key="p5_log_kind")
-    panel_pick = data.panel_name(log_kind, log_family)
-    one = lg[lg.panel == panel_pick]
-    coefs = one[one.metric.str.startswith("coef:")].assign(column=lambda d: d.metric.str[5:])
-    if coefs.empty:
-        st.info("ไม่มีสัมประสิทธิ์ของ panel นี้ในขอบเขตที่เลือก")
-        return
-    coefs = coefs.assign(ตัวแปร=coefs.column.map(data.variable_label), ช่วง=coefs.horizon.map(TARGET_LABEL),
-                         กลุ่ม=coefs.column.map(lambda c: data.VARIABLE_GROUPS.get(data.VARIABLES.get(c, ("", ""))[1], "")),
-                         effect=data.effect_points(coefs.value))
-    coefs["dark"] = dark_cell(coefs.effect, (-2.5, 2.5))
-    coefs["label"] = coefs.effect.map("{:+.1f}".format)
-    row_order = [data.variable_label(c) for c in data.VARIABLES if c in set(coefs.column)]         # grouped: Level, Direction, Vote, Volume, Lag, Momentum
-
-    # the effect of every variable at every horizon, one heat map (the same layout as the heat maps above: no horizon to pick)
-    st.write("ผลของแต่ละตัวแปรในแต่ละ Horizon (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")
-    chart = alt.Chart(coefs).encode(
-        x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-        y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
-    rect = chart.mark_rect().encode(
-        color=alt.Color("effect:Q", title="จุด% ของโอกาสขึ้น", scale=alt.Scale(domain=[-2.5, 2.5], scheme="redyellowgreen", clamp=True)),
-        tooltip=["ตัวแปร", "กลุ่ม", "ช่วง", alt.Tooltip("effect:Q", title="จุดเปอร์เซ็นต์", format="+.2f"),
-                 alt.Tooltip("value:Q", title="สัมประสิทธิ์มาตรฐาน (ค่าดิบของโมเดล)", format="+.4f")])
-    text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
-    common.show((rect + text).properties(height=30 * len(row_order) + 40))
-    st.caption("ค่าในช่องคือจำนวนจุดเปอร์เซ็นต์ที่โอกาสขึ้นเปลี่ยนไปเมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน (คิดจากสัมประสิทธิ์ ÷ 4 × 100 ซึ่งใช้ได้เมื่อโอกาสใกล้ 50% ดูสัมประสิทธิ์ดิบของโมเดลได้ที่ tooltip)  \n"
-               "สีเขียวคือดันให้ขึ้น สีแดงคือดันให้ลง  \nCurrent Return คือชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักแรงกว่าคอลัมน์อื่น เพราะราคากับความรู้สึกเปลี่ยนไปพร้อมกัน  \n"
-               "`sentiment_mean` คือความรู้สึกของชั่วโมงปัจจุบัน (lag 0) ส่วน sentiment_lag_1h ถึง 12h คือความรู้สึกของชั่วโมงก่อนหน้า  \n"
-               "**ตัวแปรที่มีผลจริงต้องผ่านครบ**: ค่าสูงพอ (อย่างน้อยราว 1 จุดเปอร์เซ็นต์) ทิศทางเดียวกันในหลาย Horizon และโมเดลโดยรวมมี AUC ห่างจาก 0.5 หากค่าน้อยหรือทิศทางสลับไปมา แสดงว่าไม่มีผล")
-    imp = one[one.metric.str.startswith("group_importance:")].assign(
-        กลุ่มตัวแปร=lambda d: d.metric.str[17:].map(lambda g: data.VARIABLE_GROUPS.get(g, g)), ช่วง=lambda d: d.horizon.map(TARGET_LABEL),
-        label=lambda d: d.value.map("{:.3f}".format))
-    imp["dark"] = (imp.value / imp.value.max()) > 0.7 if len(imp) else False
-    if not imp.empty:
-        st.write("ความสำคัญของกลุ่มตัวแปร (ผลรวมขนาดสัมประสิทธิ์ของกลุ่ม ยิ่งสูงยิ่งมีอิทธิพลต่อโมเดลมาก)")
-        chart = alt.Chart(imp).encode(
-            x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-            y=alt.Y("กลุ่มตัวแปร:N", sort=[g for g in data.VARIABLE_GROUPS.values() if g in set(imp.กลุ่มตัวแปร)], title=None,
-                    axis=alt.Axis(labelLimit=300, labelOverlap=False)))
-        rect = chart.mark_rect().encode(color=alt.Color("value:Q", title="ความสำคัญ", scale=alt.Scale(scheme="greens")),
-                                        tooltip=["กลุ่มตัวแปร", "ช่วง", alt.Tooltip("value:Q", title="ความสำคัญ", format=".4f")])
-        text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
-        common.show((rect + text).properties(height=34 * imp.กลุ่มตัวแปร.nunique() + 40))
-        st.caption("6 กลุ่มตัวแปรตามที่ proposal กำหนด  กลุ่มที่ค่าสูงกว่ามีอิทธิพลต่อโมเดลมากกว่า แต่เมื่อ AUC ใกล้ 0.5 โมเดลโดยรวมก็ยังทำนายไม่ได้")
 
 
 st.radio("วัดความรู้สึกด้วย", list(PREDICTOR_OF), horizontal=True, key="p5_basis")
@@ -475,6 +319,4 @@ else:
                "Reddit Volume คือจำนวนโพสต์และความคิดเห็นที่พูดถึงสินทรัพย์นั้นในช่วงที่เลือก ส่วน Trading Volume คือปริมาณซื้อขายเฉลี่ยต่อชั่วโมง (หน่วยต่างกันตามสินทรัพย์ เทียบข้ามสินทรัพย์ไม่ได้)")
 
 
-# ---- the Logistic Regression is below the panels --------------------------------------------------------------------------
-st.subheader("Logistic Regression (ความรู้สึกทำนายทิศทางราคาขึ้นหรือลงได้หรือไม่)")
-logistic_view()
+st.caption("Logistic Regression (AUC และสัมประสิทธิ์ของตัวแปร) อยู่ที่หน้า **Logistic Regression** เพราะเป็นผลที่เก็บไว้ทั้งชุดข้อมูล ไม่ตามตัวกรองของหน้านี้")
