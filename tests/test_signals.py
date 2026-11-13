@@ -71,7 +71,7 @@ class ViewTests(unittest.TestCase):
                        "'crypto', 0.5, 10, 2.0, 'positive', 'combined_signal', 'low', 'r', 't')")
             base = ("INSERT INTO analysis_results (run_id, analysis, panel_name, level, ticker, big_group, predictor, "
                     "target, horizon, metric_name, metric_value, p_value, n_samples, status, config_hash, created_at) "
-                    "VALUES ('r', ?, 'panel_Ticker', 'ticker', 'AAA', 'crypto', ?, 'x', ?, ?, ?, ?, 100, ?, 'h', 't')")
+                    "VALUES ('r', ?, 'panel_global', 'ticker', 'AAA', 'crypto', ?, 'x', ?, ?, ?, ?, 100, ?, 'h', 't')")
             db.execute(base, ("winrate", "sign(sentiment_mean)", "1h", "winrate", 0.55, 0.01, "ok"))
             db.execute(base, ("correlation", "sentiment_mean", "1h", "spearman", 0.02, 0.5, "ok"))
             db.execute(base, ("winrate", "sign(sentiment_mean)", "12h", "winrate", None, None, "insufficient_data"))

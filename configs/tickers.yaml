@@ -1,5 +1,7 @@
 # The 34 target assets (proposal 4.2) with the aliases used to find them in Reddit text (T3/T4).
 #
+# instrument  : stock | index_etf | bitcoin_etf, only for asset_class stock_etf (EXTENSION 2026-11-13, shown on the Price and Return page to split the
+#               volatility of the stock_etf group; Big_Group stays the proposal's three groups)
 # asset_class : stock_etf | crypto | futures  (Big_Group in the proposal; BITO/IBIT/MARA/MSTR/COIN are
 #               filed as stock_etf because they trade on stock exchanges - open question O5 in TASKS.md)
 # cashtags    : written as $XYZ; always counted (case-insensitive)
@@ -19,26 +21,31 @@ tickers:
   AAPL:
     name: Apple Inc.
     asset_class: stock_etf
+    instrument: stock
     cashtags: [AAPL]
     aliases: [AAPL, {text: Apple, case_sensitive: true}]
   AMC:
     name: AMC Entertainment
     asset_class: stock_etf
+    instrument: stock
     cashtags: [AMC]
     aliases: [AMC, "AMC Entertainment"]
   AMD:
     name: Advanced Micro Devices
     asset_class: stock_etf
+    instrument: stock
     cashtags: [AMD]
     aliases: [AMD, "Advanced Micro Devices"]
   BITO:
     name: ProShares Bitcoin Strategy ETF
     asset_class: stock_etf
+    instrument: bitcoin_etf
     cashtags: [BITO]
     aliases: [{text: BITO, case_sensitive: true}]
   BRK-B:
     name: Berkshire Hathaway Class B
     asset_class: stock_etf
+    instrument: stock
     cashtags: [BRK.B, BRKB, BRK]
     aliases: ["BRK.B", "BRK-B", BRK, Berkshire, "Berkshire Hathaway"]
   BTC-USD:
@@ -54,6 +61,7 @@ tickers:
   COIN:
     name: Coinbase Global
     asset_class: stock_etf
+    instrument: stock
     cashtags: [COIN]
     aliases: [Coinbase]
   DOGE-USD:
@@ -81,51 +89,61 @@ tickers:
   GME:
     name: GameStop
     asset_class: stock_etf
+    instrument: stock
     cashtags: [GME]
     aliases: [GME, GameStop]
   HOOD:
     name: Robinhood Markets
     asset_class: stock_etf
+    instrument: stock
     cashtags: [HOOD]
     aliases: [{text: HOOD, case_sensitive: true}, Robinhood]
   IBIT:
     name: iShares Bitcoin Trust
     asset_class: stock_etf
+    instrument: bitcoin_etf
     cashtags: [IBIT]
     aliases: [IBIT]
   IWM:
     name: iShares Russell 2000 ETF
     asset_class: stock_etf
+    instrument: index_etf
     cashtags: [IWM]
     aliases: [IWM]
   JNJ:
     name: Johnson & Johnson
     asset_class: stock_etf
+    instrument: stock
     cashtags: [JNJ]
     aliases: [JNJ, "Johnson & Johnson", "Johnson and Johnson", "J&J"]
   JPM:
     name: JPMorgan Chase
     asset_class: stock_etf
+    instrument: stock
     cashtags: [JPM]
     aliases: [JPM, JPMorgan, "JP Morgan"]
   KO:
     name: Coca-Cola
     asset_class: stock_etf
+    instrument: stock
     cashtags: [KO]
     aliases: ["Coca-Cola"]
   MARA:
     name: Marathon Digital Holdings
     asset_class: stock_etf
+    instrument: stock
     cashtags: [MARA]
     aliases: [{text: MARA, case_sensitive: true}, "Marathon Digital"]
   MSFT:
     name: Microsoft
     asset_class: stock_etf
+    instrument: stock
     cashtags: [MSFT]
     aliases: [MSFT, Microsoft]
   MSTR:
     name: MicroStrategy
     asset_class: stock_etf
+    instrument: stock
     cashtags: [MSTR]
     aliases: [MSTR, MicroStrategy]
   NG=F:
@@ -142,16 +160,19 @@ tickers:
   NVDA:
     name: NVIDIA
     asset_class: stock_etf
+    instrument: stock
     cashtags: [NVDA]
     aliases: [NVDA, Nvidia]
   PLTR:
     name: Palantir
     asset_class: stock_etf
+    instrument: stock
     cashtags: [PLTR]
     aliases: [PLTR, Palantir]
   QQQ:
     name: Invesco QQQ Trust
     asset_class: stock_etf
+    instrument: index_etf
     cashtags: [QQQ]
     aliases: [QQQ]
   RTY=F:
@@ -173,16 +194,19 @@ tickers:
   SPY:
     name: SPDR S&P 500 ETF
     asset_class: stock_etf
+    instrument: index_etf
     cashtags: [SPY]
     aliases: [SPY, "SPDR S&P 500"]
   TSLA:
     name: Tesla
     asset_class: stock_etf
+    instrument: stock
     cashtags: [TSLA]
     aliases: [TSLA, Tesla]
   XOM:
     name: Exxon Mobil
     asset_class: stock_etf
+    instrument: stock
     cashtags: [XOM]
     aliases: [XOM, Exxon, "Exxon Mobil"]
   XRP-USD:

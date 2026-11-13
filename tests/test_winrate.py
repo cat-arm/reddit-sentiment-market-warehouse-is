@@ -17,6 +17,7 @@ def frame(sent, ret, majority=None, ticker="AAA", group="crypto"):
                        "random_direction": np.where(np.arange(n) % 4 < 2, 1, -1)})     # + + - - (half right vs alternating)
     for h in ("1h", "2h", "3h", "6h", "12h"):
         df["future_return_" + h] = ret
+    df["log_return"] = ret                                                                # the Current Return (extension) is analysed like a horizon
     return df
 
 
@@ -51,7 +52,7 @@ class WinRateTests(unittest.TestCase):
         base = baseline_rates(panels)
         rows = analyse_panel("panel_global", df, base, META)
         w = [r for r in rows if r["metric_name"] == "winrate" and r["predictor"] == PRED_SIGN and r["level"] == "all"]
-        self.assertEqual(len(w), 5)
+        self.assertEqual(len(w), 6)                                  # five forward horizons + the Current Return (extension)
         self.assertTrue(all(r["metric_value"] == 1.0 and r["status"] == "ok" for r in w))
         self.assertTrue(all(r["p_value"] < 1e-6 for r in w))
         b = [r for r in rows if r["metric_name"] == "baseline_winrate" and r["level"] == "all"]

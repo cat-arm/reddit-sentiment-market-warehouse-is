@@ -9,13 +9,15 @@ Definitions (documented decisions, see docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md 
               (a return of exactly 0 has no direction, so it is not an event)
   win         sign(signal) == sign(future_return_h)
   win rate    wins / events (stored as a FRACTION 0..1 in analysis_results; the fact table shows it x 100 as %)
-  baseline    p0 = win rate of panel_baseline for the SAME group (ticker / Big_Group / all) and horizon, i.e. what a
-              random direction scores on the same hours; panel_baseline itself is compared with 0.5.
-  test        two-sided exact Binomial test of (wins, events) against p0  (scipy.stats.binomtest).  The sign of
-              winrate - baseline_winrate tells whether it is above or below chance.
-  guard       fewer than MIN_N = 30 events -> status 'insufficient_data', winrate/p-value stay NULL (never 0)
+  baseline    p0 = 0.5, the EXPECTED value of the random simulation (a random direction is right half of the time whatever the
+              prices do).  Decided 2026-11-11 so that this table and the live dashboard (Statistical Analysis, Hot Events) test
+              against the same line; the win rate of ONE simulated draw (panel_baseline, +-3.6 points at ticker level) is stored
+              as 'baseline_winrate' for information only.
+  test        two-sided exact Binomial test of (wins, events) against p0 = 0.5  (scipy.stats.binomtest).  The sign of
+              winrate - 0.5 tells whether it is above or below chance.
+  guard       no events (MIN_N = 1; was 30 until 2026-11-11, the dashboard marks n < 30 with a warning symbol instead) -> status 'insufficient_data', winrate/p-value stay NULL (never 0)
 Each (panel, group, horizon, predictor) stores two rows: metric 'winrate' (with the p-value) and
-'baseline_winrate' (the p0 used).  BH adjustment (extension) is added across tickers like in A1.
+'baseline_winrate' (the win rate of the simulated baseline panel, for information).  BH adjustment (extension) is added across tickers like in A1.
 Same caveats as A1: autocorrelated hours and overlapping horizons make p-values descriptive.
 
 Usage:  python -m analysis.winrate [--db output/reddit.sqlite3] [--no-figures]
@@ -33,8 +35,13 @@ from analysis.correlation import FIGURES, groups
 from etl.common import DEFAULT_DB, connect
 from ingest.pipeline_logs import run_id as new_run_id
 
-MIN_N = 30
+MIN_N = 1                    # no minimum n (decided 2026-11-11, was 30): a win rate needs one event; the n of every value and a warning symbol (n < 30) tell how far to trust it
 HORIZONS = {"future_return_%s" % h: h for h in ("1h", "2h", "3h", "6h", "12h")}
+# EXTENSION (2026-11-11): the Current Return (`log_return`, the return of the SAME clock hour as the texts: the price at the end of the hour against
+# the price at its start) is stored too, as a co-movement and not a prediction.  Its BH family is its own (the 34 tickers of that target), so the
+# numbers of the five forward horizons stay exactly what they were.
+CURRENT = {"log_return": "log_return"}
+TARGETS = {**CURRENT, **HORIZONS}
 BASELINE_PANEL = "panel_baseline"
 PRED_SIGN = "sign(sentiment_mean)"
 PRED_MAJORITY = "majority_final_status"
@@ -71,7 +78,7 @@ def baseline_rates(panels):
     df = panels[BASELINE_PANEL]
     for level, ticker, big_group, part in groups(df):
         sig = signals(part, BASELINE_PANEL)[PRED_RANDOM]
-        for target, horizon in HORIZONS.items():
+        for target, horizon in TARGETS.items():
             wins, events = wins_and_events(sig, part[target])
             out[(level, ticker, big_group, horizon)] = wins / events if events >= MIN_N else 0.5
     return out
@@ -81,15 +88,16 @@ def analyse_panel(panel_name, df, base, meta):
     rows = []
     for level, ticker, big_group, part in groups(df):
         for predictor, sig in signals(part, panel_name).items():
-            for target, horizon in HORIZONS.items():
+            for target, horizon in TARGETS.items():
                 wins, events = wins_and_events(sig, part[target])
-                p0 = 0.5 if panel_name == BASELINE_PANEL else base[(level, ticker, big_group, horizon)]
+                p0 = 0.5                                                   # the expected value of the random simulation (see the header)
+                simulated = 0.5 if panel_name == BASELINE_PANEL else base[(level, ticker, big_group, horizon)]
                 rate, p, status = evaluate(wins, events, p0)
                 common = dict(meta, panel_name=panel_name, level=level, ticker=ticker, big_group=big_group,
                               predictor=predictor, target=target, horizon=horizon, n_samples=events, status=status)
                 rows.append(dict(common, metric_name="winrate", metric_value=rate, p_value=p, p_value_bh=None))
                 rows.append(dict(common, metric_name="baseline_winrate",
-                                 metric_value=p0 if status == "ok" else float("nan"), p_value=None, p_value_bh=None))
+                                 metric_value=simulated if status == "ok" else float("nan"), p_value=None, p_value_bh=None))
     return rows
 
 
@@ -103,7 +111,7 @@ def heatmaps(rows, out_dir=FIGURES):
     out_dir.mkdir(parents=True, exist_ok=True)
     frame = pd.DataFrame(rows)
     frame = frame[(frame.level == "ticker") & (frame.metric_name == "winrate") & (frame.predictor != PRED_MAJORITY)]
-    cols = list(HORIZONS.values())
+    cols = list(TARGETS.values())
     paths = []
     for panel, part in frame.groupby("panel_name"):
         order = part.drop_duplicates("ticker").sort_values(["big_group", "ticker"])["ticker"].tolist()
@@ -115,7 +123,7 @@ def heatmaps(rows, out_dir=FIGURES):
         sns.heatmap(value, annot=labels, fmt="", cmap=figure_style.colormap(), center=0.5, vmin=0.45, vmax=0.55, linewidths=0.3,
                     cbar_kws={"label": "win rate (แดง < 50%, เขียว > 50%; สีเต็มที่ 45% / 55%)"}, ax=ax, annot_kws={"fontsize": 6})
         ax.set_title("%s - win rate %% (%s)\n%s\n"
-                     "(* = BH p < 0.05 เทียบ baseline; n = จำนวนครั้งที่มีสัญญาณและราคาขยับ)"
+                     "(* = BH p < 0.05 เทียบ 50%%; n = จำนวนครั้งที่มีสัญญาณและราคาขยับ)"
                      % (panel, part.predictor.iloc[0], figure_style.panel_note(panel)), fontsize=8)
         ax.set_xlabel("")
         ax.set_ylabel("")
@@ -131,12 +139,12 @@ def run(db_path=DEFAULT_DB, figures=True):
     db = connect(db_path)
     try:
         cols = ["ticker", "big_group", "sentiment_mean", "majority_final_status", "random_direction",
-                *HORIZONS]
+                *TARGETS]
         panels = {name: pd.read_sql_query("SELECT %s FROM panels WHERE panel_name = ?" % ", ".join(cols), db,
                                           params=(name,))
                   for (name,) in db.execute("SELECT DISTINCT panel_name FROM panels ORDER BY 1").fetchall()}
         meta = dict(run_id=new_run_id(), analysis="winrate", created_at=results_store.now(),
-                    config_hash=results_store.config_hash(dict(min_n=MIN_N, horizons=list(HORIZONS.values()),
+                    config_hash=results_store.config_hash(dict(min_n=MIN_N, horizons=list(TARGETS.values()),
                                                                baseline=BASELINE_PANEL)))
         base = baseline_rates(panels)
         rows = []

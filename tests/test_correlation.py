@@ -37,7 +37,7 @@ class CorrelationTests(unittest.TestCase):
         self.assertEqual(correlate(df, "sentiment_mean", "log_return")[4], 50)
 
     def test_insufficient_and_constant(self):
-        df = frame(n=20)
+        df = frame(n=2)                                            # fewer than MIN_N = 3 pairs: no correlation exists
         res = correlate(df, "sentiment_mean", "log_return")
         self.assertEqual(res[5], "insufficient_data")
         self.assertTrue(np.isnan(res[0]))                          # NULL, never 0

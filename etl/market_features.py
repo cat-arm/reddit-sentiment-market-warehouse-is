@@ -6,7 +6,9 @@ Input is `market_bars` (hourly bars from yfinance). Rules, all from the proposal
   * A bar's timestamp is the START of the bar (stocks xx:30, crypto/futures xx:00). hour_bucket = timestamp
     rounded down to the full hour, so a stock bar 13:30 belongs to hour 13:00. Reddit is aggregated in the same
     [H:00, H+1:00) hours, so both sides join on hour_bucket. close_t is the price at the END of the bar.
-  * future_return_nh = (close_{t+n} - close_t) / close_t * 100   (percent). close_{t+n} must be the bar
+  * future_return_nh = ln(close_{t+n} / close_t) * 100   (percent, log return like Current Return; changed 2026-11-13 from the plain
+    (close_{t+n} - close_t) / close_t * 100 so that every return of the project has one formula and adds up over time; the proposal gives the
+    formula only for Current Return, so its text must say that Future Return is the log return too).  close_{t+n} must be the bar
     that starts exactly n hours after bar t; if that bar does not exist (weekend, holiday, overnight,
     missing data) the value is NULL. NULL therefore means "not valid", which is the proposal's
     "use only periods with enough data". Stocks trade ~7 bars/day, so 6h/12h are mostly NULL for them.
@@ -15,6 +17,11 @@ Input is `market_bars` (hourly bars from yfinance). Rules, all from the proposal
     the column keeps the name log_return so no migration is needed.
   * volume_zscore_24 = (volume_t - mean) / std of the PRIOR 24 clock hours, current hour excluded
     (needs >= MIN_WINDOW bars, std > 0, else NULL).
+    EXTENSION (2026-11-13): a volume of exactly 0 is treated as MISSING for every asset (market closed, or the data source - yfinance - has no
+    volume: crypto trades all day yet about half of its hourly bars carry 0): such a bar is left out of the 24-hour window and gets no
+    Z-score, so a window of mostly zeros no longer makes one lump a Z-score of 100,000.  NOT the rule of the Reddit Z-score, where an hour
+    without texts is a true 0 and the guard is a floor on the standard deviation; the principle is the same: no Z-score when the baseline
+    cannot be trusted (NULL, never 0).
   * ATR = mean true range over the last 24 clock hours including this bar (needs >= MIN_WINDOW bars);
     normalized_atr = ATR / close * 100.   True range = max(high-low, |high-prev_close|, |low-prev_close|),
     prev_close only if the previous bar starts exactly 1h earlier, otherwise high-low.
@@ -67,8 +74,9 @@ def _text(epoch):
     return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
-def ticker_features(bars):
-    """bars: [(epoch, high, low, close, volume)] of ONE ticker, close not NULL, sorted. Returns feature rows."""
+def ticker_features(bars, zero_volume_missing=True):
+    """bars: [(epoch, high, low, close, volume)] of ONE ticker, close not NULL, sorted. Returns feature rows.
+    `zero_volume_missing`: a volume of 0 is a gap of the data, not a count (see the module docstring); False keeps the 0 as a value."""
     stamps = [bar[0] for bar in bars]
     close_at = {bar[0]: bar[3] for bar in bars}
 
@@ -85,7 +93,7 @@ def ticker_features(bars):
         future = []
         for n in HORIZONS:
             later = close_at.get(ts + n * HOUR)
-            future.append((later - close) / close * 100 if later is not None and close else None)
+            future.append(math.log(later / close) * 100 if later is not None and close and close > 0 and later > 0 else None)
 
         # RSI: Wilder smoothing over consecutive valid bars
         rsi = None
@@ -105,9 +113,10 @@ def ticker_features(bars):
 
         # prior 24 clock hours, current excluded -> volume z-score (no look-ahead, no self-inclusion)
         lo = bisect.bisect_left(stamps, ts - WINDOW_HOURS * HOUR)
-        prior = [b[4] for b in bars[lo:i] if b[4] is not None]
+        usable = lambda v: v is not None and not (zero_volume_missing and v == 0)
+        prior = [b[4] for b in bars[lo:i] if usable(b[4])]
         zscore = None
-        if volume is not None and len(prior) >= MIN_WINDOW:
+        if usable(volume) and len(prior) >= MIN_WINDOW:
             spread = statistics.pstdev(prior)
             zscore = (volume - statistics.fmean(prior)) / spread if spread > 0 else None
 
@@ -131,7 +140,7 @@ def build(db):
             "WHERE close IS NOT NULL ORDER BY ticker, timestamp_utc"):
         by_ticker.setdefault(ticker, []).append((_epoch(stamp), high, low, close, volume))
     for ticker, bars in by_ticker.items():
-        out = [(ticker,) + row for row in ticker_features(bars)]
+        out = [(ticker,) + row for row in ticker_features(bars, zero_volume_missing=True)]
         db.executemany("INSERT INTO market_hourly_features VALUES (%s)" % ",".join("?" * 15), out)
     db.commit()
 

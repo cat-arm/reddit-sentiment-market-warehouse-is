@@ -1,6 +1,8 @@
 """G2 + G3: data-driven signal detection (proposal 7.6) -> `signal_events`, `signal_summary`, view `v_signal_list`.
 
-What a "signal" is  (all per ticker-hour, using the TICKER-level Reddit sentiment, i.e. only texts that mention it):
+What a "signal" is  (per ticker-hour; REBUILT 2026-11-11: the Volume Z-score and the Sentiment Score are those of ALL the texts of the hour,
+the same for every asset - proposal tables 3 and 18, panel_global; the asset adds its price rows.  `dashboard.data.market_signals` is the one
+function that applies the rule, the dashboard page 7 calls it too):
     volume_spike              Reddit Volume Z-score  >  z threshold               (sentiment not clearly directional)
     positive_sentiment_spike  sentiment_mean         >=  +sentiment threshold      (no volume spike)
     negative_sentiment_spike  sentiment_mean         <=  -sentiment threshold      (no volume spike)
@@ -17,10 +19,10 @@ Storage design (see TASKS G1): the 6 combinations of (z threshold x sentiment th
 `v_signal_list` (= proposal table 18: timestamp, Ticker, Big_Group, sentiment_mean, Reddit_volume, zscore, horizon,
 winrate, correlation_value, signal_type, signal_level).  That avoids storing 5 identical copies of every signal.
 
-G3 - historical statistics attached to a signal come from analysis A1/A2 of the SAME ticker, panel_Ticker,
+G3 - historical statistics attached to a signal come from analysis A1/A2 of the SAME ticker, panel_global,
 predictor sentiment_mean: win rate in % (+ its Binomial p-value) and Spearman correlation with the future return of
 the config's horizon.  They are FULL-SAMPLE summaries shown as context; they do not confirm any return and are not
-investment advice.  `stat_status` = 'insufficient_data' when A2 had fewer than 30 events for that ticker/horizon.
+investment advice.  `stat_status` = 'insufficient_data' when A2 had fewer than 3 events for that ticker/horizon.
 
 Usage:  python -m analysis.signals [--db output/reddit.sqlite3]
 """
@@ -61,10 +63,10 @@ SELECT s.timestamp, s.hour_utc, s.ticker, s.big_group, s.sentiment_mean, s.reddi
        'historical statistic of this ticker, not a confirmation of return and not investment advice' AS note
 FROM signal_events s
 JOIN DimDetectionConfig c ON c.ZscoreThreshold = s.z_threshold AND c.SentimentThreshold = s.s_threshold
-LEFT JOIN analysis_results w ON w.analysis = 'winrate' AND w.panel_name = 'panel_Ticker' AND w.level = 'ticker'
+LEFT JOIN analysis_results w ON w.analysis = 'winrate' AND w.panel_name = 'panel_global' AND w.level = 'ticker'
       AND w.predictor = 'sign(sentiment_mean)' AND w.metric_name = 'winrate' AND w.ticker = s.ticker
       AND w.horizon = c.Horizon
-LEFT JOIN analysis_results r ON r.analysis = 'correlation' AND r.panel_name = 'panel_Ticker' AND r.level = 'ticker'
+LEFT JOIN analysis_results r ON r.analysis = 'correlation' AND r.panel_name = 'panel_global' AND r.level = 'ticker'
       AND r.predictor = 'sentiment_mean' AND r.metric_name = 'spearman' AND r.ticker = s.ticker
       AND r.horizon = c.Horizon"""
 
@@ -99,14 +101,18 @@ def detect(df, z_th, s_th, rules=RULES):
 def build(db_path=DEFAULT_DB):
     db = connect(db_path)
     try:
-        # ticker-level, all texts, rows that really have Reddit data (has_reddit_data = 1)
-        panel = pd.read_sql_query(
-            "SELECT ticker, big_group, hour_utc, sentiment_mean, reddit_volume, reddit_volume_zscore_24, "
-            "majority_final_status FROM merged_hourly_panel WHERE scope = 'ticker' AND variant = 'all' "
-            "AND has_reddit_data = 1", db)
+        # the rule is applied by dashboard.data.market_signals (market-wide Z-score and Sentiment Score x the assets with a price bar that hour)
+        from dashboard import data
+        tickers = tuple(r[0] for r in db.execute("SELECT TickerSymbol FROM DimTicker"))
         this_run, stamp = new_run_id(), results_store.now()
-        parts = [detect(panel, z, s) for z in GRID["zscore_thresholds"] for s in GRID["sentiment_thresholds"]]
+        parts = []
+        for z in GRID["zscore_thresholds"]:
+            for s in GRID["sentiment_thresholds"]:
+                part = data.market_signals(db_path, 0, 4_000_000_000, tickers, ("positive", "negative", "neutral"), z, s)
+                part["z_threshold"], part["s_threshold"] = z, s
+                parts.append(part)
         events = pd.concat(parts, ignore_index=True)
+        events["reddit_volume"] = events["market_volume"].fillna(0).astype(int)            # Reddit_volume of table 18 = all the texts of the hour
         events["timestamp"] = pd.to_datetime(events["hour_utc"], unit="s", utc=True).dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
         events = events.rename(columns={"reddit_volume_zscore_24": "reddit_volume_zscore"})
         events["run_id"], events["detected_at"] = this_run, stamp

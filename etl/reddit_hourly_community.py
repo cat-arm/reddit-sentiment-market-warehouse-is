@@ -31,6 +31,17 @@ from etl.common import DEFAULT_DB, connect
 MODELS = (("VADER+FinBERT", "final_sentiment", "final_status"), ("VADER", "vader_score", "vader_status"),
           ("FinBERT", "finbert_score", "finbert_status"))
 VARIANTS = (("all", 0.0), ("strong", 0.05), ("quality", 0.30))
+STEP = 0.05                                                       # the Sentiment Threshold of the dashboard moves in steps of 0.05 (EXTENSION, 2026-11-11)
+NAMED = {0: "all", 1: "strong", 6: "quality"}                     # step number -> the variant names of table 12 (cut = number x 0.05)
+
+
+def variant_of(cut):
+    """Name of the variant that keeps only the texts with |score| >= cut (cut a multiple of 0.05 from 0 to 0.95): 'all', 'strong' (0.05),
+    'quality' (0.30), else 't0.10', 't0.15', ..."""
+    k = int(round(float(cut) / STEP))
+    if not 0 <= k <= 19 or abs(k * STEP - float(cut)) > 1e-9:
+        raise ValueError("the Sentiment Threshold must be a multiple of 0.05 from 0 to 0.95, got %r" % (cut,))
+    return NAMED.get(k, "t%.2f" % (k * STEP))
 
 SCHEMA = """CREATE TABLE reddit_hourly_community (
     ticker TEXT NOT NULL, hour_utc INTEGER NOT NULL, subreddit TEXT NOT NULL, texts INTEGER NOT NULL,
@@ -95,6 +106,86 @@ def build(db_path=DEFAULT_DB):
         db.close()
 
 
+BUCKET = "CAST(ABS(s.{score}) * 20 + 1e-9 AS INTEGER)"            # 0 .. 20: the step of 0.05 that the |score| reaches
+EXTRA_TICKER = """
+    SELECT m.ticker, p.created_utc / 3600 * 3600 AS hour_utc, 'r/' || p.subreddit AS subreddit,
+           CASE p.content_type WHEN 'submission' THEN 'Post' ELSE 'Comment' END AS content_type, """ + BUCKET + """ AS bucket,
+           COUNT(*) AS texts, SUM(s.{score}) AS sentiment_sum, SUM(ABS(s.{score})) AS abs_sum, SUM(s.{status} = 'positive') AS pos_n,
+           SUM(s.{status} = 'negative') AS neg_n, SUM(s.{status} = 'neutral') AS neu_n
+    FROM sentiment_item s JOIN ticker_mentions m ON m.src_rowid = s.src_rowid JOIN processed_text p ON p.src_rowid = s.src_rowid
+    GROUP BY 1, 2, 3, 4, 5"""
+EXTRA_GLOBAL = """
+    SELECT p.created_utc / 3600 * 3600 AS hour_utc, 'r/' || p.subreddit AS subreddit,
+           CASE p.content_type WHEN 'submission' THEN 'Post' ELSE 'Comment' END AS content_type, """ + BUCKET + """ AS bucket,
+           COUNT(*) AS texts, SUM(s.{score}) AS sentiment_sum, SUM(ABS(s.{score})) AS abs_sum, SUM(s.{status} = 'positive') AS pos_n,
+           SUM(s.{status} = 'negative') AS neg_n, SUM(s.{status} = 'neutral') AS neu_n
+    FROM sentiment_item s JOIN processed_text p ON p.src_rowid = s.src_rowid
+    GROUP BY 1, 2, 3, 4"""
+
+
+def build_extra(db_path=DEFAULT_DB):
+    """EXTENSION (2026-11-11): the variants 't0.10' .. 't0.95' (every cut that is a multiple of 0.05 except the three of table 12) are ADDED to
+    both tables without touching the rows that exist: one pass over the texts per model and table, grouped by the 0.05 step of |score|,
+    then the sums of every step from the cut upwards.  A step is a bucket of |score| in [k x 0.05, (k + 1) x 0.05), so the sums of the buckets
+    >= k are exactly 'the texts with |score| >= k x 0.05'.  `check_extra` proves it against the stored 'strong' and 'quality'."""
+    import pandas as pd
+    db = connect(db_path)
+    try:
+        for table, select, key in (("reddit_hourly_community", EXTRA_TICKER, ["ticker", "hour_utc", "subreddit", "content_type"]),
+                                   ("reddit_hourly_global", EXTRA_GLOBAL, ["hour_utc", "subreddit", "content_type"])):
+            db.execute("DELETE FROM %s WHERE variant LIKE 't0.%%'" % table)
+            db.commit()
+            for model, score, status in MODELS:
+                frame = pd.read_sql_query(select.format(score=score, status=status), db)
+                print("%s %s: %d rows by bucket" % (table, model, len(frame)), flush=True)
+                value = ["texts", "sentiment_sum", "abs_sum", "pos_n", "neg_n", "neu_n"]
+                for k, name in ((1, "strong"), (6, "quality")):                    # the buckets must rebuild the stored variants exactly
+                    stored = db.execute("SELECT SUM(texts), SUM(sentiment_sum) FROM %s WHERE model = ? AND variant = ?" % table, (model, name)).fetchone()
+                    mine = frame[frame.bucket >= k][["texts", "sentiment_sum"]].sum()
+                    if int(mine.texts) != int(stored[0]) or abs(float(mine.sentiment_sum) - float(stored[1])) > 1e-6 * max(1.0, abs(float(stored[1]))):
+                        raise RuntimeError("%s %s: the buckets >= %d give %d texts, the stored '%s' has %d" % (table, model, k, int(mine.texts), name, int(stored[0])))
+                print("  buckets agree with the stored strong and quality", flush=True)
+                for k in range(2, 20):
+                    if k in NAMED:
+                        continue
+                    part = frame[frame.bucket >= k].groupby(key, as_index=False)[value].sum()
+                    name = variant_of(k * STEP)
+                    cols = key + value
+                    rows = [tuple(r) + (model, name) for r in part[cols].itertuples(index=False, name=None)]
+                    # column order of the table: (ticker,) hour, subreddit, texts, sums..., model, variant, content_type
+                    order = {c: i for i, c in enumerate(cols)}
+                    layout = ([order["ticker"]] if "ticker" in order else []) + [order["hour_utc"], order["subreddit"], order["texts"], order["sentiment_sum"],
+                                                                                   order["abs_sum"], order["pos_n"], order["neg_n"], order["neu_n"]]
+                    n = len(cols)
+                    out = [tuple(r[i] for i in layout) + (r[n], r[n + 1], r[order["content_type"]]) for r in rows]
+                    db.executemany("INSERT INTO %s VALUES (%s)" % (table, ",".join("?" * (len(layout) + 3))), out)
+                    db.commit()
+                    print("  %s %s %s rows=%d" % (table, model, name, len(out)), flush=True)
+    finally:
+        db.close()
+
+
+def check_extra(db_path=DEFAULT_DB):
+    """(cuts compared, rows that differ): the sums of the buckets (>= 0.05 and >= 0.30) rebuilt from the stored table 't...' logic must equal the
+    stored 'strong' / 'quality'.  Here: for every model, the variants must be NESTED: texts(t0.10) <= texts(strong) per key and the totals must fall with the cut."""
+    db = connect(db_path)
+    try:
+        bad = 0
+        for table in ("reddit_hourly_community", "reddit_hourly_global"):
+            for model, _, _ in MODELS:
+                previous = None
+                for k in range(0, 20):
+                    name = variant_of(k * STEP)
+                    total = db.execute("SELECT COALESCE(SUM(texts), 0) FROM %s WHERE model = ? AND variant = ?" % table, (model, name)).fetchone()[0]
+                    if previous is not None and total > previous:
+                        bad += 1
+                    previous = total
+                    print("%s %s %-8s texts=%d" % (table, model, name, total), flush=True)
+        return 20 * 3 * 2, bad
+    finally:
+        db.close()
+
+
 def check(db_path=DEFAULT_DB):
     """(pooled rows compared, rows that differ) between the tables summed over communities and `reddit_hourly`, for the final model
     and every variant, per ticker and for the market ('ALL'); plus the rows where the models disagree on the number of texts ('all')."""
@@ -135,7 +226,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--db", default=str(DEFAULT_DB))
     parser.add_argument("--check-only", action="store_true", help="only compare with reddit_hourly, do not rebuild")
+    parser.add_argument("--extra", action="store_true", help="ADD the variants t0.10 .. t0.95 (steps of 0.05) without touching the existing rows")
     args = parser.parse_args(argv)
+    if args.extra:
+        build_extra(args.db)
+        print("nested check (cuts, problems):", check_extra(args.db))
+        return 0
     if not args.check_only:
         build(args.db)
     compared, bad = check(args.db)

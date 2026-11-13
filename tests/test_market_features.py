@@ -21,13 +21,37 @@ def bar(hours, close, volume=100.0, spread=1.0, start=START):
     return (epoch(hours, start), close + spread / 2, close - spread / 2, close, volume)
 
 
+class ZeroVolumeTest(unittest.TestCase):
+    """EXTENSION: a volume of 0 is a gap of the data (market closed or no data from the source): not in the 24-hour window, no Z-score."""
+
+    def bars(self):
+        volumes = [0.0] * 23 + [3328.0] + [92_000_000.0]            # a window of zeros with one small lump, then a huge hour
+        return [bar(i, 100.0 + i, volume=v) for i, v in enumerate(volumes)]
+
+    def z(self, rows):
+        return dict(zip(market_features.FEATURE_COLUMNS[1:], rows[-1]))["volume_zscore_24"]
+
+    def test_keeping_the_zeros_as_values_one_lump_makes_a_huge_z_score(self):
+        self.assertGreater(self.z(ticker_features(self.bars(), zero_volume_missing=False)), 1000)
+
+    def test_by_default_a_window_of_gaps_gives_no_z_score(self):
+        rows = ticker_features(self.bars())
+        self.assertIsNone(self.z(rows))                               # only one usable prior bar (< MIN_WINDOW)
+        self.assertIsNone(dict(zip(market_features.FEATURE_COLUMNS[1:], rows[0]))["volume_zscore_24"])   # a zero bar itself has no Z-score
+
+    def test_a_real_window_still_gives_the_z_score(self):
+        volumes = [100.0, 120.0, 80.0, 110.0, 90.0, 100.0, 105.0, 95.0, 400.0]
+        rows = ticker_features([bar(i, 100.0, volume=v) for i, v in enumerate(volumes)])
+        self.assertGreater(self.z(rows), 5)                           # 400 against a quiet window is a spike, as before
+
+
 class FeatureMathTest(unittest.TestCase):
-    def test_future_return_is_percent_and_needs_a_bar_exactly_n_hours_later(self):
+    def test_future_return_is_a_log_percent_and_needs_a_bar_exactly_n_hours_later(self):
         rows = ticker_features([bar(0, 100.0), bar(1, 110.0), bar(3, 121.0)])     # no bar at hour 2
         first = dict(zip(market_features.FEATURE_COLUMNS[1:], rows[0]))
-        self.assertAlmostEqual(first["future_return_1h"], 10.0)
+        self.assertAlmostEqual(first["future_return_1h"], math.log(110.0 / 100.0) * 100)      # ln, like the Current Return
         self.assertIsNone(first["future_return_2h"])                              # gap -> not valid
-        self.assertAlmostEqual(first["future_return_3h"], 21.0)
+        self.assertAlmostEqual(first["future_return_3h"], math.log(121.0 / 100.0) * 100)
         self.assertIsNone(first["future_return_6h"])
 
     def test_log_return_uses_only_the_previous_hour_and_is_percent(self):

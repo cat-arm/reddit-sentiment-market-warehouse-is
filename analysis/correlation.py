@@ -10,7 +10,7 @@ For every panel, at three levels (each of the 34 tickers / each Big_Group / all 
                                          CONTEMPORANEOUS: the return of the same clock hour as the Reddit hour,
                                          so it describes co-movement, NOT prediction
                future_return_1h/2h/3h/6h/12h   the forward returns (the real question)
-Rules: pairs with a NULL on either side are dropped (never filled with 0); fewer than MIN_N=30 pairs ->
+Rules: pairs with a NULL on either side are dropped (never filled with 0); fewer than MIN_N=3 pairs (was 30 until 2026-11-11) ->
 status 'insufficient_data'; a constant column -> 'constant'.  Benjamini-Hochberg p-values (extension) are added
 within each (panel, level, predictor, target, method) family.
 Caveats to quote in the report: hourly data are autocorrelated and future returns of different horizons overlap,
@@ -31,7 +31,7 @@ from analysis import figure_style, results_store
 from etl.common import DEFAULT_DB, ROOT, connect
 from ingest.pipeline_logs import run_id as new_run_id
 
-MIN_N = 30
+MIN_N = 3                    # not a rule of ours: a correlation of fewer than 3 pairs does not exist mathematically (2 points always give +-1); the dashboard marks n < 30 with a warning symbol (decided 2026-11-11, was 30)
 TARGETS = list(results_store.HORIZONS)
 CORE_PREDICTOR = "sentiment_mean"
 EXTENSION_PREDICTORS = ["sentiment_lag_1h", "sentiment_momentum_1h", "reddit_volume_zscore_24"]
