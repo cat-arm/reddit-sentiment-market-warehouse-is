@@ -24,11 +24,8 @@ common.setup("Logistic Regression (ส่วนขยาย: โมเดลท�
 state = st.session_state
 if state.get("l9_family") in ("Ticker", "compare") and state.get("l9_kind") == "baseline":        # the random baseline belongs to Global only
     state["l9_kind"] = "all"
-if state.get("l9_family") == "compare":                                                         # the comparison: the thresholds act on the sides that are "all" only
-    fixed_panel = not (str(state.get("l9_cmp_a", "global:all")).endswith(":all") or str(state.get("l9_cmp_b", "global:strong")).endswith(":all"))
-else:
-    fixed_panel = state.get("l9_kind", "all") != "all"                                          # a fixed panel of table 12 ignores the two thresholds: the sidebar greys them out
-_, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True, detection_locked=fixed_panel)
+# the two thresholds always work here: the AUC grid shows the panels "all" (Global, Ticker) at every moment, whatever panel the picker below chose
+_, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True)
 tickers = common.selected_tickers()
 communities = common.selected_communities()
 statuses = common.selected_statuses()
@@ -138,9 +135,10 @@ def logistic_compare(lg, a_key, b_key):
                "เป็นการเทียบเชิงพรรณนา โมเดลของสอง panel ฝึกจากข้อมูลคนละชุด (strong / quality เป็นส่วนย่อยของ ทุกข้อความ) และ AUC ของโมเดลใกล้ 0.5 ผลต่างที่เห็นจึงมักเป็นเสียงรบกวน ไม่ควรตีความเกินจริง")
 
 
-def auc_rows(lg_all, picked):
-    """The AUC of the picked panel(s) at every horizon, with the random Baseline as the yardstick (proposal 7.4: AUC against the Random Baseline AUC)."""
-    names = list(dict.fromkeys([*picked, "panel_baseline"]))
+def auc_rows(lg_all):
+    """The AUC of the nine panels at every horizon, the random Baseline among them as the yardstick (proposal 7.4: AUC against the Random Baseline AUC).
+    The nine rows do not depend on the picker below: it picks the panel of the variable charts only."""
+    names = [p for p in data.STORED_PANELS if p in set(lg_all.panel)]
     d = lg_all[(lg_all.metric == "auc") & lg_all.panel.isin(names)].copy()
     labels = {p: "%s (%s)" % (p.replace("panel_", ""), data.STORED_PANELS[p]) for p in data.STORED_PANELS}
     d["panel_label"] = d.panel.map(labels)
@@ -156,10 +154,10 @@ def auc_rows(lg_all, picked):
         tooltip=["panel_label", "ช่วง", alt.Tooltip("value:Q", title="AUC", format=".4f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=",")])
     text = chart.mark_text(fontSize=12, dy=-7).encode(text="label:N", color=ink("#222222"))
     count = chart.mark_text(fontSize=9, dy=10).encode(text="n_label:N", color=ink("#555555"))
-    st.write("AUC ของ panel ที่เลือก เทียบกับ Baseline สุ่ม (แต่ละ Horizon)")
-    common.show((rect + text + count).properties(height=56 * len(names) + 130))
+    st.write("AUC ของทุก panel เทียบกับ Baseline สุ่ม (แต่ละ Horizon) ปุ่มเลือก panel ด้านล่างใช้กับกราฟตัวแปรเท่านั้น")
+    common.show((rect + text + count).properties(height=50 * len(names) + 130))
     st.caption("AUC คือโอกาสที่โมเดลจะให้คะแนนชั่วโมงที่ราคาขึ้นจริง สูงกว่าชั่วโมงที่ราคาลงจริง: 0.5 เท่ากับสุ่ม (สีเหลือง) เขียวคือดีกว่าสุ่ม แดงคือแย่กว่าสุ่ม  \n"
-               "แถว Baseline คือโมเดลที่ใช้ทิศทางสุ่มแทนความรู้สึก ควรอยู่ราว 0.50 ถ้า panel ที่เลือกไม่สูงกว่า Baseline ชัดเจน แปลว่าตัวแปรความรู้สึกไม่ได้ช่วยทำนาย  \n"
+               "แถว Baseline คือโมเดลที่ใช้ทิศทางสุ่มแทนความรู้สึก ควรอยู่ราว 0.50 ถ้า panel ไหนไม่สูงกว่า Baseline ชัดเจน แปลว่าตัวแปรความรู้สึกไม่ได้ช่วยทำนาย  \n"
                "ในช่องมี n (จำนวนแถวที่ฝึกโมเดล) ⚠ = น้อยกว่า 30 และ \"ข้อมูลไม่พอ\" = ข้อมูลน้อยเกินไปสำหรับแบ่งฝึกและทดสอบข้ามเวลา 5 รอบ ค่า AUC ที่ใช้ข้อมูลน้อยแกว่งได้มาก  \n"
                "Current Return คือผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักสูงกว่าช่วงอื่น")
 
@@ -168,7 +166,7 @@ def logistic_view():
     """The stored Logistic Regression: AUC of every panel and horizon, then the coefficients and the importance of the variable groups."""
     st.caption("ฝึกโมเดลสดจากชั่วโมงที่ผ่านตัวกรองด้านซ้าย (ฝึกและทดสอบข้ามช่วงเวลา 5 รอบ ไม่สลับเวลา) ไม่ใช่ผลที่เก็บไว้ ตอนไม่กรองได้ผลเท่ากับตารางที่เก็บไว้  "
                "โมเดลทายว่าผลตอบแทนจะ \"ขึ้น\" หรือ \"ลง\" จากตัวแปรความรู้สึกทั้ง 6 กลุ่ม  AUC เท่ากับ 0.5 หมายถึงทำนายได้ไม่ดีกว่าการสุ่ม  "
-               "panel ทุกข้อความตามเกณฑ์ด้านซ้าย ส่วน panel อื่นใช้เกณฑ์ตายตัวของตาราง 12 (แถบเกณฑ์เป็นสีเทาเมื่อเลือก panel เหล่านั้น)")
+               "panel ทุกข้อความ (Global, Ticker) ตามเกณฑ์ด้านซ้าย ส่วน panel อื่นใช้เกณฑ์ตายตัวของตาราง 12 ไม่ตามเกณฑ์ด้านซ้าย")
     with st.expander("รายละเอียดวิธีทำ (Logistic Regression)"):
         st.markdown(METHOD_NOTE)
     lg_all = live_rows("ALL")                                                              # the assets are chosen in the sidebar (class and ticker boxes)
@@ -176,6 +174,8 @@ def logistic_view():
     if lg_all[lg_all.metric == "auc"].empty:
         st.info("ไม่มีผล Logistic ของขอบเขตนี้")
         return
+    auc_rows(lg_all)
+    st.write("สัมประสิทธิ์และความสำคัญของตัวแปร เลือก panel ได้ (ปุ่มด้านล่างติดอยู่ตอนเลื่อน)")
     with common.sticky_bar("l9_bar"):                                                     # the picker stays at the top while the long heat maps below scroll
         log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="l9_family",
                               label_visibility="collapsed")                                  # the same layers as the heat map of Statistical Analysis
@@ -186,11 +186,6 @@ def logistic_view():
             if st.session_state.get("l9_kind") not in log_kinds:
                 st.session_state["l9_kind"] = "all"
             log_kind = st.radio("ชนิดข้อความ", list(log_kinds), format_func=log_kinds.get, horizontal=True, key="l9_kind", label_visibility="collapsed")
-    if log_family == "compare":
-        picked = [data.panel_name(k.split(":")[1], k.split(":")[0]) for k in (a_key, b_key)]
-    else:
-        picked = [data.panel_name(log_kind, log_family)]
-    auc_rows(lg_all, picked)
     if log_family == "compare":
         logistic_compare(lg, a_key, b_key)
         return

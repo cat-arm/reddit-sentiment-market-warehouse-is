@@ -282,7 +282,7 @@ class FilterTests(unittest.TestCase):
             for kind in kinds:
                 at.radio(key="l9_kind").set_value(kind).run()
                 self.assertEqual(len(at.exception), 0, (family, kind, [e.value for e in at.exception]))
-                self.assertEqual(at.sidebar.slider(key="d_v").disabled, kind != "all", (family, kind))
+                self.assertFalse(at.sidebar.slider(key="d_v").disabled, (family, kind))                # the AUC grid always has panels that follow the thresholds
         at.radio(key="l9_family").set_value("compare").run()                              # the coefficients of two panels: the difference B - A
         for left, right in (("global:all", "global:strong"), ("global:all", "Ticker:all"), ("Ticker:spike", "global:quality")):
             at.selectbox(key="l9_cmp_a").set_value(left)
