@@ -348,11 +348,10 @@ ranking = stat_all[stat_all.ticker.isin(tickers)].copy()
 if ranking.empty or ranking.winrate.notna().sum() == 0:
     st.info("ไม่มีสินทรัพย์ที่มีข้อมูลพอ ตามตัวกรองที่เลือก")
 else:
-    st.session_state.setdefault("p5_rank_h", "1h")
+    st.session_state.setdefault("p5_rank_h", "Current Return")
     horizon = st.radio("Horizon ของ Spearman, Pearson และ Win Rate", [TARGET_LABEL[t] for t in data.STAT_TARGETS], horizontal=True, key="p5_rank_h")
-    mean_return = ranking.pivot(index="ticker", columns="target", values="mean_return")           # the mean return of the asset at every horizon (the hours that pass the filters)
-    one = ranking[ranking.target.map(TARGET_LABEL) == horizon].set_index("ticker")
-    RETURN_COLUMNS = {t: "ผลตอบแทนเฉลี่ย %s (%%)" % TARGET_LABEL[t] for t in data.STAT_TARGETS}
+    one = ranking[ranking.target.map(TARGET_LABEL) == horizon].set_index("ticker")                 # the mean return follows the same horizon (the hours that pass the filters)
+    RETURN_NAME = "ผลตอบแทนเฉลี่ย %s (%%)" % horizon
     table = pd.DataFrame({
         "กลุ่ม": one.index.map(lambda t: GROUP_LABELS.get(group_of.get(t), "")), "สินทรัพย์": one.index,
         "Reddit Volume (ข้อความที่พูดถึง)": one.index.map(reddit_volume), "Trading Volume (เฉลี่ยต่อชั่วโมง)": one.index.map(trading_volume),
@@ -360,14 +359,14 @@ else:
         "p ดิบ (Win Rate)": one.win_p.values, "p ปรับ BH (Win Rate, ส่วนขยาย)": one.win_bh.values,
         "นัยสำคัญหลังปรับ": np.where(one.win_bh.values < 0.05, "★", ""),
         "n (Win Rate)": one.win_n.values, "n น้อย": np.where((one.win_n.values < 30) | (one.n.values < 30), "⚠", ""),
-        **{name: one.index.map(mean_return[t]) if t in mean_return else np.nan for t, name in RETURN_COLUMNS.items()}})
+        RETURN_NAME: one.mean_return.values})
     table = table.sort_values("p ปรับ BH (Win Rate, ส่วนขยาย)", na_position="last")
     formats = {"Reddit Volume (ข้อความที่พูดถึง)": "{:,.0f}", "Trading Volume (เฉลี่ยต่อชั่วโมง)": "{:,.0f}", "n (Win Rate)": "{:,.0f}", "Win Rate (%)": "{:.1f}",
                "p ดิบ (Win Rate)": "{:.3f}", "p ปรับ BH (Win Rate, ส่วนขยาย)": "{:.3f}", "Spearman ρ": "{:+.3f}", "Pearson ρ": "{:+.3f}",
-               **{name: "{:+.4f}" for name in RETURN_COLUMNS.values()}}
+               RETURN_NAME: "{:+.4f}"}
     st.dataframe(table.style.format(formats, na_rep="-"), hide_index=True, width="stretch", height=420)
     st.caption("แถวละ สินทรัพย์ เรียงเริ่มต้นตาม p ปรับ BH ของ Win Rate จากน้อยไปมาก (กดหัวคอลัมน์เพื่อเรียงใหม่)  \n"
-               "Spearman, Pearson และ Win Rate คิดที่ Horizon ที่เลือกด้านบน ส่วนผลตอบแทนเฉลี่ยแสดงครบทุก Horizon (Current Return คือส่วนขยาย) คิดจากชั่วโมงที่ผ่านตัวกรองและเกณฑ์ที่ตั้งไว้  \n"
+               "Spearman, Pearson และ Win Rate คิดที่ Horizon ที่เลือกด้านบน ผลตอบแทนเฉลี่ยก็เป็นของ Horizon นั้นด้วย (Current Return คือส่วนขยาย) คิดจากชั่วโมงที่ผ่านตัวกรองและเกณฑ์ที่ตั้งไว้  \n"
                "Reddit Volume คือจำนวนโพสต์และความคิดเห็นที่พูดถึงสินทรัพย์นั้นในช่วงที่เลือก ส่วน Trading Volume คือปริมาณซื้อขายเฉลี่ยต่อชั่วโมง (หน่วยต่างกันตามสินทรัพย์ เทียบข้ามสินทรัพย์ไม่ได้)")
 
 
