@@ -277,9 +277,6 @@ class FilterTests(unittest.TestCase):
         at = AppTest.from_file(str(ROOT / "dashboard" / "pages" / "9_Logistic_Regression.py"), default_timeout=300).run()
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
         self.assertFalse(at.sidebar.slider(key="d_v").disabled)                              # the panel "all" follows the two thresholds
-        for scope in at.radio(key="l9_scope").options:                                       # the Logistic Regression is a section below the tabs
-            at.radio(key="l9_scope").set_value(scope).run()
-            self.assertEqual(len(at.exception), 0, scope)
         for family, kinds in (("global", ("all", "strong", "quality", "spike", "baseline")), ("Ticker", ("all", "strong", "quality", "spike"))):       # the coefficients of every one of the nine panels
             at.radio(key="l9_family").set_value(family).run()
             for kind in kinds:

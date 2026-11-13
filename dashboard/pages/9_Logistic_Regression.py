@@ -46,11 +46,10 @@ PANEL_CHOICES = {"%s:%s" % (f, k): "%s · %s" % ("Global" if f == "global" else 
                  if not (f == "Ticker" and k == "baseline")}
 universe = q("tickers")
 group_of = dict(zip(universe.ticker, universe.big_group))
-groups_chosen = sorted({group_of[t] for t in tickers})
 
 
 def live_rows(scope):
-    """The Logistic Regression of the nine panels at `scope` ('ALL' or an asset class), trained live (cached per set of filters)."""
+    """The Logistic Regression of the nine panels on the assets chosen in the sidebar (scope 'ALL' of `common.logistic_live`), trained live (cached per set of filters)."""
     parts = []
     for choice in PANEL_CHOICES:
         fam, kd = choice.split(":")
@@ -141,11 +140,7 @@ def logistic_view():
                "panel ทุกข้อความตามเกณฑ์ด้านซ้าย ส่วน panel อื่นใช้เกณฑ์ตายตัวของตาราง 12 (แถบเกณฑ์เป็นสีเทาเมื่อเลือก panel เหล่านั้น)")
     with st.expander("รายละเอียดวิธีทำ (Logistic Regression)"):
         st.markdown(METHOD_NOTE)
-    scopes = {"ทุกสินทรัพย์ที่เลือกรวมกัน": "ALL"}
-    scopes.update({GROUP_LABELS[g]: g for g in groups_chosen} if len(groups_chosen) > 1 else {})
-    default_scope = list(scopes)[0] if len(groups_chosen) > 1 else "ทุกสินทรัพย์ที่เลือกรวมกัน"
-    scope_pick = st.radio("ขอบเขต", list(scopes), index=list(scopes).index(default_scope), horizontal=True, key="l9_scope", label_visibility="collapsed")
-    lg = live_rows(scopes[scope_pick])
+    lg = live_rows("ALL")                                                                  # the assets are chosen in the sidebar (class and ticker boxes)
     lg = lg[lg.status == "ok"]
     auc_grid = lg[lg.metric == "auc"].copy()
     if auc_grid.empty:
