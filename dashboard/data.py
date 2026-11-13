@@ -1001,7 +1001,7 @@ def market_signals(db_path, start, end, tickers, statuses, z_min, s_min, communi
     if z_min > 0:                                                                                            # a Z-score threshold keeps only the hours above it (as the statistics of 7.4 do)
         hours = hours[hours.reddit_volume_zscore_24 > z_min]
     hours = hours[hours.majority_final_status.isin(tuple(statuses))]
-    hours = hours[["hour_utc", "signal_type", "signal_level", "sentiment_mean", "abs_mean", "reddit_volume_zscore_24", "majority_final_status"]]
+    hours = hours[["hour_utc", "signal_type", "signal_level", "sentiment_mean", "abs_mean", "reddit_volume_zscore_24", "majority_final_status", "momentum"]]
     bars = price_series_for(db_path, tuple(tickers), start, end)[["ticker", "hour_utc", "log_return", "volume_zscore_24", *["future_return_" + h for h in HORIZONS]]]
     about = mention_series_by_ticker(db_path, tuple(tickers), start, end, ids)[["ticker", "hour_utc", "mentions"]]
     total = total_volume_series(db_path, start, end, ids)[["hour_utc", "texts"]].rename(columns={"texts": "market_volume"})

@@ -475,7 +475,7 @@ class FilterTests(unittest.TestCase):
         at.sidebar.slider(key="d_v").set_value(1500).run()                                  # the sidebar thresholds filter the hours before the points
         self.assertNotEqual(at.metric[0].value, base)
         keys = [n.key for n in at.number_input]
-        for metric in ("rz", "oz", "mr", "ss", "ts", "al", "va", "sm", "tz", "na"):      # every KPI of the dashboards that is known in the hour has a threshold and points
+        for metric in ("rz", "mr", "ss", "sm", "tz", "na", "cr"):      # every KPI of the proposal that is known in the hour has a threshold and points
             self.assertIn("hs_%s_t" % metric, keys)
         self.assertNotIn("hs_wr_p", [n.key for n in at.number_input])                       # no statistic of the whole history is a point (look-ahead)
         for row in at.dataframe:
