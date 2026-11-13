@@ -274,7 +274,7 @@ def _majority_filter():
         st.sidebar.checkbox(status, key="f_maj_" + status)
 
 
-def _detection_filter(kind, sentiment=False):
+def _detection_filter(kind, sentiment=False, locked=False):
     """DimDetectionConfig: Z-score Threshold, Sentiment Threshold and Horizon ('overview' =
     Market and Sentiment, Statistical Analysis, Lead and Lag and Hot Events: two thresholds that filter the whole page, 0 = off, the same two
     values on all four pages; the Horizon is chosen inside the charts that need it)."""
@@ -287,14 +287,16 @@ def _detection_filter(kind, sentiment=False):
         state.setdefault("d_ss", 0.0)
         state.setdefault("d_mode", "absolute")
         st.sidebar.caption("Reddit Volume Threshold (ส่วนขยาย: ชั่วโมงที่มีข้อความทั้งตลาดอย่างน้อยกี่ข้อความ ค่า 0 คือไม่กรอง)")
-        st.sidebar.slider("Reddit Volume Threshold", 0, 6000, step=100, key="d_v", label_visibility="collapsed")
+        if locked:
+            st.sidebar.warning("ปิดใช้งานชั่วคราว: panel ที่เลือกใช้เกณฑ์ตายตัวของตาราง 12 (เลือก panel ทุกข้อความเพื่อปรับเกณฑ์)")
+        st.sidebar.slider("Reddit Volume Threshold", 0, 6000, step=100, key="d_v", label_visibility="collapsed", disabled=locked)
         st.sidebar.caption("Sentiment Threshold (ทิ้งข้อความที่ไม่ผ่านเกณฑ์ก่อนเฉลี่ยเป็นรายชั่วโมง ค่า 0 คือไม่กรอง)")
-        st.sidebar.radio("โหมด Sentiment Threshold", SENTIMENT_MODES, format_func=MODE_LABELS.get, horizontal=True, key="d_mode", label_visibility="collapsed")
+        st.sidebar.radio("โหมด Sentiment Threshold", SENTIMENT_MODES, format_func=MODE_LABELS.get, horizontal=True, key="d_mode", label_visibility="collapsed", disabled=locked)
         if state["d_mode"] == "absolute":
-            st.sidebar.slider("Sentiment Threshold (absolute)", 0.0, 0.95, step=0.05, key="d_s", label_visibility="collapsed")
+            st.sidebar.slider("Sentiment Threshold (absolute)", 0.0, 0.95, step=0.05, key="d_s", label_visibility="collapsed", disabled=locked)
             st.sidebar.caption("absolute: เก็บข้อความที่ |ความรู้สึก| ≥ ค่านี้ 0.05 = ชัดเจน 0.30 = คุณภาพ")
         else:
-            st.sidebar.slider("Sentiment Threshold (ค่าปกติ)", -0.95, 0.95, step=0.05, key="d_ss", label_visibility="collapsed")
+            st.sidebar.slider("Sentiment Threshold (ค่าปกติ)", -0.95, 0.95, step=0.05, key="d_ss", label_visibility="collapsed", disabled=locked)
             st.sidebar.caption("ค่าปกติ: ค่าบวกเก็บเฉพาะข้อความที่คะแนน ≥ ค่านี้ ค่าลบเก็บเฉพาะข้อความที่คะแนน ≤ ค่านี้ (เช่น −0.30 = เฉพาะลบชัด) 0 = ไม่กรอง")
 
 
@@ -396,7 +398,7 @@ def _asset_filter(universe, multi):
     return None, groups                                      # the home page: asset classes only
 
 
-def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=None, majority=False):
+def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=None, majority=False, detection_locked=False):
     """Draw the central filter (time first, then source, then asset); returns (ticker or None, start_epoch, end_epoch,
     groups).  assets=False: the asset filter is NOT drawn and all classes are used.  sources=True: the source filter
     is drawn too (read it with `selected_sources()`).  multi=True: several tickers can be chosen (read them with
@@ -441,7 +443,7 @@ def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=
         _sentiment_source_filter()
     if detection:
         st.sidebar.divider()
-        _detection_filter(detection, sentiment)
+        _detection_filter(detection, sentiment, detection_locked)
     if majority:
         st.sidebar.divider()
         _majority_filter()

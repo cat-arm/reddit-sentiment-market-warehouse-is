@@ -29,7 +29,11 @@ from dashboard import common, data  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
 common.setup("Statistical Analysis (วิเคราะห์เชิงสถิติ)", "🏆")
-_, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True)
+state = st.session_state
+if state.get("p5_family_all") == "Ticker" and state.get("p5_panel") == "baseline":        # the random baseline belongs to Global only
+    state["p5_panel"] = "all"
+fixed_panel = state.get("p5_panel", "all") != "all"                                      # a fixed panel of table 12 ignores the two thresholds: the sidebar greys them out
+_, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True, detection_locked=fixed_panel)
 tickers = common.selected_tickers()
 communities = common.selected_communities()
 statuses = common.selected_statuses()
@@ -310,18 +314,15 @@ st.caption("proposal 7.4 เทียบทิศทางของทั้ง�
            "แบบ majority ไม่ใช้คะแนน ใช้แค่ บวก (+1) ลบ (−1) หรือเป็นกลาง (0 = ไม่มีทิศทาง ไม่นับใน Win Rate)  การ์ด แท็บ และตารางจัดอันดับเปลี่ยนตามตัวเลือกนี้")
 
 # ---- the nine panels of table 12 in two layers: the family (Global / Ticker / Baseline), then the kind of text (all / strong / quality / spike) ------------
-FAMILIES = {"global": "Global (ความรู้สึกรวมของทั้งตลาด)", "Ticker": "Ticker (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น)", "baseline": "Baseline ทิศทางสุ่ม"}
-KINDS = {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}
+FAMILIES = {"global": "Global (ความรู้สึกรวมของทั้งตลาด)", "Ticker": "Ticker (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น)"}
 family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="p5_family_all")
-if family == "baseline":
-    kind = "baseline"
-else:
-    kind = st.radio("ชนิดข้อความ", list(KINDS), format_func=KINDS.get, horizontal=True, key="p5_panel")
-if family != "baseline" and kind == "all":
+KINDS = data.PANEL_VARIANTS if family == "global" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}       # the random baseline is a view of Global only
+kind = st.radio("ชนิดข้อความ", list(KINDS), format_func=KINDS.get, horizontal=True, key="p5_panel")
+if kind == "all":
     chosen = stat_all if family == "global" else stat_ticker                       # the panels that follow the sidebar: the cards above
     st.caption("panel นี้ตามตัวกรองด้านซ้ายทุกอัน รวม Reddit Volume Threshold และ Sentiment Threshold (กรอง**ทีละข้อความ**ก่อนเฉลี่ยเป็นความรู้สึกรายชั่วโมง ส่วน Volume กรอง**ทั้งชั่วโมง**)")
 else:                                                                              # the fixed panels: their own cut of table 12, whatever the two thresholds of the sidebar say
-    chosen = common.panel_stat("global" if family == "baseline" else family, kind, tuple(tickers), start, end, tuple(communities), model, tuple(statuses),
+    chosen = common.panel_stat(family, kind, tuple(tickers), start, end, tuple(communities), model, tuple(statuses),
                                0.0, 0.0, tuple(content_types), predictor, 0)
     if kind == "baseline":
         st.caption("**Baseline ทิศทางสุ่ม** คือเส้นเทียบ: เอาชั่วโมงเดียวกับ panel Global แต่ **โยนเหรียญแทนความรู้สึก** (ทิศทางบวก/ลบสุ่ม ด้วยเมล็ดตายตัว จึงได้ค่าเดิมทุกครั้ง) ถ้าความรู้สึกจริงช่วยทำนายราคาได้ "

@@ -291,16 +291,23 @@ class FilterTests(unittest.TestCase):
         self.assertFalse(any("Z-score เกิน" in c.value for c in at.sidebar.caption), "no texts-per-hour hint under the Z-score slider (it misled: the Z-score is relative to each hour)")
         at.sidebar.slider(key="d_v").set_value(0)
         self.assertEqual(at.radio(key="p5_family_all").value, "global")                    # the default: the sentiment of the whole market
-        self.assertEqual(len(at.radio(key="p5_family_all").options), 3)
+        self.assertEqual(len(at.radio(key="p5_family_all").options), 2)                    # Global, Ticker (the random baseline is a kind of Global)
         for family in ("Ticker", "global"):                                                  # every kind of text of both families opens; a fixed panel does not move the sidebar
             at.radio(key="p5_family_all").set_value(family).run()
+            self.assertEqual(len(at.radio(key="p5_panel").options), 5 if family == "global" else 4, family)     # the random baseline is a kind of Global only
             for panel in ("all", "strong", "quality", "spike"):
                 at.radio(key="p5_panel").set_value(panel).run()
                 self.assertEqual(len(at.exception), 0, "%s %s: %s" % (family, panel, [e.value for e in at.exception]))
                 self.assertEqual((at.sidebar.slider(key="d_v").value, at.sidebar.slider(key="d_s").value), (0, 0.0), (family, panel))
-        at.radio(key="p5_family_all").set_value("baseline").run()                            # the random baseline: no kind of text
+                self.assertEqual(at.sidebar.slider(key="d_v").disabled, panel != "all", "the two thresholds are greyed out on a fixed panel")
+                self.assertEqual(at.sidebar.slider(key="d_s").disabled, panel != "all")
+        at.radio(key="p5_family_all").set_value("global").run()
+        at.radio(key="p5_panel").set_value("baseline").run()
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
-        self.assertNotIn("p5_panel", [r.key for r in at.radio])
+        self.assertTrue(at.sidebar.slider(key="d_v").disabled)
+        at.radio(key="p5_family_all").set_value("Ticker").run()                              # Ticker has no baseline: back to the panel "all"
+        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
+        self.assertEqual(at.radio(key="p5_panel").value, "all")
         at.radio(key="p5_family_all").set_value("global").run()
         at.radio(key="p5_panel").set_value("all").run()
         # the time range is a filter of the p-values
