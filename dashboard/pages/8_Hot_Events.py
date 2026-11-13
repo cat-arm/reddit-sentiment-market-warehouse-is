@@ -51,7 +51,7 @@ own = own[["series", "hour_utc", "sentiment_mean", "momentum", "own_zscore", "vo
     "series": "ticker", "sentiment_mean": "t_sent", "momentum": "t_mom", "own_zscore": "t_oz", "voter_agreement": "t_va", "sent_texts": "t_n"})
 for col in ("t_sent", "t_mom", "t_va"):
     own.loc[own.t_n < MIN_TEXTS, col] = np.nan                    # too few texts: the asset's own sentiment measures do not score
-bars = q("price_series_for", tuple(tickers), start, end)[["ticker", "hour_utc", "rsi", "normalized_atr"]]
+bars = q("price_series_for", tuple(tickers), start, end)[["ticker", "hour_utc", "normalized_atr"]]
 found = found.merge(own, on=["ticker", "hour_utc"], how="left").merge(bars, on=["ticker", "hour_utc"], how="left")
 
 cards_slot = st.container()                                       # the cards come first on the page; they are filled once the score below is known
@@ -59,12 +59,11 @@ cards_slot = st.container()                                       # the cards co
 # (EXTENSION: the proposal names the three levels, not how they are reached)
 state = st.session_state
 LEVELS = ("low", "medium", "high")
-METRICS = [("rz", "Reddit Volume Z-score (ทั้งตลาด) >", 1.5, 2, 0.5), ("oz", "Reddit Volume Z-score ของสินทรัพย์เอง (ข้อความที่พูดถึง) >", 1.5, 1, 0.5),
+METRICS = [("rz", "Reddit Volume Z-score (ทั้งตลาด) >", 1.5, 3, 0.5), ("oz", "Reddit Volume Z-score ของสินทรัพย์เอง (ข้อความที่พูดถึง) >", 1.5, 1, 0.5),
            ("mr", "Ticker Mention Rate (%) >", 0.5, 1, 0.5), ("ss", "|Sentiment Score| ของทั้งตลาด >", 0.05, 1, 0.01),
            ("ts", "|Sentiment Score| ของสินทรัพย์เอง >", 0.2, 1, 0.05), ("al", "ความรู้สึกของสินทรัพย์สอดคล้องกับตลาด (1 = ทิศเดียวกัน) >", 0.0, 1, 0.5),
            ("va", "ความเห็นตรงกัน (voter agreement ของสินทรัพย์) >", 0.6, 0, 0.05), ("sm", "|Sentiment Momentum| ของสินทรัพย์ (เปลี่ยนจากชั่วโมงก่อน) >", 0.2, 0, 0.05),
-           ("tz", "Trading Volume Z-score (ของสินทรัพย์) >", 2.0, 1, 0.5), ("cr", "|Current Return| (%) >", 1.0, 1, 0.1),
-           ("rs", "|RSI − 50| (ห่างจากกลาง) >", 20.0, 0, 1.0), ("na", "Normalized ATR (%) (ความผันผวน) >", 1.0, 1, 0.1)]
+           ("tz", "Trading Volume Z-score (ของสินทรัพย์) >", 2.0, 1, 0.5), ("na", "Normalized ATR (%) (ความผันผวน) >", 1.0, 1, 0.1)]
 # (key, label, default threshold, default points, step); the default points add up to 10.  Every measure is a KPI of the dashboards and is known in the hour itself or from the
 # hours before it: no statistic of the whole history (Spearman, Win Rate ...) is a point, because it could not be known when the signal appeared (look-ahead); those stay as columns.
 DEFAULT_CUTS = {"low": 3, "medium": 5, "high": 7}                                      # the total points a signal needs for the level (of 10)
@@ -86,7 +85,7 @@ for lv in LEVELS:
 st.subheader("ตั้งค่าคะแนนและระดับของสัญญาณ (low / medium / high)")
 st.caption("แต่ละตัวชี้วัดมี **เกณฑ์เดียว** และ **คะแนน**: ถ้าสัญญาณนั้นผ่านเกณฑ์ (ค่า > เกณฑ์) ได้คะแนนของตัวชี้วัดนั้น แล้วเอาคะแนนที่ได้มาบวกกัน ผลรวมถึงกี่คะแนนก็ได้ระดับนั้น "
            "(เช่น คะแนนเต็ม 10 ผลรวมตั้งแต่ 8 = high)  เว้นเกณฑ์ว่างหรือใส่คะแนน 0 = ไม่ใช้ตัวชี้วัดนั้น  \n"
-           "คะแนนมาจาก KPI ของแดชบอร์ดทั้งหมด (ปริมาณ Reddit, ความรู้สึกของตลาดและของสินทรัพย์เอง, ปริมาณซื้อขาย, ผลตอบแทน, RSI, ความผันผวน) ซึ่งรู้ ณ ชั่วโมงนั้นและย้อนหลังเท่านั้น (Z-score เทียบ 24 ชั่วโมงก่อนหน้า) ไม่ใช้สถิติย้อนหลังทั้งช่วง (Win Rate, Spearman, Pearson) เพราะตอนที่สัญญาณเกิดยังรู้ค่าเหล่านั้นไม่ได้ ค่าเหล่านั้นแสดงเป็นคอลัมน์ประกอบการตีความ  \n"
+           "คะแนนมาจาก KPI ของแดชบอร์ดทั้งหมด (ปริมาณ Reddit, ความรู้สึกของตลาดและของสินทรัพย์เอง, ปริมาณซื้อขาย, ความผันผวน) ซึ่งรู้ ณ ชั่วโมงนั้นและย้อนหลังเท่านั้น (Z-score เทียบ 24 ชั่วโมงก่อนหน้า) ไม่ใช้สถิติย้อนหลังทั้งช่วง (Win Rate, Spearman, Pearson) เพราะตอนที่สัญญาณเกิดยังรู้ค่าเหล่านั้นไม่ได้ ค่าเหล่านั้นแสดงเป็นคอลัมน์ประกอบการตีความ  \n"
            "ตัวกรองด้านซ้าย (รวมสองเกณฑ์ Reddit Volume / Sentiment Threshold) ยังทำงานเหมือนเดิม คือกรองชั่วโมงและข้อความออกก่อน แล้วค่อยให้คะแนน  \n"
            "สัญญาณที่ได้คะแนนไม่ถึงระดับ low จะไม่ถูกแสดง ค่าเริ่มต้นตั้งตามการกระจายของข้อมูลจริง")
 with st.expander("เกณฑ์ คะแนน และระดับ", expanded=True):
@@ -123,8 +122,7 @@ if cuts["high"] > total:
 GREEN, RED = "color: #1a9850; font-weight: 600", "color: #d73027; font-weight: 600"
 SOURCE = {"rz": lambda d: d.reddit_volume_zscore_24, "oz": lambda d: d.t_oz, "mr": lambda d: d.mention_rate, "ss": lambda d: d.sentiment_mean.abs(),
           "ts": lambda d: d.t_sent.abs(), "al": lambda d: np.sign(d.t_sent) * np.sign(d.sentiment_mean), "va": lambda d: d.t_va, "sm": lambda d: d.t_mom.abs(),
-          "tz": lambda d: pd.to_numeric(d.volume_zscore_24, errors="coerce"), "cr": lambda d: pd.to_numeric(d.log_return, errors="coerce").abs(),
-          "rs": lambda d: (pd.to_numeric(d.rsi, errors="coerce") - 50).abs(), "na": lambda d: pd.to_numeric(d.normalized_atr, errors="coerce")}
+          "tz": lambda d: pd.to_numeric(d.volume_zscore_24, errors="coerce"), "na": lambda d: pd.to_numeric(d.normalized_atr, errors="coerce")}
 
 
 def listed_for(basis):
