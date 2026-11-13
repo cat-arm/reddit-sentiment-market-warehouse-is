@@ -244,7 +244,8 @@ st.subheader("สินทรัพย์ใดมีความรู้สึ
 if one:
     st.info("เลือกหลักทรัพย์ตัวเดียว จึงไม่มีอะไรให้เรียงอันดับ ติ๊กหลายตัวเพื่อเทียบกัน")
 else:
-    has_text = per_ticker.dropna(subset=["sentiment_mean"])
+    passes = data.threshold_mask(per_ticker, z_th, 0.0, v_min=v_th) & per_ticker.majority.isin(statuses)      # the hours that pass the Reddit Volume Threshold and the majority filter
+    has_text = per_ticker[passes].dropna(subset=["sentiment_mean"])
     weight = has_text.texts
     ranked = has_text.assign(
         s=has_text.sentiment_mean * weight, p=has_text.pos_ratio * weight, n=has_text.neg_ratio * weight, w=weight
