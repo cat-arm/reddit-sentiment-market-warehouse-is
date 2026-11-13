@@ -49,7 +49,7 @@ common.kpi_cards([
 
 # ---- the price and the trading volume at the chosen level of time.  One asset: its close and its volume.  Several: the assets are not all traded in the same
 # hours (stocks sleep at night and on weekends), so an average of their LEVELS would jump whenever the set of traded assets changes; instead the mean Current
-# Return of the assets traded in the hour is accumulated into an index (first hour = 100) and the trading volume is the median Volume Z-score.
+# Return of the assets traded in the hour is accumulated into an index (first hour = 100) and the trading volume, the RSI and the Normalized ATR are the mean of the assets traded in the hour, as on Price and Return.
 hourly = hourly.assign(hour_utc=hourly.hour_utc.astype(int))
 if one:
     market = common.resample(hourly.copy(), {"close": "last", "volume": "sum", "rsi": "last", "normalized_atr": "mean"}, how)
@@ -59,11 +59,11 @@ if one:
 else:
     mean_volume = hourly.groupby("ticker").volume.transform("mean")
     hourly = hourly.assign(volume_index=100.0 * hourly.volume / mean_volume.where(mean_volume > 0))                  # the volume of each asset against its own mean (= 100)
-    by_hour = hourly.groupby("hour_utc").agg(volume_index=("volume_index", "median"), log_return=("log_return", "mean"), rsi=("rsi", "median"), natr=("normalized_atr", "median"), time=("time", "first")).sort_index()
+    by_hour = hourly.groupby("hour_utc").agg(volume_index=("volume_index", "mean"), log_return=("log_return", "mean"), rsi=("rsi", "mean"), natr=("normalized_atr", "mean"), time=("time", "first")).sort_index()
     by_hour["price_index"] = 100.0 * (by_hour.log_return.fillna(0).cumsum() / 100.0).apply(lambda v: __import__("math").exp(v))
     market = common.resample(by_hour.reset_index(), {"price_index": "last", "volume_index": "mean", "rsi": "last", "natr": "mean"}, how).rename(columns={"natr": "normalized_atr"})
     price_col, price_title = "price_index", "ราคาปิด (เฉลี่ยของที่เลือก)"
-    volume_raw_title, rsi_title, natr_title = "ปริมาณซื้อขาย (มัธยฐานของที่เลือก)", "RSI (มัธยฐานของที่เลือก)", "Normalized ATR (มัธยฐานของที่เลือก)"
+    volume_raw_title, rsi_title, natr_title = "ปริมาณซื้อขาย (เฉลี่ยของที่เลือก)", "RSI (เฉลี่ยของที่เลือก)", "Normalized ATR (เฉลี่ยของที่เลือก)"      # the same names as on Price and Return
     volume_raw_col = "volume_index"
 reddit_shown = common.resample(reddit.drop(columns=["hour_utc"], errors="ignore"), {"texts": "sum", "zscore": "max"}, how) if not reddit.empty else pd.DataFrame(columns=["time", "texts", "zscore"])
 mention_shown = common.resample(mentions[["time", "mentions"]], {"mentions": "sum"}, how) if not mentions.empty else pd.DataFrame(columns=["time", "mentions"])
@@ -85,7 +85,7 @@ st.caption("สีน้ำเงินคือราคา อีกเส้�
 st.subheader("ปริมาณซื้อขายเทียบ %s" % picked)
 common.dual_chart(merged, "time", volume_raw_col, r_col, volume_raw_title, r_title, "pr_volume", "ปริมาณซื้อขาย", picked,
                   left_color=common.C_VOLUME, right_color=r_color, left_fmt=",.4g", right_fmt=r_fmt)
-st.caption("สีเขียวคือปริมาณซื้อขายของราคา" + ("" if one else " (เลือกหลายตัว: ปริมาณของแต่ละตัวเทียบกับค่าเฉลี่ยของตัวเอง = 100 แล้วเอามัธยฐานของที่เลือก เพราะแต่ละตัวมีหน่วยและขนาดต่างกัน)") + " ดูว่าปริมาณซื้อขายพุ่งพร้อมกับ Reddit ไหม ส่วน Z-score ของทั้งสองปริมาณดูในการ์ดด้านบน")
+st.caption("สีเขียวคือปริมาณซื้อขายของราคา" + ("" if one else " (เลือกหลายตัว: ปริมาณของแต่ละตัวเทียบกับค่าเฉลี่ยของตัวเอง = 100 แล้วเฉลี่ยของที่เลือก เหมือนหน้า Price and Return เพราะแต่ละตัวมีหน่วยและขนาดต่างกัน)") + " ดูว่าปริมาณซื้อขายพุ่งพร้อมกับ Reddit ไหม ส่วน Z-score ของทั้งสองปริมาณดูในการ์ดด้านบน")
 
 st.subheader("RSI เทียบ %s" % picked)
 common.dual_chart(merged, "time", "rsi", r_col, rsi_title, r_title, "pr_rsi", "RSI", picked, left_color=common.C_RATE, right_color=r_color, left_fmt=".1f", right_fmt=r_fmt)

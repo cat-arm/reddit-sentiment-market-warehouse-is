@@ -146,21 +146,47 @@ else:
                "จำนวนตัวอย่างของหุ้นและ ETF ที่ 6h มีน้อย และที่ 12h เป็น 0 เพราะตลาดปิดกลางคืนจึงมีแท่งราคารายชั่วโมงไม่ครบ ไม่ได้แปลว่าผลตอบแทนเป็น 0")
 
 st.subheader("กลุ่มสินทรัพย์ใดผันผวนสูงที่สุด")
-st.caption("ผันผวน = ราคาขยับแรงแค่ไหนโดยไม่สนทิศขึ้นหรือลง  เรียงจากกลุ่มที่ผันผวนสูงสุด **กดที่แถวของกลุ่มเพื่อดูรายตัวของกลุ่มนั้น**  \n"
+st.caption("ผันผวน = ราคาขยับแรงแค่ไหนโดยไม่สนทิศขึ้นหรือลง  เรียงจากกลุ่มที่ผันผวนสูงสุด **กดที่แถวของกลุ่มเพื่อดูรายตัวของกลุ่มนั้น** (หุ้นและ ETF แบ่งเป็นกลุ่มย่อย อ่านค่าเทียบกับกลุ่มย่อยของตัวเอง)  \n"
            "**Normalized ATR** = ความผันผวนสัมพัทธ์ (ATR 24 ชั่วโมง ÷ ราคาปิด × 100) เป็น KPI ของ proposal  \n"
            "**|Current Return| เฉลี่ย** ใช้ค่าสัมบูรณ์เพราะถ้าเฉลี่ยผลตอบแทนตรง ๆ ชั่วโมงที่ขึ้นกับลงจะหักล้างกันจนใกล้ 0 ทั้งที่ราคาขยับแรง (ส่วนขยาย)  \n"
            "**จำนวนแท่งราคา** = จำนวนแท่งราคารายชั่วโมงที่ใช้คำนวณ")
 tr = q("ticker_risk", start, end, tickers)
 tr["สินทรัพย์"] = tr.ticker.map(lambda t: "%s (%s)" % (t, names.get(t, "")))
-# the stock_etf group is shown split into stocks, index ETFs and bitcoin ETFs (EXTENSION: their volatility differs a lot); the other groups as they are
-tr["ชนิด"] = [("หุ้น/ETF · " + common.INSTRUMENT_LABELS.get(common.instrument_of(t), "")) if g == "stock_etf" else GROUP_LABELS.get(g, g) for t, g in zip(tr.ticker, tr.big_group)]
+# the stock_etf group is shown split into stocks and ETFs (EXTENSION: their volatility differs a lot; the ETF drawer tells index ETFs from bitcoin ETFs); the other groups as they are
+tr["ชนิดย่อย"] = [common.INSTRUMENT_LABELS.get(common.instrument_of(t), "") for t in tr.ticker]                       # the sub-type of the stock_etf assets
+tr["ชนิด"] = [("ETF" if common.instrument_of(t) in common.ETF_KINDS else "หุ้น") if g == "stock_etf" else GROUP_LABELS.get(g, g) for t, g in zip(tr.ticker, tr.big_group)]
 tr["atr_x_bars"] = tr.mean_normalized_atr_pct * tr.bars
 tr["abs_x_bars"] = tr.mean_abs_log_return_pct * tr.bars
-kinds = tr.groupby("ชนิด").agg(ตัว=("ticker", "nunique"), แท่ง=("bars", "sum"), atr=("atr_x_bars", "sum"), absr=("abs_x_bars", "sum")).reset_index()
-kinds["atr"], kinds["absr"] = kinds.atr / kinds.แท่ง, kinds.absr / kinds.แท่ง              # the mean over all the bars of the kind, as the group table was
-for row in kinds.sort_values("atr", ascending=False).itertuples():                       # one drawer per kind: its row (the numbers) is the header, the assets are inside
-    part = tr[tr.ชนิด == row.ชนิด]
-    with st.expander("**%s** · %d ตัว · แท่งราคา %s · Normalized ATR %.4f%% · |Current Return| %.4f%%" % (row.ชนิด, row.ตัว, "{:,}".format(int(row.แท่ง)), row.atr, row.absr)):
-        common.table(part[["สินทรัพย์", "bars", "mean_normalized_atr_pct", "mean_abs_log_return_pct"]].rename(columns={
-            "bars": "จำนวนแท่งราคา", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)", "mean_abs_log_return_pct": "|Current Return| เฉลี่ย (%)"}).round(4),
-            hide_index=True, width="stretch")
+
+def summary(frame, by):
+    """Per value of column `by`: the number of assets, bars and the mean over all the bars of the Normalized ATR and the |Current Return|."""
+    out = frame.groupby(by).agg(ตัว=("ticker", "nunique"), แท่ง=("bars", "sum"), atr=("atr_x_bars", "sum"), absr=("abs_x_bars", "sum")).reset_index()
+    out["atr"], out["absr"] = out.atr / out.แท่ง, out.absr / out.แท่ง
+    return out
+
+
+def numbers(row):
+    return "%d ตัว · แท่งราคา %s · Normalized ATR %.4f%% · |Current Return| %.4f%%" % (row.ตัว, "{:,}".format(int(row.แท่ง)), row.atr, row.absr)
+
+
+def asset_table(part):
+    common.table(part[["สินทรัพย์", "bars", "mean_normalized_atr_pct", "mean_abs_log_return_pct"]].rename(columns={
+        "bars": "จำนวนแท่งราคา", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)", "mean_abs_log_return_pct": "|Current Return| เฉลี่ย (%)"}).round(4),
+        hide_index=True, width="stretch")
+
+
+# Outside: the three Big_Groups of the proposal, each with the numbers of the whole group.  Inside the stock_etf group: stocks and ETFs (a line each), and under
+# each a drawer per sub-type (its row is the header, the assets are inside).  Crypto and futures: one drawer with their assets.  Every row is read against its own group.
+for big in summary(tr, "big_group").sort_values("atr", ascending=False).itertuples():
+    part = tr[tr.big_group == big.big_group]
+    st.markdown("### %s · %s" % (GROUP_LABELS.get(big.big_group, big.big_group), numbers(big)))
+    if big.big_group == "stock_etf":
+        for main in summary(part, "ชนิด").sort_values("atr", ascending=False).itertuples():          # หุ้น / ETF
+            st.markdown("**%s** · %s" % (main.ชนิด, numbers(main)))
+            kind = part[part.ชนิด == main.ชนิด]
+            for sub in summary(kind, "ชนิดย่อย").sort_values("atr", ascending=False).itertuples():
+                with st.expander("↳ **%s** · %s" % (sub.ชนิดย่อย, numbers(sub))):
+                    asset_table(kind[kind.ชนิดย่อย == sub.ชนิดย่อย])
+    else:
+        with st.expander("↳ ดูรายตัวของ%s" % GROUP_LABELS.get(big.big_group, big.big_group)):
+            asset_table(part)

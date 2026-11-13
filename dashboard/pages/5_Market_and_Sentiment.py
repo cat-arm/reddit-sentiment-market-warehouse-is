@@ -31,7 +31,8 @@ communities = common.selected_communities()
 statuses = common.selected_statuses()
 content_types = common.selected_content_types()
 z_th = st.session_state.get("d_z", 0.0)                 # DimDetectionConfig: filters the hours (0 = no filter)
-s_th = st.session_state.get("d_s", 0.0)
+v_th = int(st.session_state.get("d_v", 0))             # the Reddit Volume Threshold: hours with fewer texts in the whole market are dropped
+s_th = common.sentiment_cut()                           # a float (absolute) or the name of the signed variant
 if not tickers or not communities or not statuses or not content_types:
     common.nothing_selected(["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"],
                             "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
@@ -49,7 +50,7 @@ if prices.empty:
 market = q("market_zscore", start, end, common.sentiment_source_ids())    # the Z-score of ALL the texts of the hour (the proposal's Reddit_volume), for every series
 per_ticker = data.sentiment_frame(sent, start, end, market=market, volume=sent_all)        # one series per ticker
 # the same filter on every ticker-hour: an hour that fails the thresholds loses its majority status, so the samples below skip it
-per_ticker_kept = per_ticker.assign(majority=per_ticker.majority.where(data.threshold_mask(per_ticker, z_th, 0.0)))
+per_ticker_kept = per_ticker.assign(majority=per_ticker.majority.where(data.threshold_mask(per_ticker, z_th, 0.0, v_min=v_th)))
 series_frame = data.sentiment_frame(sent, start, end, combined=not one, market=market, volume=sent_all)   # what the charts show
 
 
@@ -77,7 +78,7 @@ series = series.rename(columns={"texts": "reddit_volume", "majority": "majority_
 # hours whose majority status is not ticked lose every Reddit measure (price and market volume stay); no text = NULL
 series = data.mask_majority(series, statuses)
 # hours that do not meet the thresholds of DimDetectionConfig lose their Reddit measures too (0 / 0 = nothing removed)
-series = data.mask_thresholds(series, z_th, 0.0)
+series = data.mask_thresholds(series, z_th, 0.0, v_min=v_th)
 
 
 def weighted_resample(df, how):
@@ -108,6 +109,56 @@ common.kpi_cards([
     ("Sentiment Momentum", common.money(series.momentum.mean()), "(sentiment_mean ชั่วโมงนี้ − ชั่วโมงก่อนหน้า) เฉลี่ย"),
     ("Reddit Volume Z-score สูงสุด", common.money(series.zscore.max()), "เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน" + common.REDDIT_Z_NOTE)])
 
+# ---- (EXTENSION) the hourly mean of each model on its own: the final Sentiment Score (VADER + FinBERT after the rule that settles the conflicts) and the raw
+# score of VADER and of FinBERT, so that one can see how far the two models agree (question 3 of the system 7.3).  The page filters apply (assets, time, communities,
+# types of text, Sentiment Threshold); the model button of the sidebar does not: all three are always drawn.
+MODEL_LINES = (("VADER+FinBERT", "ผลรวม (กฎรวมผล)", common.C_SENT), ("VADER", "VADER", "#555555"), ("FinBERT", "FinBERT", "#bcbd22"))
+
+
+def model_series(model):
+    sent_m = q("sentiment_hourly", tickers, start, end, communities, model, common.text_variant(), content_types)
+    frame = data.sentiment_frame(sent_m, start, end, combined=not one)[["hour_utc", "sentiment_mean", "texts"]]
+    frame = frame.assign(time=pd.to_datetime(frame.hour_utc, unit="s", utc=True))
+    weight = frame.texts.where(frame.sentiment_mean.notna())
+    frame = frame.assign(sw=frame.sentiment_mean * weight, w=weight)
+    if how != "Hourly":                                                   # a day / week / ...: the mean of the hours weighted by their number of texts
+        frame = common.resample(frame[["time", "sw", "w"]], {"sw": "sum", "w": "sum"}, how)
+        frame = frame.assign(sentiment_mean=(frame.sw / frame.w).where(frame.w > 0))
+    frame.attrs["overall"] = float(sent_m.sentiment_sum.sum() / sent_m.texts.sum()) if len(sent_m) and sent_m.texts.sum() else float("nan")      # the mean of all the texts of the range
+    return frame[["time", "sentiment_mean"]].copy().rename_axis(None)
+
+
+by_model = {name: model_series(model) for model, name, _ in MODEL_LINES}
+overall = {name: by_model[name].attrs.get("overall", float("nan")) for _, name, _ in MODEL_LINES}
+st.subheader("ความรู้สึกเฉลี่ยรายชั่วโมงแยกตามแบบจำลอง (%s) ส่วนขยาย" % label)
+ticks = st.columns(len(MODEL_LINES))
+visible = [(name, color) for (model, name, color), cell in zip(MODEL_LINES, ticks)
+           if cell.checkbox("%s (%s)" % (name, common.COLOR_NAMES.get(color, "เทาเข้ม" if color == "#555555" else "เขียวมะกอก")), value=True, key="ms_" + model)]
+if not visible:
+    st.info("ติ๊กแสดงอย่างน้อย 1 เส้น")
+elif all(by_model[name].sentiment_mean.notna().sum() == 0 for name, _ in visible):
+    st.info("ไม่มีข้อความที่พูดถึง %s ในช่วงนี้" % label)
+else:
+    long = pd.concat([by_model[name].assign(model=name) for name, _ in visible], ignore_index=True).dropna(subset=["sentiment_mean"])
+    how_ticks = {"tickCount": common.TICK_STEP[how]} if how in common.TICK_STEP else {}
+    lines = alt.Chart(long).mark_line(opacity=0.85).encode(
+        x=alt.X("time:T", title=None, axis=alt.Axis(format=common.DATE_FORMAT[how], labelOverlap=True, **how_ticks)),
+        y=alt.Y("sentiment_mean:Q", title="Sentiment Score (เฉลี่ยของชั่วโมง)", axis=alt.Axis(format="+.2f")),
+        color=alt.Color("model:N", scale=alt.Scale(domain=[n for n, _ in visible], range=[c for _, c in visible]), legend=None))
+    hover = alt.Chart(long).mark_circle(size=150, opacity=0).encode(
+        x="time:T", y="sentiment_mean:Q", color=alt.Color("model:N", scale=alt.Scale(domain=[n for n, _ in visible], range=[c for _, c in visible]), legend=None),
+        tooltip=[alt.Tooltip("time:T", title=common.PERIOD_LABEL[how], format=common.DATE_TIP[how]), alt.Tooltip("model:N", title="แบบจำลอง"), alt.Tooltip("sentiment_mean:Q", title="Sentiment Score", format="+.3f")])
+    common.show((lines + hover + common.zero_rule()).properties(height=common.CHART_HEIGHT), width="stretch")
+    both = by_model["VADER"].merge(by_model["FinBERT"], on="time", suffixes=("_v", "_f")).dropna()
+    agree = "n/a" if len(both) < 3 else "{:+.2f}".format(both.sentiment_mean_v.corr(both.sentiment_mean_f))
+    st.caption("ผลรวม (กฎรวมผล) คือค่าความรู้สึกสุดท้ายที่ใช้ทั้งโครงการ (final_sentiment หลังแก้ความขัดแย้งระหว่าง VADER กับ FinBERT) ส่วน VADER และ FinBERT คือคะแนนดิบของแต่ละแบบจำลองก่อนรวมผล  \n"
+               "VADER ให้ค่า compound ส่วน FinBERT ให้ P(positive) − P(negative) สเกลจึงแกว่งไม่เท่ากัน ดูทิศทางขึ้นลงของสองเส้นมากกว่าขนาด  \n"
+               "ตัวกรอง Sentiment ทางซ้ายใช้กับ**แต่ละเส้นด้วยคะแนนของแบบจำลองนั้นเอง** (เช่น ตั้ง 0.30 เส้น VADER เก็บข้อความที่ VADER ให้ |คะแนน| ≥ 0.30) ชุดข้อความของสามเส้นจึงไม่ใช่ชุดเดียวกัน  \n"
+               "ความสอดคล้องของค่าเฉลี่ยรายช่วงระหว่าง VADER กับ FinBERT (สหสัมพันธ์ Pearson) = **%s**  ช่วงที่เส้นขาดหมายถึงไม่มีข้อความ ไม่ใช่ความรู้สึกเป็นกลาง" % agree)
+st.caption("ค่าเฉลี่ยของทุกข้อความในช่วงนี้: " + " · ".join("%s %s" % (name, "n/a" if np.isnan(overall[name]) else "{:+.3f}".format(overall[name])) for _, name, _ in MODEL_LINES) + "  \n"
+               "FinBERT เฉลี่ยติดลบกว่า VADER เป็นเรื่องปกติของข้อมูลนี้ ไม่ใช่ข้อผิดพลาด: FinBERT ฝึกจากข่าวการเงิน อ่านคำอย่าง down / miss / drop เป็นลบ (ทั้งชุดข้อมูล ลบ 34% บวก 17%) และข้อความของคอมเมนต์รวมหัวข้อโพสต์แม่ที่มักเป็นข่าวลบ"
+               " ส่วน VADER ตามคำศัพท์ทั่วไปจึงเอียงบวกกว่า (ทั้งชุดข้อมูล บวก 31% ลบ 39% แต่ค่าเฉลี่ยเป็นบวก) ผลรวมหลังกฎรวมผลจึงใกล้ศูนย์")
+
 st.subheader("ราคาปิดเทียบค่าความรู้สึกเฉลี่ย (%s)" % label)
 price_col = "close"
 if shown.sentiment_mean.notna().sum() == 0:
@@ -120,16 +171,11 @@ else:
     st.caption("สีน้ำเงินคือราคาปิด  \nสีเขียวอมฟ้าคือ Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น)  \n"
                "ช่วงที่เส้นสีเขียวอมฟ้าขาดหมายถึงไม่มีข้อความ ไม่ใช่ค่าความรู้สึกเป็นกลาง")
 
-    st.subheader("Reddit Volume Z-score เทียบค่าความรู้สึกเฉลี่ย (%s)" % label)
-    common.dual_chart(shown, "time", "zscore", "sentiment_mean", "Reddit Volume Z-score", "Sentiment Score", "s_z_sent",
-                      "Reddit Volume Z-score", "Sentiment Score", left_color=common.C_Z, left_fmt=".2f")
-    st.caption("สีแดงคือ Reddit Volume Z-score (ปริมาณข้อความเทียบกับ 24 ชั่วโมงก่อนหน้า)  \nสีเขียวอมฟ้าคือ Sentiment Score  \n"
+    st.subheader("Reddit Volume เทียบค่าความรู้สึกเฉลี่ย (%s)" % label)
+    common.dual_chart(shown, "time", "reddit_volume", "sentiment_mean", "Reddit Volume (จำนวนข้อความ)", "Sentiment Score", "s_z_sent",
+                      "Reddit Volume", "Sentiment Score", left_color=common.C_Z, left_fmt=",.0f")
+    st.caption("สีแดงคือ Reddit Volume (จำนวนโพสต์และคอมเมนต์ของช่วงนั้น)  \nสีเขียวอมฟ้าคือ Sentiment Score  \n"
                "หากมีการกล่าวถึงมากผิดปกติและความรู้สึกเปลี่ยนตาม สองเส้นจะเปลี่ยนไปในทิศทางเดียวกันหรือสวนทางกัน")
-
-    st.subheader("ราคาปิดเทียบ Reddit Volume Z-score (%s)" % label)
-    common.dual_chart(shown, "time", price_col, "zscore", price_title, "Reddit Volume Z-score", "s_price_z", "ราคาปิด",
-                      "Reddit Volume Z-score", right_color=common.C_Z, right_fmt=".2f")
-    st.caption("สีน้ำเงินคือราคาปิด  \nสีแดงคือ Reddit Volume Z-score  \nใช้ดูว่าในช่วงที่ปริมาณพุ่ง (เส้นสีแดงสูง) ราคาเคลื่อนไหวตามหรือไม่")
 
 # ---- does higher sentiment go with a higher return?  every ticked ticker-hour with text is one sample
 st.subheader("ความสัมพันธ์ระหว่างระดับความรู้สึกกับผลตอบแทน")
@@ -204,11 +250,9 @@ else:
         s=has_text.sentiment_mean * weight, p=has_text.pos_ratio * weight, n=has_text.neg_ratio * weight, w=weight
     ).groupby("series", as_index=False)[["s", "p", "n", "w"]].sum()
     ranked = ranked[ranked.w > 0].assign(sentiment=lambda d: d.s / d.w, pos=lambda d: 100 * d.p / d.w, neg=lambda d: 100 * d.n / d.w)
-    min_texts = st.number_input("จำนวนข้อความขั้นต่ำต่อสินทรัพย์ (น้อยกว่านี้ไม่นำมาเรียงอันดับ)", min_value=0, value=1000, step=100,
-                                key="s_rank_min")
-    ranked = ranked[ranked.w >= min_texts].sort_values("sentiment", ascending=False)
+    ranked = ranked.sort_values("sentiment", ascending=False)
     if ranked.empty:
-        st.info("ไม่มีสินทรัพย์ที่มีข้อความถึงเกณฑ์ขั้นต่ำในช่วงนี้")
+        st.info("ไม่มีสินทรัพย์ที่มีข้อความในช่วงนี้")
     else:
         groups = dict(zip(q("tickers").ticker, q("tickers").big_group))
         ranked["กลุ่ม"] = ranked.series.map(lambda s: GROUP_LABELS.get(groups.get(s), ""))
@@ -216,7 +260,8 @@ else:
         common.table(ranked[["อันดับ", "series", "กลุ่ม", "w", "sentiment", "pos", "neg"]].rename(columns={
             "series": "สินทรัพย์", "w": "จำนวนข้อความ", "sentiment": "Sentiment Score เฉลี่ย", "pos": "เชิงบวก (%)",
             "neg": "เชิงลบ (%)"}).round(3), hide_index=True, width="stretch", height=min(420, 60 + 36 * len(ranked)))
-        st.caption("เรียงจาก Sentiment Score เฉลี่ยสูงไปต่ำ เฉลี่ยถ่วงน้ำหนักด้วยจำนวนข้อความของแต่ละชั่วโมง นับเฉพาะข้อความที่พูดถึงสินทรัพย์นั้น "
+        st.caption("เริ่มต้นเรียงจาก Sentiment Score เฉลี่ยสูงไปต่ำ คลิกหัวคอลัมน์เพื่อเรียงตามคอลัมน์นั้น (คลิกซ้ำเพื่อกลับทิศ) อันดับคือลำดับตอนเริ่มต้น ไม่เปลี่ยนตามการเรียง  \n"
+                   "ไม่มีเกณฑ์จำนวนข้อความขั้นต่ำ สินทรัพย์ที่มีข้อความน้อยค่าเฉลี่ยจึงแกว่งง่าย ดูคอลัมน์จำนวนข้อความประกอบ เฉลี่ยถ่วงน้ำหนักด้วยจำนวนข้อความของแต่ละชั่วโมง นับเฉพาะข้อความที่พูดถึงสินทรัพย์นั้น "
                    "ในชุมชน แบบจำลอง และประเภทเนื้อหาที่เลือก ชั่วโมงที่ไม่มีข้อความไม่นับ (ไม่ใช่ค่าเป็นกลาง)")
 
 # ---- DimDetectionConfig drill-down: the hours that meet the thresholds of the sidebar, and what the price did next

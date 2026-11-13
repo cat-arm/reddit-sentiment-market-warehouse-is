@@ -35,9 +35,22 @@ STEP = 0.05                                                       # the Sentimen
 NAMED = {0: "all", 1: "strong", 6: "quality"}                     # step number -> the variant names of table 12 (cut = number x 0.05)
 
 
+def signed_variant(cut):
+    """EXTENSION (2026-11-13): the 'normal' (signed) Sentiment Threshold.  cut > 0 keeps the texts with score >= cut ('p0.30'), cut < 0 keeps the
+    texts with score <= cut ('n0.30'); cut a multiple of 0.05 with 0.05 <= |cut| <= 0.95; 0 = every text ('all')."""
+    k = int(round(float(cut) / STEP))
+    if abs(k) > 19 or abs(k * STEP - float(cut)) > 1e-9:
+        raise ValueError("the signed Sentiment Threshold must be a multiple of 0.05 from -0.95 to 0.95, got %r" % (cut,))
+    return "all" if k == 0 else ("p%.2f" if k > 0 else "n%.2f") % (abs(k) * STEP)
+
+
 def variant_of(cut):
     """Name of the variant that keeps only the texts with |score| >= cut (cut a multiple of 0.05 from 0 to 0.95): 'all', 'strong' (0.05),
-    'quality' (0.30), else 't0.10', 't0.15', ..."""
+    'quality' (0.30), else 't0.10', 't0.15', ...  A string is a variant name already (the signed ones 'p0.30' / 'n0.30') and is returned as it is."""
+    if isinstance(cut, str):
+        if cut not in ("all", "strong", "quality") and not (cut[:1] in "tpn" and len(cut) == 5):
+            raise ValueError("unknown text variant %r" % (cut,))
+        return cut
     k = int(round(float(cut) / STEP))
     if not 0 <= k <= 19 or abs(k * STEP - float(cut)) > 1e-9:
         raise ValueError("the Sentiment Threshold must be a multiple of 0.05 from 0 to 0.95, got %r" % (cut,))
@@ -165,6 +178,65 @@ def build_extra(db_path=DEFAULT_DB):
         db.close()
 
 
+SIGN = "CASE WHEN s.{score} > 0 THEN 1 WHEN s.{score} < 0 THEN -1 ELSE 0 END"
+SIGNED_TICKER = EXTRA_TICKER.replace("AS bucket,", "AS bucket, " + SIGN + " AS sign,").replace("GROUP BY 1, 2, 3, 4, 5", "GROUP BY 1, 2, 3, 4, 5, 6")
+SIGNED_GLOBAL = EXTRA_GLOBAL.replace("AS bucket,", "AS bucket, " + SIGN + " AS sign,").replace("GROUP BY 1, 2, 3, 4", "GROUP BY 1, 2, 3, 4, 5")
+
+
+def build_signed(db_path=DEFAULT_DB):
+    """EXTENSION (2026-11-13): the variants 'p0.05' .. 'p0.95' (texts with score >= +t) and 'n0.05' .. 'n0.95' (texts with score <= -t) are ADDED to
+    both tables (the 'normal' Sentiment Threshold of the dashboard; the absolute one keeps using 'strong' / 'quality' / 't...').  One pass over the texts
+    per model and table, grouped by sign and the 0.05 step of |score|.  Proof: p_t + n_t = the stored |score| >= t variant (rows of score 0 are in neither)."""
+    import pandas as pd
+    db = connect(db_path)
+    try:
+        for table, select, key in (("reddit_hourly_community", SIGNED_TICKER, ["ticker", "hour_utc", "subreddit", "content_type"]),
+                                   ("reddit_hourly_global", SIGNED_GLOBAL, ["hour_utc", "subreddit", "content_type"])):
+            db.execute("DELETE FROM %s WHERE variant LIKE 'p0.%%' OR variant LIKE 'n0.%%'" % table)
+            db.commit()
+            for model, score, status in MODELS:
+                frame = pd.read_sql_query(select.format(score=score, status=status), db)
+                print("%s %s: %d rows by sign and bucket" % (table, model, len(frame)), flush=True)
+                value = ["texts", "sentiment_sum", "abs_sum", "pos_n", "neg_n", "neu_n"]
+                cols = key + value
+                order = {c: i for i, c in enumerate(cols)}
+                layout = ([order["ticker"]] if "ticker" in order else []) + [order["hour_utc"], order["subreddit"], order["texts"], order["sentiment_sum"],
+                                                                               order["abs_sum"], order["pos_n"], order["neg_n"], order["neu_n"]]
+                n = len(cols)
+                for sign, prefix in ((1, "p"), (-1, "n")):
+                    for k in range(1, 20):
+                        part = frame[(frame.sign == sign) & (frame.bucket >= k)].groupby(key, as_index=False)[value].sum()
+                        name = "%s%.2f" % (prefix, k * STEP)
+                        out = [tuple(r[i] for i in layout) + (model, name, r[order["content_type"]])
+                               for r in part[cols].itertuples(index=False, name=None)]
+                        db.executemany("INSERT INTO %s VALUES (%s)" % (table, ",".join("?" * (len(layout) + 3))), out)
+                        db.commit()
+                    print("  %s %s %s done" % (table, model, prefix), flush=True)
+    finally:
+        db.close()
+
+
+def check_signed(db_path=DEFAULT_DB):
+    """(pairs compared, pairs that differ): for every table, model and cut t, texts(p_t) + texts(n_t) must equal texts(|score| >= t) and the same for the
+    sums of the scores (zero scores are in neither side)."""
+    db = connect(db_path)
+    try:
+        bad = compared = 0
+        for table in ("reddit_hourly_community", "reddit_hourly_global"):
+            for model, _, _ in MODELS:
+                for k in range(1, 20):
+                    sums = lambda name: db.execute("SELECT COALESCE(SUM(texts), 0), COALESCE(SUM(sentiment_sum), 0.0) FROM %s WHERE model = ? AND variant = ?"
+                                                   % table, (model, name)).fetchone()
+                    p, nn, whole = sums("p%.2f" % (k * STEP)), sums("n%.2f" % (k * STEP)), sums(variant_of(k * STEP))
+                    compared += 1
+                    if p[0] + nn[0] != whole[0] or abs(p[1] + nn[1] - whole[1]) > 1e-6 * max(1.0, abs(whole[1])):
+                        bad += 1
+                        print("DIFF", table, model, k, p, nn, whole, flush=True)
+        return compared, bad
+    finally:
+        db.close()
+
+
 def check_extra(db_path=DEFAULT_DB):
     """(cuts compared, rows that differ): the sums of the buckets (>= 0.05 and >= 0.30) rebuilt from the stored table 't...' logic must equal the
     stored 'strong' / 'quality'.  Here: for every model, the variants must be NESTED: texts(t0.10) <= texts(strong) per key and the totals must fall with the cut."""
@@ -226,8 +298,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--db", default=str(DEFAULT_DB))
     parser.add_argument("--check-only", action="store_true", help="only compare with reddit_hourly, do not rebuild")
+    parser.add_argument("--signed", action="store_true", help="ADD the signed variants p0.05 .. p0.95 and n0.05 .. n0.95 (the normal Sentiment Threshold)")
     parser.add_argument("--extra", action="store_true", help="ADD the variants t0.10 .. t0.95 (steps of 0.05) without touching the existing rows")
     args = parser.parse_args(argv)
+    if args.signed:
+        build_signed(args.db)
+        print("signed check (pairs, differences):", check_signed(args.db))
+        return 0
     if args.extra:
         build_extra(args.db)
         print("nested check (cuts, problems):", check_extra(args.db))

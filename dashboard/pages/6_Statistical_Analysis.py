@@ -38,7 +38,8 @@ st.caption("**หมายเหตุ:** ไม่มีเกณฑ์จำ�
 if not tickers or not communities or not statuses or not content_types:
     common.nothing_selected(CARDS, "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
 z_th = st.session_state.get("d_z", 0.0)
-s_th = st.session_state.get("d_s", 0.0)
+v_th = int(st.session_state.get("d_v", 0))             # the Reddit Volume Threshold: hours with fewer texts in the whole market are dropped
+s_th = common.sentiment_cut()                           # a float (absolute) or the name of the signed variant
 PREDICTOR_OF = {label: key for key, label in data.PREDICTORS.items()}
 predictor = PREDICTOR_OF.get(st.session_state.get("p5_basis"), "sentiment_mean")      # how the sentiment is read: the score or the majority (+ / -); the radio is drawn below the cards
 model = common.selected_model()
@@ -61,7 +62,7 @@ if prices.empty:
     st.stop()
 def stat(family, variant):
     return common.panel_stat(family, variant, tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_th, s_th,
-                      tuple(content_types), predictor)
+                      tuple(content_types), predictor, v_th)
 
 
 # ---- cards: the default panel (every text of the market), future horizons only ---------------------------------
@@ -299,24 +300,28 @@ st.caption("proposal 7.4 เทียบทิศทางของทั้ง�
            "แบบ majority ไม่ใช้คะแนน ใช้แค่ บวก (+1) ลบ (−1) หรือเป็นกลาง (0 = ไม่มีทิศทาง ไม่นับใน Win Rate)  การ์ด แท็บ และตารางจัดอันดับเปลี่ยนตามตัวเลือกนี้")
 
 # ---- the panels of table 12 as tabs: a click moves the Z-score / Sentiment thresholds of the sidebar to that panel's cut, the numbers follow ---------------
-PRESETS = {"all": (0.0, 0.0), "strong": (0.0, 0.05), "quality": (0.0, 0.30), "spike": (1.5, 0.0)}       # (Z-score threshold, Sentiment threshold)
-PANELS = {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}                                 # no random baseline view (the default of the Win Rate is 50%)
+PRESETS = {"all": (0, 0.0), "strong": (0, 0.05), "quality": (0, 0.30)}       # (Reddit Volume Threshold, absolute Sentiment Threshold); "spike" (Z > 1.5) has no slider any more
+PANELS = {k: v for k, v in data.PANEL_VARIANTS.items() if k not in ("baseline", "spike")}                                 # no random baseline view (the default of the Win Rate is 50%)
 
 
 def apply_preset():
     if st.session_state["p5_panel"] in PRESETS:                                  # a click moves the sliders
-        st.session_state["d_z"], st.session_state["d_s"] = PRESETS[st.session_state["p5_panel"]]
+        st.session_state["d_z"] = 0.0
+        st.session_state["d_v"], st.session_state["d_s"] = PRESETS[st.session_state["p5_panel"]]
+        st.session_state["d_mode"] = "absolute"
 
 
 # the other way round: the radio always shows what the sliders say (the panel whose cut they match, else nothing is selected)
-now = (round(float(st.session_state.get("d_z", 0.0)), 2), round(float(st.session_state.get("d_s", 0.0)), 2))
+now = (int(st.session_state.get("d_v", 0)), s_th if not isinstance(s_th, str) else None)       # the signed cut (a name) matches no panel
+if round(float(st.session_state.get("d_z", 0.0)), 2) != 0.0:
+    now = None
 st.session_state["p5_panel"] = next((k for k, v in PRESETS.items() if v == now), None)
 
 
 st.radio("ชนิดข้อความ (panel ตามตาราง 12)", list(PANELS), format_func=PANELS.get, horizontal=True, key="p5_panel", on_change=apply_preset, index=None)
 st.caption("กดเลือก panel แล้วแถบเกณฑ์ด้านซ้ายจะเลื่อนตาม ถ้าเลื่อนแถบเองปุ่มจะเปลี่ยนตาม (ไม่ตรงกับ panel ไหน = ไม่เลือกปุ่มใดเลย)  \n"
-           "ชัดเจน = Sentiment 0.05, คุณภาพ = Sentiment 0.30, ปริมาณพุ่ง = Z-score 1.5, ทุกข้อความ = ไม่กรอง  \n"
-           "Sentiment Threshold กรอง**ทีละข้อความ**ก่อน (ทิ้งคอมเมนต์ที่ |ความรู้สึก| ต่ำกว่าเกณฑ์) แล้วค่อยเฉลี่ยเป็นความรู้สึกของแต่ละชั่วโมง ตรงกับ panel strong / quality ของตาราง 12 ส่วน Z-score กรอง**ทั้งชั่วโมง**  \n"
+           "ชัดเจน = absolute 0.05, คุณภาพ = absolute 0.30, ทุกข้อความ = ไม่กรอง (panel ปริมาณพุ่ง Z > 1.5 ของตาราง 12 ไม่มีแถบเลื่อนแล้ว ดูในตาราง analysis_results)  \n"
+           "Sentiment Threshold กรอง**ทีละข้อความ**ก่อน (ทิ้งคอมเมนต์ที่ |ความรู้สึก| ต่ำกว่าเกณฑ์) แล้วค่อยเฉลี่ยเป็นความรู้สึกของแต่ละชั่วโมง ตรงกับ panel strong / quality ของตาราง 12 ส่วน Reddit Volume Threshold กรอง**ทั้งชั่วโมง**  \n"
            "Baseline ทิศทางสุ่มอยู่ในรูป a1_*, a2_* และตาราง analysis_results")
 family = st.radio("ข้อความที่ใช้", list(data.PANEL_FAMILIES), format_func=data.PANEL_FAMILIES.get, horizontal=True, key="p5_family_all")
 panel_view(stat_all if family == "global" else stat(family, "all"), "all")

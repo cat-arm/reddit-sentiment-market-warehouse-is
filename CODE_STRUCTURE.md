@@ -77,7 +77,7 @@ reddit-sentiment-market-warehouse/
 | 7.3 QA | S5 | `etl/sentiment_qa.py` | `sentiment_qa` | ✅ รันแล้ว 2026-10-10 |
 | 7.3 ซ่อมป้าย neutral band | — | `scripts/recompute_status_band.py` | แก้ `vader_status` 771 แถว | ✅ 2026-10-10 |
 | 7.4 สรุปรายชั่วโมง | P1, P2 | `etl/reddit_hourly.py`, `etl/reddit_features.py` | `reddit_hourly`, `reddit_hourly_features` | ✅ รันแล้ว 2026-10-10 |
-| 7.5 ความรู้สึกแยกตามชุมชน (DimSentimentSource) | P1b | `etl/reddit_hourly_community.py` (step 33), `tests/test_reddit_hourly_community.py` | `reddit_hourly_community` (ต่อ Ticker) และ `reddit_hourly_global` (ทั้งตลาด) แยกตามชุมชน × แบบจำลอง (VADER+FinBERT, VADER, FinBERT) × variant (all, strong, quality); รวมชุมชนแล้วเท่ากับ `reddit_hourly` ทุกชั่วโมง (848,002 ชั่วโมง ต่าง 0) | ✅ 2026-10-30 |
+| 7.5 ความรู้สึกแยกตามชุมชน (DimSentimentSource) | P1b | `etl/reddit_hourly_community.py` (step 33), `tests/test_reddit_hourly_community.py` | `reddit_hourly_community` (ต่อ Ticker) และ `reddit_hourly_global` (ทั้งตลาด) แยกตามชุมชน × แบบจำลอง (VADER+FinBERT, VADER, FinBERT) × variant (all, strong, quality) + ส่วนขยาย: t0.10…t0.95 (|คะแนน| ≥ t, `--extra`) และ p0.05…p0.95 / n0.05…n0.95 (คะแนน ≥ +t / ≤ −t, `--signed`, เกณฑ์โหมดค่าปกติของแถบซ้าย); รวมชุมชนแล้วเท่ากับ `reddit_hourly` ทุกชั่วโมง (848,002 ชั่วโมง ต่าง 0) | ✅ 2026-10-30 |
 | 7.4 merge + 9 panel | P3, P4 | `etl/merge_panel.py`, `etl/build_panels.py` | `merged_hourly_panel`, `panels` | ✅ รันแล้ว 2026-10-10 |
 | 7.4 Correlation | A1 | `analysis/correlation.py`, `analysis/results_store.py` | `analysis_results` + `output/figures/a1_*.png` | ✅ รันแล้ว 2026-10-10 |
 | 7.4 Win Rate | A2 | `analysis/winrate.py` | `analysis_results` + `output/figures/a2_*.png` (`winrate_*` ใน fact = W3 ยังไม่ทำ) | ✅ รันแล้ว 2026-10-10 |

@@ -28,12 +28,12 @@ class HotEventsLookupTests(unittest.TestCase):
     def test_hot_events_win_rate_is_the_number_of_the_statistical_analysis_page(self):
         from streamlit.testing.v1 import AppTest
         five = AppTest.from_file(str(ROOT / "dashboard" / "pages" / "6_Statistical_Analysis.py"), default_timeout=180).run()
-        five.sidebar.slider(key="d_z").set_value(1.5)
+        five.sidebar.slider(key="d_v").set_value(1500)
         five.sidebar.slider(key="d_s").set_value(0.05)
         five.radio(key="p5_measure_all").set_value("Win Rate").run()
         win = heat_values(five)
         seven = AppTest.from_file(str(ROOT / "dashboard" / "pages" / "8_Hot_Events.py"), default_timeout=180)
-        seven.session_state["d_z"], seven.session_state["d_s"] = 1.5, 0.05
+        seven.session_state["d_v"], seven.session_state["d_s"] = 1500, 0.05
         seven.session_state["f_range"] = five.session_state["f_range"]
         seven.run()
         self.assertEqual(len(seven.exception), 0)

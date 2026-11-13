@@ -20,6 +20,8 @@ import streamlit as st  # noqa: E402
 from dashboard import common, data  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
+SPIKE_Z = 1.5                                  # proposal: a volume spike is a Reddit Volume Z-score above 1.5 (the sidebar counts the texts instead)
+
 HORIZONS = ("1h", "2h", "3h", "6h", "12h")
 MIN_N = 1                                   # no minimum n: a rate needs one signal; a symbol marks n < 30 (WARN_N)
 WARN_N = 30
@@ -38,9 +40,10 @@ st.caption("**หมายเหตุ:** ไม่มีเกณฑ์จำ�
 if not tickers or not communities or not statuses or not content_types:
     common.nothing_selected(CARDS, "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
 
-z_min = float(st.session_state.get("d_z", 0.0))             # the two thresholds are the same ones as on pages 4, 5 and 6
-s_min = float(st.session_state.get("d_s", 0.0))
-found = q("market_signals", start, end, tuple(tickers), tuple(statuses), z_min, s_min, tuple(communities), model, tuple(content_types))      # the hours of the whole market that pass, x the assets chosen
+z_min = float(st.session_state.get("d_z", 0.0))             # not on a slider any more: the Reddit Volume Threshold counts the texts (v_min), a volume spike stays "Z > 1.5" (proposal)
+v_min = int(st.session_state.get("d_v", 0))
+s_min = common.sentiment_cut()                              # the Sentiment Threshold of the sidebar (a float, or the name of a signed variant), the same on pages 5, 6 and 7
+found = q("market_signals", start, end, tuple(tickers), tuple(statuses), z_min, s_min, tuple(communities), model, tuple(content_types), v_min, SPIKE_Z)      # the hours of the whole market that pass, x the assets chosen
 
 common.kpi_cards([(CARDS[0], "{:,}".format(len(found)), None),
                   (CARDS[1], str(found.ticker.nunique()), None),
@@ -48,14 +51,14 @@ common.kpi_cards([(CARDS[0], "{:,}".format(len(found)), None),
 
 st.subheader("รายการสัญญาณ (Detected Signal List)")
 st.caption("Z-score และความรู้สึกในหน้านี้คิดจากข้อความทั้งหมดของตลาดในชั่วโมงนั้น (เหมือนหน้า Statistical Analysis) สินทรัพย์ต่างกันที่ราคาและ Ticker Mention Rate  \n"
-           "เกณฑ์ปัจจุบันคือ Z-score มากกว่า %.1f และ |Sentiment Score| ตั้งแต่ %.2f (ค่า 0 คือไม่กรอง ปรับได้ที่แถบด้านซ้าย)  \n"
+           "เกณฑ์ปัจจุบันคือ Reddit Volume อย่างน้อย %s ข้อความต่อชั่วโมง และ Sentiment Threshold: %s (ค่า 0 คือไม่กรอง ปรับได้ที่แถบด้านซ้าย)  \n"
            "Z-score เทียบกับ 24 ชั่วโมงก่อนหน้า ทุกสินทรัพย์ในชั่วโมงเดียวกันจึงได้ Z และความรู้สึกเท่ากัน  \n"
            "**ชนิดของสัญญาณ**  \n"
-           "volume_spike คือปริมาณพุ่งอย่างเดียว  \n"
+           "volume_spike คือปริมาณพุ่งอย่างเดียว (Reddit Volume Z-score > 1.5 ตาม proposal)  \n"
            "positive_sentiment_spike และ negative_sentiment_spike คือความรู้สึกบวกหรือลบอย่างเดียว  \n"
            "combined_signal คือปริมาณพุ่งและความรู้สึกมีทิศทางพร้อมกัน  \n"
            "Reddit Volume Z-score คือปริมาณข้อความทั้งหมดของตลาดเทียบ 24 ชั่วโมงก่อนหน้า (เหมือนกันทุกสินทรัพย์ในชั่วโมงเดียวกัน) ส่วน Trading Volume Z-score คือปริมาณซื้อขายของราคาของสินทรัพย์นั้นเอง (ตารางที่ 8 ข้อ 2) ว่างเมื่อไม่มีข้อมูลปริมาณซื้อขาย  \n**ระดับ (signal_level)** low / medium / high คือคะแนนว่าเกินเกณฑ์มากแค่ไหน (สูตรตั้งเองใน configs/detection.yaml ส่วนขยายจาก proposal)  \n"
-           "รายการนี้ใช้ประกอบการวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน" % (z_min, s_min))
+           "รายการนี้ใช้ประกอบการวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน" % ("{:,}".format(v_min) if v_min else "0 (ไม่กรอง)", common.cut_label(s_min)))
 if found.empty:
     st.info("ไม่พบสัญญาณตามเกณฑ์นี้ในช่วงที่เลือก ลองลดเกณฑ์หรือขยายช่วงเวลา")
     st.stop()
@@ -82,7 +85,7 @@ def signal_table(basis):
     """One tab of the list: `basis` = how the sentiment is read ('sentiment_mean' = the score, 'majority' = + / - of the majority status).  The Win
     Rate, the correlations and the p-values of the asset are looked up from the system 7.4 (the very numbers of the Statistical Analysis page with the
     same filters: panel_global 'all texts', the sentiment of the whole market, the hours that pass the same thresholds)."""
-    stat74 = common.panel_stat("global", "all", tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_min, s_min, tuple(content_types), basis)
+    stat74 = common.panel_stat("global", "all", tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_min, s_min, tuple(content_types), basis, v_min)
     win_table = pd.DataFrame({"ticker": stat74.ticker, "horizon": stat74.target.map(data.LOOKUP_HORIZONS), "n": stat74.win_n, "win_rate": stat74.winrate,
                               "rho": stat74.spearman_rho, "pearson": stat74.pearson_rho, "p": stat74.win_p, "p_bh": stat74.win_bh})
     pair = win_table[win_table.horizon == horizon].set_index("ticker")[["n", "win_rate", "rho", "pearson", "p", "p_bh"]].add_prefix("pair_")

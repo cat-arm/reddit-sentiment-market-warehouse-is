@@ -1,7 +1,7 @@
 import sqlite3
 import unittest
 
-from etl.reddit_hourly_community import MODELS, SCHEMA, SCHEMA_GLOBAL, VARIANTS, aggregate, aggregate_global
+from etl.reddit_hourly_community import MODELS, SCHEMA, SCHEMA_GLOBAL, VARIANTS, aggregate, aggregate_global, signed_variant, variant_of
 
 H = 3600 * 100
 
@@ -72,6 +72,21 @@ class CommunityHourlyTests(unittest.TestCase):
         sqlite3.connect(":memory:").execute(SCHEMA)
         sqlite3.connect(":memory:").execute(SCHEMA_GLOBAL)
         self.assertEqual([v[0] for v in VARIANTS], ["all", "strong", "quality"])
+
+
+class SignedVariantTests(unittest.TestCase):
+    def test_the_normal_threshold_names_one_sided_variants(self):
+        self.assertEqual((signed_variant(0.3), signed_variant(-0.3), signed_variant(0.05), signed_variant(-0.95), signed_variant(0)),
+                         ("p0.30", "n0.30", "p0.05", "n0.95", "all"))
+        for bad in (1.0, -1.0, 0.07):
+            with self.assertRaises(ValueError):
+                signed_variant(bad)
+
+    def test_variant_of_keeps_names_and_maps_the_absolute_cut(self):
+        self.assertEqual((variant_of(0.3), variant_of(0.0), variant_of(0.05), variant_of(0.1), variant_of("p0.30"), variant_of("n0.15")),
+                         ("quality", "all", "strong", "t0.10", "p0.30", "n0.15"))
+        with self.assertRaises(ValueError):
+            variant_of("bogus")
 
 
 if __name__ == "__main__":

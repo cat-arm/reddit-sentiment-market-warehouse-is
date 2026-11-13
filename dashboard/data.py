@@ -470,8 +470,9 @@ def global_hourly(db_path, start, end, communities, model="VADER+FinBERT", varia
 
 def market_zscore(db_path, start, end, source_ids=None):
     """The Reddit Volume Z-score of the whole market (ALL posts and comments of the hour, proposal tables 3 and 18) for the DimSource ids kept
-    by the source filter (None = every source).  -> DataFrame(hour_utc, zscore)."""
-    return total_volume_series(db_path, start, end, source_ids)[["hour_utc", "zscore"]]
+    by the source filter (None = every source), with the number of texts of the hour (`market_volume`, the Reddit Volume Threshold judges it).
+    -> DataFrame(hour_utc, zscore, market_volume)."""
+    return total_volume_series(db_path, start, end, source_ids)[["hour_utc", "zscore", "texts"]].rename(columns={"texts": "market_volume"})
 
 
 def market_baseline(db_path, start, end, source_ids=None):
@@ -506,7 +507,7 @@ def sentiment_frame(sent, start, end, combined=False, market=None, volume=None):
     `sent_texts` is the number of texts the sentiment is made of (the weights of an average)."""
     cols = ["texts", "sentiment_sum", "pos_n", "neg_n", "neu_n"]
     out_cols = ["series", "hour_utc", "texts", "sentiment_mean", "pos_ratio", "neg_ratio", "neu_ratio", "majority",
-                "zscore", "momentum", "own_zscore", "sent_texts", "abs_mean"]
+                "zscore", "momentum", "own_zscore", "sent_texts", "abs_mean", "market_volume"]
     if sent.empty:
         return pd.DataFrame(columns=out_cols)
     if combined:
@@ -531,8 +532,12 @@ def sentiment_frame(sent, start, end, combined=False, market=None, volume=None):
               "majority": majority, "zscore": z, "momentum": mean - mean.shift(1)}
     long = pd.concat({k: v.stack(future_stack=True) for k, v in frames.items()}, axis=1).rename_axis(["hour_utc", "series"]).reset_index()
     long["own_zscore"] = long["zscore"]
+    long["market_volume"] = np.nan
     if market is not None:
-        long["zscore"] = long.hour_utc.map(market.drop_duplicates("hour_utc").set_index("hour_utc").zscore)
+        by_hour = market.drop_duplicates("hour_utc").set_index("hour_utc")
+        long["zscore"] = long.hour_utc.map(by_hour.zscore)
+        if "market_volume" in by_hour:
+            long["market_volume"] = long.hour_utc.map(by_hour.market_volume).fillna(0)      # an hour that has no row has no text
     return long[(long.hour_utc >= start) & (long.hour_utc <= end)][out_cols].reset_index(drop=True)
 
 
@@ -639,23 +644,26 @@ def return_buckets(df, past, sentiment="sentiment_mean", bins=5, min_total=50):
     return g[out_cols]
 
 
-def threshold_mask(df, z_min, s_min, z="zscore", sentiment="sentiment_mean"):
-    """DimDetectionConfig on the hours of a frame: True where the Reddit Volume Z-score is ABOVE `z_min` and the
+def threshold_mask(df, z_min, s_min, z="zscore", sentiment="sentiment_mean", v_min=0):
+    """DimDetectionConfig on the hours of a frame: True where the Reddit Volume Z-score is ABOVE `z_min` (the dashboard leaves it at 0 since
+    2026-11-13), the Reddit volume of the hour (`market_volume`, ALL the texts of the market) is at least `v_min` (EXTENSION) and the
     |Sentiment Score| is at least `s_min`.  A threshold of 0 switches that test off (every hour passes it, also an hour with a
     negative Z-score or without text); with both at 0 every hour passes.  Hours with no text never pass a positive threshold."""
     ok = pd.Series(True, index=df.index)
     if z_min > 0:
         ok &= df[z] > z_min
+    if v_min > 0:
+        ok &= df["market_volume"] >= v_min
     if s_min > 0:
         ok &= df[sentiment].abs() >= s_min
     return ok
 
 
-def mask_thresholds(df, z_min, s_min, majority="majority_final_status"):
+def mask_thresholds(df, z_min, s_min, majority="majority_final_status", v_min=0):
     """The thresholds as a filter of the hourly frame: hours that fail lose ALL their Reddit measures (volume, sentiment,
     ratios, Z-score, momentum, majority status) and become NULL, never 0; price and market volume stay.  With both thresholds
     at 0 the frame is returned unchanged."""
-    keep = threshold_mask(df, z_min, s_min)
+    keep = threshold_mask(df, z_min, s_min, v_min=v_min)
     out = df.copy()
     for col in (*REDDIT_MEASURES, majority):
         if col in out:
@@ -803,7 +811,7 @@ LOOKUP_HORIZONS = {"log_return": "Current Return", "1h": "1h", "2h": "2h", "3h":
 PREDICTORS = {"sentiment_mean": "คะแนนความรู้สึก (sentiment_mean)", "majority": "ทิศทางส่วนใหญ่ (majority_final_status: บวก / ลบ)"}      # the two ways of the proposal 7.4 to read the sentiment
 
 
-def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, seed=42, spike_z=1.5, predictor="sentiment_mean"):
+def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, seed=42, spike_z=1.5, predictor="sentiment_mean", v_min=0):
     """The ticker-hours of ONE panel of the proposal (table 12), live, after every filter of the dashboard.
     `base` = `sentiment_frame` of ALL the texts of the family (series = the tickers for the family 'Ticker', the one series 'ALL'
     for 'global'); `own` = the same for the texts of the variant ('strong' / 'quality'), else None; `returns` = DataFrame(ticker,
@@ -818,10 +826,12 @@ def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, s
     `predictor` = how the sentiment is read against the returns (proposal 7.4, directional matching): 'sentiment_mean' = the Sentiment Score,
     'majority' = the majority status of the hour as +1 / -1 / 0 (no score); the thresholds always judge the Sentiment Score and the Z-score of the hour.
     -> DataFrame(ticker, hour_utc, sentiment_mean, predictor, zscore, returns...)."""
-    cols = ["series", "hour_utc", "zscore", "own_zscore", "majority", "sentiment_mean", "texts", "momentum"]
+    cols = ["series", "hour_utc", "zscore", "own_zscore", "majority", "sentiment_mean", "texts", "momentum", "market_volume"]
     b = base[[c for c in cols if c in base]].rename(columns={"series": "ticker"})
     if "own_zscore" not in b:
         b["own_zscore"] = b.zscore
+    if "market_volume" not in b:
+        b["market_volume"] = np.nan
     for missing in ("texts", "momentum"):
         if missing not in b:
             b[missing] = np.inf if missing == "texts" else np.nan
@@ -829,7 +839,7 @@ def panel_samples(base, own, returns, family, variant, statuses, z_min, s_min, s
         v = own[[c for c in cols if c in own and c in ("series", "hour_utc", "sentiment_mean", "texts", "momentum")]].rename(columns={"series": "ticker"})
         b = b.drop(columns=[c for c in ("sentiment_mean", "texts", "momentum") if c in v]).merge(v, on=["ticker", "hour_utc"], how="left")
     b["predictor"] = b.sentiment_mean if predictor == "sentiment_mean" else b.majority.map({"positive": 1.0, "negative": -1.0, "neutral": 0.0})
-    keep = (b.majority.isin(statuses) & threshold_mask(b, z_min, s_min) & b.sentiment_mean.notna() & b.predictor.notna())
+    keep = (b.majority.isin(statuses) & threshold_mask(b, z_min, s_min, v_min=v_min) & b.sentiment_mean.notna() & b.predictor.notna())
     if variant == "spike":
         keep &= b.own_zscore > spike_z                 # table 12: the spike of panel_Ticker is relative to that asset's own volume
     b = b[keep]
@@ -947,7 +957,7 @@ def signal_panel(db_path, market_volume=True):
     return panel
 
 
-def market_signals(db_path, start, end, tickers, statuses, z_min, s_min, communities=None, model="VADER+FinBERT", content_types=CONTENT_TYPES):
+def market_signals(db_path, start, end, tickers, statuses, z_min, s_min, communities=None, model="VADER+FinBERT", content_types=CONTENT_TYPES, v_min=0, spike_z=None):
     """System 7.6, the catch: every (asset x hour) of the range laid on the table, kept where the hour of the whole market passes the thresholds.
     The Reddit Volume Z-score is that of ALL the texts of the hour and the Sentiment Score is the mean of the texts of the whole market that pass the
     Sentiment Threshold `s_min` (a filter of the TEXTS, as the panels strong / quality of table 12: 0 = all, 0.05 = strong, 0.30 = quality; a multiple of
@@ -963,8 +973,10 @@ def market_signals(db_path, start, end, tickers, statuses, z_min, s_min, communi
     from etl.reddit_hourly_community import variant_of
     sent = global_hourly(db_path, start, end, communities, model, variant_of(s_min), tuple(content_types))      # the texts that pass the Sentiment Threshold
     hours = sentiment_frame(sent, start, end, market=market_zscore(db_path, start, end, ids))
+    if v_min > 0:                                                                                            # the Reddit Volume Threshold (EXTENSION): ALL the texts of the hour, at least v_min
+        hours = hours[hours.market_volume >= v_min]
     hours = hours.rename(columns={"texts": "reddit_volume", "zscore": "reddit_volume_zscore_24", "majority": "majority_final_status"})
-    hours = signals.detect(hours, z_min, 1e-9, {**signals.RULES, "min_texts_for_sentiment": 1})          # the Sentiment Threshold already acted on the texts: any direction counts
+    hours = signals.detect(hours, z_min if spike_z is None else spike_z, 1e-9, {**signals.RULES, "min_texts_for_sentiment": 1})          # the Sentiment Threshold already acted on the texts: any direction counts
     if z_min > 0:                                                                                            # a Z-score threshold keeps only the hours above it (as the statistics of 7.4 do)
         hours = hours[hours.reddit_volume_zscore_24 > z_min]
     hours = hours[hours.majority_final_status.isin(tuple(statuses))]

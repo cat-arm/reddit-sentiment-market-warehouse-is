@@ -1,7 +1,8 @@
 # The 34 target assets (proposal 4.2) with the aliases used to find them in Reddit text (T3/T4).
 #
-# instrument  : stock | index_etf | bitcoin_etf, only for asset_class stock_etf (EXTENSION 2026-11-13, shown on the Price and Return page to split the
-#               volatility of the stock_etf group; Big_Group stays the proposal's three groups)
+# instrument  : tech | crypto_related | meme | finance | defensive (stocks), index_etf | bitcoin_etf (ETFs); only for asset_class stock_etf (EXTENSION
+#               2026-11-13, a grouping chosen by the developer, shown on the Price and Return page to split the volatility of the stock_etf group;
+#               Big_Group stays the proposal's three groups)
 # asset_class : stock_etf | crypto | futures  (Big_Group in the proposal; BITO/IBIT/MARA/MSTR/COIN are
 #               filed as stock_etf because they trade on stock exchanges - open question O5 in TASKS.md)
 # cashtags    : written as $XYZ; always counted (case-insensitive)
@@ -21,19 +22,19 @@ tickers:
   AAPL:
     name: Apple Inc.
     asset_class: stock_etf
-    instrument: stock
+    instrument: tech
     cashtags: [AAPL]
     aliases: [AAPL, {text: Apple, case_sensitive: true}]
   AMC:
     name: AMC Entertainment
     asset_class: stock_etf
-    instrument: stock
+    instrument: meme
     cashtags: [AMC]
     aliases: [AMC, "AMC Entertainment"]
   AMD:
     name: Advanced Micro Devices
     asset_class: stock_etf
-    instrument: stock
+    instrument: tech
     cashtags: [AMD]
     aliases: [AMD, "Advanced Micro Devices"]
   BITO:
@@ -45,7 +46,7 @@ tickers:
   BRK-B:
     name: Berkshire Hathaway Class B
     asset_class: stock_etf
-    instrument: stock
+    instrument: finance
     cashtags: [BRK.B, BRKB, BRK]
     aliases: ["BRK.B", "BRK-B", BRK, Berkshire, "Berkshire Hathaway"]
   BTC-USD:
@@ -61,7 +62,7 @@ tickers:
   COIN:
     name: Coinbase Global
     asset_class: stock_etf
-    instrument: stock
+    instrument: crypto_related
     cashtags: [COIN]
     aliases: [Coinbase]
   DOGE-USD:
@@ -89,13 +90,13 @@ tickers:
   GME:
     name: GameStop
     asset_class: stock_etf
-    instrument: stock
+    instrument: meme
     cashtags: [GME]
     aliases: [GME, GameStop]
   HOOD:
     name: Robinhood Markets
     asset_class: stock_etf
-    instrument: stock
+    instrument: crypto_related
     cashtags: [HOOD]
     aliases: [{text: HOOD, case_sensitive: true}, Robinhood]
   IBIT:
@@ -113,37 +114,37 @@ tickers:
   JNJ:
     name: Johnson & Johnson
     asset_class: stock_etf
-    instrument: stock
+    instrument: defensive
     cashtags: [JNJ]
     aliases: [JNJ, "Johnson & Johnson", "Johnson and Johnson", "J&J"]
   JPM:
     name: JPMorgan Chase
     asset_class: stock_etf
-    instrument: stock
+    instrument: finance
     cashtags: [JPM]
     aliases: [JPM, JPMorgan, "JP Morgan"]
   KO:
     name: Coca-Cola
     asset_class: stock_etf
-    instrument: stock
+    instrument: defensive
     cashtags: [KO]
     aliases: ["Coca-Cola"]
   MARA:
     name: Marathon Digital Holdings
     asset_class: stock_etf
-    instrument: stock
+    instrument: crypto_related
     cashtags: [MARA]
     aliases: [{text: MARA, case_sensitive: true}, "Marathon Digital"]
   MSFT:
     name: Microsoft
     asset_class: stock_etf
-    instrument: stock
+    instrument: tech
     cashtags: [MSFT]
     aliases: [MSFT, Microsoft]
   MSTR:
     name: MicroStrategy
     asset_class: stock_etf
-    instrument: stock
+    instrument: crypto_related
     cashtags: [MSTR]
     aliases: [MSTR, MicroStrategy]
   NG=F:
@@ -160,13 +161,13 @@ tickers:
   NVDA:
     name: NVIDIA
     asset_class: stock_etf
-    instrument: stock
+    instrument: tech
     cashtags: [NVDA]
     aliases: [NVDA, Nvidia]
   PLTR:
     name: Palantir
     asset_class: stock_etf
-    instrument: stock
+    instrument: tech
     cashtags: [PLTR]
     aliases: [PLTR, Palantir]
   QQQ:
@@ -200,13 +201,13 @@ tickers:
   TSLA:
     name: Tesla
     asset_class: stock_etf
-    instrument: stock
+    instrument: tech
     cashtags: [TSLA]
     aliases: [TSLA, Tesla]
   XOM:
     name: Exxon Mobil
     asset_class: stock_etf
-    instrument: stock
+    instrument: defensive
     cashtags: [XOM]
     aliases: [XOM, Exxon, "Exxon Mobil"]
   XRP-USD:

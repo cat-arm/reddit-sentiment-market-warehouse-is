@@ -31,7 +31,8 @@ CARDS = ["ค่าสหสัมพันธ์ ชั่วโมงเดี
 if not tickers or not communities or not statuses or not content_types:
     common.nothing_selected(CARDS, "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
 z_th = st.session_state.get("d_z", 0.0)                 # DimDetectionConfig: filters the hours (0 = no filter)
-s_th = st.session_state.get("d_s", 0.0)
+v_th = int(st.session_state.get("d_v", 0))             # the Reddit Volume Threshold: hours with fewer texts in the whole market are dropped
+s_th = common.sentiment_cut()                           # a float (absolute) or the name of the signed variant
 names = dict(zip(q("tickers").ticker, q("tickers").name))
 
 prices = q("price_series_for", tickers, start, end)
@@ -42,7 +43,7 @@ if prices.empty:
     st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
     st.stop()
 per_ticker = data.sentiment_frame(sent, start, end, market=q("market_zscore", start, end, common.sentiment_source_ids()), volume=sent_all)      # Z-score of ALL the texts of the hour
-per_ticker_kept = per_ticker.assign(majority=per_ticker.majority.where(data.threshold_mask(per_ticker, z_th, 0.0)))
+per_ticker_kept = per_ticker.assign(majority=per_ticker.majority.where(data.threshold_mask(per_ticker, z_th, 0.0, v_min=v_th)))
 
 # ---- who moves first?  the same ticker-hours as above, now looking back as well as forward
 timing = per_ticker_kept.rename(columns={"series": "ticker"})[["ticker", "hour_utc", "sentiment_mean", "majority"]]

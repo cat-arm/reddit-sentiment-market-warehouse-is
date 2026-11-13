@@ -5,6 +5,7 @@ The test runs each page and compares the sidebar widgets (labels, order, values)
 """
 
 import datetime as dt
+import json
 import unittest
 from pathlib import Path
 
@@ -15,8 +16,8 @@ SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", SPIKE_
 SENTIMENT_PAGE = "pages/5_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
 RANKING_PAGE = "pages/6_Statistical_Analysis.py"                              # 7.5-2: p-values, win rate, regression
 ANALYSIS_PAGE = "pages/7_Lead_and_Lag.py"                                      # extension: who moves first
-DETECTION_PAGES = {"pages/8_Hot_Events.py": ["d_z", "d_s"], SENTIMENT_PAGE: ["d_z", "d_s"], RANKING_PAGE: ["d_z", "d_s"],
-                   ANALYSIS_PAGE: ["d_z", "d_s"]}
+DETECTION_PAGES = {"pages/8_Hot_Events.py": ["d_v", "d_mode", "d_s"], SENTIMENT_PAGE: ["d_v", "d_mode", "d_s"], RANKING_PAGE: ["d_v", "d_mode", "d_s"],
+                   ANALYSIS_PAGE: ["d_v", "d_mode", "d_s"]}
 MAJORITY_PAGES = {SENTIMENT_PAGE, ANALYSIS_PAGE, *DETECTION_PAGES}
 SENTIMENT_PAGES = {SENTIMENT_PAGE, RANKING_PAGE, ANALYSIS_PAGE, "pages/8_Hot_Events.py"}      # page 7 takes the same sentiment source as page 5
 COUNT_PAGES = (SOURCE_PAGES - {SPIKE_PAGE}) | {"pages/3_Price_and_Return.py"}                  # first card = a count that follows the ticks
@@ -106,12 +107,12 @@ class FilterTests(unittest.TestCase):
             default = (tuple(fresh.sidebar.date_input(key="f_range").value), fresh.sidebar.checkbox(key="f_group_crypto").value)
             at = self.run_page(page, f_group_crypto=False, f_range=(dt.date(2026, 8, 3), dt.date(2026, 8, 9)), f_gran="รายเดือน")
             if page != "pages/1_Reddit_Volume.py":
-                at.sidebar.slider(key="d_z").set_value(2.0).run()
+                at.sidebar.slider(key="d_v").set_value(1500).run()
             at.sidebar.button(key="f_reset_button").click().run()
             self.assertEqual(len(at.exception), 0, "%s: %s" % (page, [e.value for e in at.exception]))
             self.assertEqual((tuple(at.sidebar.date_input(key="f_range").value), at.sidebar.checkbox(key="f_group_crypto").value), default, page)
             if page != "pages/1_Reddit_Volume.py":
-                self.assertEqual((at.sidebar.slider(key="d_z").value, at.sidebar.slider(key="d_s").value), (0.0, 0.0), page)
+                self.assertEqual((at.sidebar.slider(key="d_v").value, at.sidebar.slider(key="d_s").value), (0, 0.0), page)
 
     def test_a_choice_survives_pages_that_do_not_have_that_filter(self):
         """Leave a page and come back: every filter is as it was, also those the pages in between do not draw (they work with
@@ -119,7 +120,7 @@ class FilterTests(unittest.TestCase):
         from streamlit.testing.v1 import AppTest
         at = AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=180).run()
         at = at.switch_page(SENTIMENT_PAGE).run()
-        at.sidebar.slider(key="d_z").set_value(2.0)
+        at.sidebar.slider(key="d_v").set_value(1500)
         at.sidebar.checkbox(key="f_ss_r/wallstreetbets").set_value(False)
         at.sidebar.checkbox(key="f_maj_positive").set_value(False)
         at.sidebar.radio(key="f_ss_model").set_value("VADER")
@@ -131,7 +132,7 @@ class FilterTests(unittest.TestCase):
             self.assertFalse(at.sidebar.checkbox(key="f_tk_SPY").value, other)           # a filter shared by the pages stays
             self.assertEqual(at.sidebar.radio(key="f_gran").value, "รายเดือน", other)    # also a radio, also when the next page draws it too
         at = at.switch_page(SENTIMENT_PAGE).run()
-        self.assertEqual(at.sidebar.slider(key="d_z").value, 2.0)
+        self.assertEqual(at.sidebar.slider(key="d_v").value, 1500)
         self.assertFalse(at.sidebar.checkbox(key="f_ss_r/wallstreetbets").value)
         self.assertFalse(at.sidebar.checkbox(key="f_maj_positive").value)
         self.assertEqual(at.sidebar.radio(key="f_ss_model").value, "VADER")
@@ -182,6 +183,41 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(one[:2], full[:2], "the Reddit volume of the market does not depend on the asset")
         self.assertNotEqual(one[2:], full[2:], "the Current Return and the trading volume follow the ticked asset")
         self.assertEqual(len(at.exception), 0)
+
+    def test_every_chart_field_is_a_column_of_its_data(self):
+        """A chart whose encoded field is not a column of its data draws nothing (it happened when a Thai field name with sara am was made by a Python
+        keyword argument, which normalises it to two characters): every field of every chart of these pages must exist in the data the chart carries."""
+        import io
+        import json
+        import pyarrow as pa
+
+        def collect(spec):
+            fields, inline = set(), set()
+
+            def walk(x):
+                if isinstance(x, dict):
+                    if isinstance(x.get("field"), str):
+                        fields.add(x["field"])
+                    if isinstance(x.get("values"), list):
+                        for row in x["values"]:
+                            if isinstance(row, dict):
+                                inline.update(row)
+                    for v in x.values():
+                        walk(v)
+                elif isinstance(x, list):
+                    for v in x:
+                        walk(v)
+            walk(spec)
+            return fields, inline
+
+        for page in (SPIKE_PAGE, SENTIMENT_PAGE, "pages/3_Price_and_Return.py"):
+            at = self.run_page(page)
+            for i, chart in enumerate(at.get("vega_lite_chart")):
+                columns = set()
+                for d in chart.proto.datasets:
+                    columns |= set(pa.ipc.open_stream(io.BytesIO(d.data.data)).read_all().to_pandas().columns)
+                fields, inline = collect(json.loads(chart.proto.spec))
+                self.assertEqual({f for f in fields - columns - inline if not f.startswith("_")}, set(), "%s chart %d" % (page, i))
 
     def test_ticking_a_class_ticks_all_its_tickers(self):
         """Pages 1-3: unticking a class clears its tickers, ticking it again ticks the whole class (even a ticker unticked before)."""
@@ -249,19 +285,19 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(len(at.exception), 0, i)
         at.selectbox(key="p5_log_panel").select_index(0)
         self.assertNotIn("p5_predictor", [r.key for r in at.radio])                          # the proposal measures only the mean Sentiment Score
-        at.sidebar.slider(key="d_z").set_value(2.0).run()                                     # the Z-score narrows every panel and says what it means in texts
+        at.sidebar.slider(key="d_v").set_value(1500).run()                                     # the Z-score narrows every panel and says what it means in texts
         self.assertEqual(len(at.exception), 0)
         self.assertNotEqual([m.value for m in at.metric][:3], full[:3])
         self.assertFalse(any("Z-score เกิน" in c.value for c in at.sidebar.caption), "no texts-per-hour hint under the Z-score slider (it misled: the Z-score is relative to each hour)")
-        at.sidebar.slider(key="d_z").set_value(0.0)
+        at.sidebar.slider(key="d_v").set_value(0)
         self.assertEqual(at.radio(key="p5_family_all").value, "global")                    # the default: the sentiment of the whole market
         at.radio(key="p5_family_all").set_value("Ticker").run()
         self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
         at.radio(key="p5_family_all").set_value("global")
-        for panel, (z_cut, s_cut) in (("strong", (0.0, 0.05)), ("quality", (0.0, 0.30)), ("spike", (1.5, 0.0)), ("all", (0.0, 0.0))):   # a panel moves the sidebar thresholds
+        for panel, (z_cut, s_cut) in (("strong", (0, 0.05)), ("quality", (0, 0.30)), ("all", (0, 0.0))):   # a panel moves the sidebar thresholds
             at.radio(key="p5_panel").set_value(panel).run()
             self.assertEqual(len(at.exception), 0, "%s: %s" % (panel, [e.value for e in at.exception]))
-            self.assertEqual((at.sidebar.slider(key="d_z").value, at.sidebar.slider(key="d_s").value), (z_cut, s_cut), panel)
+            self.assertEqual((at.sidebar.slider(key="d_v").value, at.sidebar.slider(key="d_s").value), (z_cut, s_cut), panel)
         self.assertNotIn("baseline", at.radio(key="p5_panel").options)                      # the random baseline is not a view
         # the time range is a filter of the p-values
         at.sidebar.date_input(key="f_range").set_value((dt.date(2026, 3, 1), dt.date(2026, 3, 31))).run()
@@ -317,18 +353,18 @@ class FilterTests(unittest.TestCase):
         self.assertEqual([m.label for m in at.metric], ["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"])
         at.sidebar.checkbox(key="f_maj_neutral").set_value(True)
         # DimDetectionConfig is a FILTER on this page: 0 / 0 removes nothing, a threshold removes hours
-        self.assertEqual((at.sidebar.slider(key="d_z").value, at.sidebar.slider(key="d_s").value), (0.0, 0.0))
-        for z in (3.0, 0.5):
-            at.sidebar.slider(key="d_z").set_value(z).run()
+        self.assertEqual((at.sidebar.slider(key="d_v").value, at.sidebar.slider(key="d_s").value), (0, 0.0))
+        for z in (3000, 1500):
+            at.sidebar.slider(key="d_v").set_value(z).run()
             self.assertEqual(len(at.exception), 0, z)
             self.assertNotEqual(at.metric[0].value, full[0], "Z-score Threshold %s removes hours, so the Sentiment Score changes" % z)
-        at.sidebar.slider(key="d_z").set_value(0.0)
+        at.sidebar.slider(key="d_v").set_value(0)
         at.run()
-        at.sidebar.slider(key="d_z").set_value(2.0).run()
+        at.sidebar.slider(key="d_v").set_value(1500).run()
         self.assertFalse(any("Z-score เกิน" in c.value for c in at.sidebar.caption), "no hint under the Z-score slider")
-        at.sidebar.slider(key="d_z").set_value(3.5).run()
+        at.sidebar.slider(key="d_v").set_value(4000).run()
         self.assertEqual(len(at.exception), 0)
-        at.sidebar.slider(key="d_z").set_value(0.0)
+        at.sidebar.slider(key="d_v").set_value(0)
         at.sidebar.checkbox(key="f_type_Comment").set_value(False).run()           # only the posts of the community are counted
         self.assertEqual(len(at.exception), 0)
         self.assertNotEqual([m.value for m in at.metric], full, "the content type is a filter")
@@ -339,9 +375,23 @@ class FilterTests(unittest.TestCase):
         at.sidebar.slider(key="d_s").set_value(0.5).run()
         self.assertNotEqual(at.metric[0].value, full[0], "Sentiment Threshold changes the Sentiment Score")
         at.sidebar.slider(key="d_s").set_value(0.0)
+        # the normal (signed) mode: a negative cut keeps only the negative texts, a positive one only the positive texts
+        at.sidebar.radio(key="d_mode").set_value("normal").run()
+        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
+        self.assertEqual(at.sidebar.slider(key="d_ss").value, 0.0)
+        at.sidebar.slider(key="d_ss").set_value(-0.30).run()
+        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
+        negative = at.metric[0].value
+        self.assertTrue(negative.startswith("-") or negative.startswith("−"), "only the texts with score <= -0.30: the mean is negative, got %s" % negative)
+        at.sidebar.slider(key="d_ss").set_value(0.30).run()
+        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
+        self.assertTrue(at.metric[0].value.startswith("+"), "only the texts with score >= +0.30: the mean is positive, got %s" % at.metric[0].value)
+        at.sidebar.slider(key="d_ss").set_value(0.0)
+        at.sidebar.radio(key="d_mode").set_value("absolute")
+        at.run()
         at.run()
         self.assertEqual([m.value for m in at.metric], full, "back to 0 / 0: nothing is filtered, the numbers are the default ones")
-        for key in ("s_price_sent", "s_z_sent", "s_price_z"):                      # the dual charts: hide one line, then both
+        for key in ("s_price_sent", "s_z_sent"):                      # the dual charts: hide one line, then both
             at.checkbox(key="dl_" + key).set_value(False).run()
             self.assertEqual(len(at.exception), 0, key)
             at.checkbox(key="dr_" + key).set_value(False).run()                    # both hidden: a note instead of a chart
@@ -362,7 +412,7 @@ class FilterTests(unittest.TestCase):
         page = "pages/8_Hot_Events.py"
         at = self.run_page(page)
         base = at.metric[0].value
-        at.sidebar.slider(key="d_z").set_value(3.5).run()                          # both thresholds start at 0: every hour with texts is a signal
+        at.sidebar.slider(key="d_v").set_value(4000).run()                          # both thresholds start at 0: every hour with texts is a signal
         at.sidebar.slider(key="d_s").set_value(0.5).run()
         self.assertNotEqual(at.metric[0].value, base, "the thresholds change the signals")
         self.assertEqual(len(at.exception), 0)

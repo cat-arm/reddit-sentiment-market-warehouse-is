@@ -40,7 +40,9 @@ GROUP_DOTS = {"stock_etf": "🔵", "futures": "🟠", "crypto": "🟢"}   # same
 TYPE_KEYS = ["f_type_Post", "f_type_Comment"]
 STATUSES = ("positive", "negative", "neutral")                  # DimMajoritySentiment
 MAJORITY_KEYS = ["f_maj_" + s for s in STATUSES]
-OVERVIEW_KEYS = ["d_z", "d_s"]                                  # Market and Sentiment: thresholds FILTER the whole page (0 = no filter)
+OVERVIEW_KEYS = ["d_z", "d_v", "d_s", "d_ss", "d_mode"]          # Market and Sentiment: thresholds FILTER the whole page (0 = no filter); d_z is no longer on a slider (kept at 0)
+SENTIMENT_MODES = ("absolute", "normal")                         # the Sentiment Threshold: |score| >= x (as before) or the signed score (score >= x for x > 0, <= x for x < 0)
+MODE_LABELS = {"absolute": "absolute (|ความรู้สึก|)", "normal": "ค่าปกติ (มีบวก/ลบ)"}
 SENTIMENT_MODELS = ("VADER+FinBERT", "VADER", "FinBERT")         # DimSentimentSource.ModelUsed; the first is the proposal's
 DEFAULT_RANGE_DAYS = 365
 TIME_KEYS = ["f_range", "f_gran"]                              # DimTime: the date range and the chart level
@@ -79,14 +81,32 @@ def q(name, *args):
     return _cached(name, os.path.getmtime(data.__file__), *args)
 
 
+def sentiment_cut():
+    """The Sentiment Threshold of the sidebar as the pages pass it on: a float (the absolute mode: keep the texts with |score| >= it, 0 = all) or, in
+    the normal (signed) mode, a variant name 'p0.30' (score >= +0.30) / 'n0.30' (score <= -0.30); 0 stays the float 0.0 (all)."""
+    from etl.reddit_hourly_community import signed_variant
+    state = st.session_state
+    if state.get("d_mode", "absolute") == "normal":
+        name = signed_variant(round(float(state.get("d_ss", 0.0)) / 0.05) * 0.05)
+        return 0.0 if name == "all" else name
+    return round(float(state.get("d_s", 0.0)) / 0.05) * 0.05
+
+
+def cut_label(cut):
+    """The Sentiment Threshold in words for a caption."""
+    if isinstance(cut, str):
+        return ("คะแนน ≥ +%s" if cut[0] == "p" else "คะแนน ≤ −%s") % cut[1:]
+    return "|คะแนน| ≥ %.2f" % cut if cut > 0 else "ไม่กรอง"
+
+
 def text_variant():
-    """The variant of the hourly sums that the Sentiment Threshold of the sidebar asks for: only the texts with |score| >= the threshold (0 = all)."""
+    """The variant of the hourly sums that the Sentiment Threshold of the sidebar asks for (absolute: |score| >= the threshold; normal: the signed cut)."""
     from etl.reddit_hourly_community import variant_of
-    return variant_of(round(float(st.session_state.get("d_s", 0.0)) / 0.05) * 0.05)
+    return variant_of(sentiment_cut())
 
 
 @st.cache_data(show_spinner="กำลังคำนวณ p-value และ Win Rate ...", max_entries=40)
-def panel_stat(family, variant, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, predictor):
+def panel_stat(family, variant, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, predictor, v_th=0):
     """The live statistics table of one panel of the proposal's system 7.4 after every filter of the sidebar (cached: the same filters are never
     computed twice).  The Statistical Analysis page draws it and the Hot Events page (system 7.6) looks the same numbers up (proposal 7.6 step 3)."""
     prices = q("price_series_for", tickers, start, end)
@@ -96,7 +116,7 @@ def panel_stat(family, variant, tickers, start, end, communities, model, statuse
     market = q("market_zscore", start, end, tuple(int(i) for i in src[src.subreddit.isin(communities) & src.content_type.isin(content_types)].source_id))   # Z of ALL the texts of the hour
 
     from etl.reddit_hourly_community import variant_of
-    cut = variant_of(round(float(s_th) / 0.05) * 0.05)                 # the Sentiment Threshold filters the TEXTS (0 = all, 0.05 = strong, 0.30 = quality)
+    cut = variant_of(s_th)                                             # the Sentiment Threshold filters the TEXTS (a float = |score| >= it; a name 'p0.30' / 'n0.30' = the signed cut)
 
     def frame(fam, var):
         if fam == "global":
@@ -107,7 +127,7 @@ def panel_stat(family, variant, tickers, start, end, communities, model, statuse
 
     base = frame("global" if variant == "baseline" else family, cut)
     own = frame(family, variant) if variant in ("strong", "quality") else None
-    samples = data.panel_samples(base, own, returns, family, variant, statuses, z_th, 0.0, predictor=predictor)
+    samples = data.panel_samples(base, own, returns, family, variant, statuses, z_th, 0.0, predictor=predictor, v_min=v_th)
     if samples.empty:
         return pd.DataFrame(columns=data.STAT_COLUMNS)
     return data.stat_table(samples, sentiment="predictor")
@@ -261,12 +281,21 @@ def _detection_filter(kind, sentiment=False):
     state = st.session_state
     st.sidebar.markdown("**เกณฑ์การตรวจจับสัญญาณ (DimDetectionConfig)**")
     if kind == "overview":                                  # filters the hours of the page; 0 = off, so by default nothing is removed
-        state.setdefault("d_z", 0.0)
+        state.setdefault("d_z", 0.0)                         # no slider any more (2026-11-13): the volume is judged by its count, see d_v
+        state.setdefault("d_v", 0)
         state.setdefault("d_s", 0.0)
-        st.sidebar.caption("Reddit Volume Z-score Threshold (ปริมาณต้องเกินค่านี้ ค่า 0 คือไม่กรอง)")
-        st.sidebar.slider("Reddit Volume Z-score Threshold", 0.0, 4.0, step=0.1, key="d_z", label_visibility="collapsed")
-        st.sidebar.caption("Sentiment Threshold (ทิ้งข้อความที่ |ความรู้สึก| ต่ำกว่าค่านี้ก่อนเฉลี่ยเป็นรายชั่วโมง ค่า 0 คือไม่กรอง 0.05 = ชัดเจน 0.30 = คุณภาพ)")
-        st.sidebar.slider("Sentiment Threshold", 0.0, 0.95, step=0.05, key="d_s", label_visibility="collapsed")
+        state.setdefault("d_ss", 0.0)
+        state.setdefault("d_mode", "absolute")
+        st.sidebar.caption("Reddit Volume Threshold (ส่วนขยาย: ชั่วโมงที่มีข้อความทั้งตลาดอย่างน้อยกี่ข้อความ ค่า 0 คือไม่กรอง)")
+        st.sidebar.slider("Reddit Volume Threshold", 0, 6000, step=100, key="d_v", label_visibility="collapsed")
+        st.sidebar.caption("Sentiment Threshold (ทิ้งข้อความที่ไม่ผ่านเกณฑ์ก่อนเฉลี่ยเป็นรายชั่วโมง ค่า 0 คือไม่กรอง)")
+        st.sidebar.radio("โหมด Sentiment Threshold", SENTIMENT_MODES, format_func=MODE_LABELS.get, horizontal=True, key="d_mode", label_visibility="collapsed")
+        if state["d_mode"] == "absolute":
+            st.sidebar.slider("Sentiment Threshold (absolute)", 0.0, 0.95, step=0.05, key="d_s", label_visibility="collapsed")
+            st.sidebar.caption("absolute: เก็บข้อความที่ |ความรู้สึก| ≥ ค่านี้ 0.05 = ชัดเจน 0.30 = คุณภาพ")
+        else:
+            st.sidebar.slider("Sentiment Threshold (ค่าปกติ)", -0.95, 0.95, step=0.05, key="d_ss", label_visibility="collapsed")
+            st.sidebar.caption("ค่าปกติ: ค่าบวกเก็บเฉพาะข้อความที่คะแนน ≥ ค่านี้ ค่าลบเก็บเฉพาะข้อความที่คะแนน ≤ ค่านี้ (เช่น −0.30 = เฉพาะลบชัด) 0 = ไม่กรอง")
 
 
 
@@ -435,11 +464,13 @@ TRADING_Z_NOTE = (" หมายเหตุ: ไม่คำนวณเมื�
                   " ไม่นับในหน้าต่าง 24 ชั่วโมงและแท่งนั้นไม่มี Z-score ใช้กับทุกสินทรัพย์ ค่าสูงสุดอาจยังใหญ่ในวันที่ฟิวเจอร์สครบสัญญาที่ปริมาณพุ่งจริง")
 
 
-INSTRUMENT_LABELS = {"stock": "หุ้น", "index_etf": "ETF ดัชนี", "bitcoin_etf": "ETF บิตคอยน์"}
+INSTRUMENT_LABELS = {"tech": "เทคโนโลยี", "crypto_related": "เกี่ยวกับคริปโต", "meme": "หุ้นมีม", "finance": "การเงิน", "defensive": "พลังงาน/อุปโภคบริโภค/สุขภาพ",
+                     "index_etf": "ETF ดัชนี", "bitcoin_etf": "ETF คริปโต"}      # the sub-types of the stock_etf assets (EXTENSION, grouped by the developer)
+ETF_KINDS = ("index_etf", "bitcoin_etf")
 
 
 def instrument_of(ticker):
-    """Sub-type of a stock_etf asset (stock / index_etf / bitcoin_etf, from configs/tickers.yaml; EXTENSION), None for crypto and futures."""
+    """Sub-type of a stock_etf asset (a key of INSTRUMENT_LABELS, from configs/tickers.yaml; EXTENSION), None for crypto and futures."""
     from etl.common import load_yaml
     return load_yaml("tickers.yaml")["tickers"].get(ticker, {}).get("instrument")
 
