@@ -1,5 +1,6 @@
 """System 7.6 (Hot Events) looks its Win Rate up from system 7.4 (Statistical Analysis), proposal 7.6 step 3: with the same filters the two pages
 show the same numbers.  Needs the real database output/reddit.sqlite3 (read-only); skipped when it is absent."""
+import datetime as dt
 import json
 import sys
 import unittest
@@ -28,13 +29,12 @@ class HotEventsLookupTests(unittest.TestCase):
     def test_hot_events_win_rate_is_the_number_of_the_statistical_analysis_page(self):
         from streamlit.testing.v1 import AppTest
         five = AppTest.from_file(str(ROOT / "dashboard" / "pages" / "6_Statistical_Analysis.py"), default_timeout=180).run()
-        five.sidebar.slider(key="d_v").set_value(1500)
-        five.sidebar.slider(key="d_s").set_value(0.05)
+        from dashboard import common
+        info = common.q("data_range")                                                    # Hot Events works on the whole period, no threshold
+        five.session_state["f_range"] = (dt.datetime.fromtimestamp(info["reddit_lo"], dt.timezone.utc).date(), dt.datetime.fromtimestamp(info["reddit_hi"], dt.timezone.utc).date())
         five.radio(key="p5_measure_all").set_value("Win Rate").run()
         win = heat_values(five)
         seven = AppTest.from_file(str(ROOT / "dashboard" / "pages" / "8_Hot_Events.py"), default_timeout=180)
-        seven.session_state["d_v"], seven.session_state["d_s"] = 1500, 0.05
-        seven.session_state["f_range"] = five.session_state["f_range"]
         seven.run()
         self.assertEqual(len(seven.exception), 0)
         table = [t.value for t in seven.dataframe if "ความรู้สึกเฉลี่ย (ทั้งตลาด)" in t.value.columns][0]      # the tab of the score

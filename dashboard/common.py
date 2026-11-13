@@ -187,6 +187,20 @@ def logistic_live(family, variant, scope, tickers, start, end, communities, mode
     return pd.DataFrame(rows, columns=columns)
 
 
+def keep_filters():
+    """For a page WITHOUT the central filter (Hot Events): keep the filters the other pages had.  Streamlit forgets a widget that a run does not draw, so the
+    values are copied to the shadow keys that `sidebar` restores from on the next page that draws them."""
+    central = (TIME_KEYS + ticker_keys() + ["f_group_" + k for k in GROUP_LABELS] + source_keys() + sentiment_source_keys() + MAJORITY_KEYS + OVERVIEW_KEYS)
+    _restore(central)
+    _keep(central)
+
+
+def hide_sidebar():
+    """For a page with no central filter (Hot Events): hide the empty sidebar and its open / close button so the page uses the whole width."""
+    st.markdown("<style>[data-testid='stSidebar'], [data-testid='stSidebarCollapsedControl'], [data-testid='stExpandSidebarButton']{display:none !important;}"
+                "[data-testid='stMainBlockContainer']{max-width:100% !important;}</style>", unsafe_allow_html=True)
+
+
 def sticky_bar(key):
     """A container that stays at the top of the page while the page scrolls under it (the picker of a long heat map: the choices stay in reach).
     Streamlit has no sticky widget.  `st.container(key=...)` is wrapped in a `stLayoutWrapper` that is exactly as tall as the container, so a sticky

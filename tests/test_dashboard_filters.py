@@ -15,9 +15,9 @@ SPIKE_PAGE = "pages/4_Price_and_Reddit.py"                                     #
 SOURCE_PAGES = {"pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", SPIKE_PAGE}   # system 7.1: DimSource filter
 SENTIMENT_PAGE = "pages/5_Market_and_Sentiment.py"                            # 7.5-1: DimSentimentSource, DimMajoritySentiment
 RANKING_PAGE = "pages/6_Statistical_Analysis.py"                              # 7.5-2: p-values, win rate, regression
-DETECTION_PAGES = {"pages/8_Hot_Events.py": ["d_v", "d_mode", "d_s"], SENTIMENT_PAGE: ["d_v", "d_mode", "d_s"], RANKING_PAGE: ["d_v", "d_mode", "d_s"]}
+DETECTION_PAGES = {SENTIMENT_PAGE: ["d_v", "d_mode", "d_s"], RANKING_PAGE: ["d_v", "d_mode", "d_s"]}
 MAJORITY_PAGES = {SENTIMENT_PAGE, *DETECTION_PAGES}
-SENTIMENT_PAGES = {SENTIMENT_PAGE, RANKING_PAGE, "pages/8_Hot_Events.py"}
+SENTIMENT_PAGES = {SENTIMENT_PAGE, RANKING_PAGE}
 COUNT_PAGES = (SOURCE_PAGES - {SPIKE_PAGE}) | {"pages/3_Price_and_Return.py"}                  # first card = a count that follows the ticks
 TIME_KEYS = ["f_range", "f_gran"]
 COMMUNITIES = ["r/wallstreetbets", "r/stocks", "r/investing", "r/StockMarket", "r/options", "r/CryptoCurrency"]
@@ -29,8 +29,7 @@ TICKERS = ["AAPL", "AMC", "AMD", "BITO", "BRK-B", "COIN", "GME", "HOOD", "IBIT",
            "MSTR", "NVDA", "PLTR", "QQQ", "SPY", "TSLA", "XOM", "CL=F", "ES=F", "GC=F", "NG=F", "NQ=F", "RTY=F",
            "BTC-USD", "DOGE-USD", "ETH-USD", "SHIB-USD", "SOL-USD", "XRP-USD"]
 PAGES = ["app.py", "pages/1_Reddit_Volume.py", "pages/2_Ticker_Mentions.py", "pages/3_Price_and_Return.py", SPIKE_PAGE,
-         "pages/5_Market_and_Sentiment.py", RANKING_PAGE,
-         "pages/8_Hot_Events.py"]
+         "pages/5_Market_and_Sentiment.py", RANKING_PAGE]                         # Hot Events has no central filter (it works on all the data): see HotEventsTests
 MULTI_PAGES = set(PAGES[1:])                                                  # every dashboard takes several tickers
 
 
@@ -107,7 +106,7 @@ class FilterTests(unittest.TestCase):
 
     def test_the_reset_button_restores_every_default(self):
         """The button above the central filter sets every filter back to its default, on every page that has the filters."""
-        for page in ("pages/1_Reddit_Volume.py", "pages/5_Market_and_Sentiment.py", "pages/6_Statistical_Analysis.py", "pages/8_Hot_Events.py"):
+        for page in ("pages/1_Reddit_Volume.py", "pages/5_Market_and_Sentiment.py", "pages/6_Statistical_Analysis.py"):
             fresh = self.run_page(page)
             default = (tuple(fresh.sidebar.date_input(key="f_range").value), fresh.sidebar.checkbox(key="f_group_crypto").value)
             at = self.run_page(page, f_group_crypto=False, f_range=(dt.date(2026, 8, 3), dt.date(2026, 8, 9)), f_gran="รายเดือน")
@@ -451,13 +450,27 @@ class FilterTests(unittest.TestCase):
             at.sidebar.checkbox(key=key).set_value(False)
         at = at.run()
         self.assertTrue(all(m.value == "0" for m in at.metric), "no community ticked = nothing")
-        page = "pages/8_Hot_Events.py"
-        at = self.run_page(page)
-        base = at.metric[0].value
-        at.sidebar.slider(key="d_v").set_value(4000).run()                          # both thresholds start at 0: every hour with texts is a signal
-        at.sidebar.slider(key="d_s").set_value(0.5).run()
-        self.assertNotEqual(at.metric[0].value, base, "the thresholds change the signals")
-        self.assertEqual(len(at.exception), 0)
+
+    def test_hot_events_has_no_filter_and_works_on_all_the_data(self):
+        """No central filter on Hot Events: the whole period, every asset, the latest hour first (300 rows); the filters of the other pages are kept."""
+        from streamlit.testing.v1 import AppTest
+        at = AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=300).run()
+        at = at.switch_page(SENTIMENT_PAGE).run()
+        at.sidebar.checkbox(key="f_tk_SPY").set_value(False).run()                  # a filter of another page
+        at = at.switch_page("pages/8_Hot_Events.py").run()
+        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
+        self.assertEqual(len(at.sidebar.slider) + len(at.sidebar.checkbox) + len(at.sidebar.radio), 0, "no filter in the sidebar")
+        self.assertEqual(at.metric[1].value, "34", "every asset, whatever the other pages ticked")
+        table = [d.value for d in at.dataframe if "ระดับ" in d.value.columns and "คะแนน" in d.value.columns][0]
+        self.assertEqual(len(table), 300)
+        self.assertEqual(table["เวลา (UTC)"].iloc[0], max(table["เวลา (UTC)"]), "the latest hour first")
+        self.assertIn("Current Return (%)", list(table.columns))
+        self.assertLess(list(table.columns).index("Current Return (%)"), list(table.columns).index("Trading Volume (ของสินทรัพย์)"))
+        at.multiselect(key="h_levels").set_value(["high"]).run()                    # the filter of the levels is next to the table
+        table = [d.value for d in at.dataframe if "ระดับ" in d.value.columns and "คะแนน" in d.value.columns][0]
+        self.assertEqual(set(table["ระดับ"]), {"high"})
+        at = at.switch_page(SENTIMENT_PAGE).run()
+        self.assertFalse(at.sidebar.checkbox(key="f_tk_SPY").value, "the filter of the other page is still there")
 
     def test_hot_events_score_and_levels_are_set_by_the_user_and_the_sidebar_still_filters(self):
         """Every measure has one threshold and points; the points a signal earns add up and the total decides low / medium / high.  Nothing changes until
@@ -478,8 +491,6 @@ class FilterTests(unittest.TestCase):
         self.assertTrue(any("เรียงจากน้อยไปมาก" in i.value for i in at.info))
         at.button(key="h_level_reset").click().run()
         self.assertEqual(at.metric[0].value, base)                                          # the defaults are back
-        at.sidebar.slider(key="d_v").set_value(1500).run()                                  # the sidebar thresholds filter the hours before the points
-        self.assertNotEqual(at.metric[0].value, base)
         keys = [n.key for n in at.number_input]
         for metric in ("rz", "mr", "ss", "sm", "tz", "na", "cr"):                            # every KPI of the proposal that is known in the hour has a threshold and points
             self.assertIn("hs_%s_t" % metric, keys)
