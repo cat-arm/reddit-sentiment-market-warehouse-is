@@ -466,7 +466,8 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(table["เวลา (UTC)"].iloc[0], max(table["เวลา (UTC)"]), "the latest hour first")
         self.assertIn("Current Return (%)", list(table.columns))
         self.assertLess(list(table.columns).index("Current Return (%)"), list(table.columns).index("Trading Volume (ของสินทรัพย์)"))
-        at.multiselect(key="h_levels").set_value(["high"]).run()                    # the filter of the levels is next to the table
+        self.assertEqual(at.radio(key="h_levels").value, "all")                       # the default: every level
+        at.radio(key="h_levels").set_value("high").run()                            # the filter of the levels is next to the table
         table = [d.value for d in at.dataframe if "ระดับ" in d.value.columns and "คะแนน" in d.value.columns][0]
         self.assertEqual(set(table["ระดับ"]), {"high"})
         at = at.switch_page(SENTIMENT_PAGE).run()

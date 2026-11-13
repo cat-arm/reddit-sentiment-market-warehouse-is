@@ -160,8 +160,8 @@ common.table(summary, hide_index=True, width="stretch")
 
 # ---- 2. the list, with the statistics of its asset (looked up from the system 7.4) -------------------------------------------------------------
 st.subheader("รายการสัญญาณที่ตรวจพบ (ล่าสุด 300 รายการ)")
-state.setdefault("h_levels", list(LEVELS))
-levels_shown = st.multiselect("ระดับที่แสดงในตาราง", list(LEVELS), key="h_levels", help="เลือกระดับที่อยากเห็นในรายการ (การ์ดและตารางสรุปนับทุกระดับ)")
+level_pick = st.radio("ระดับที่แสดงในตาราง", ["all", *LEVELS], horizontal=True, key="h_levels", help="เลือกระดับที่อยากเห็นในรายการ all = ทุกระดับ (การ์ดและตารางสรุปนับทุกระดับเสมอ)")
+levels_shown = list(LEVELS) if level_pick == "all" else [level_pick]
 tab_score, tab_major = st.tabs(["วัดจากคะแนนความรู้สึก (sentiment_mean)", "วัดจากทิศทางส่วนใหญ่ (majority: บวก / ลบ)"])
 
 
