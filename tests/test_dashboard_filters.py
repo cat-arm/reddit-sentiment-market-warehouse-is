@@ -459,6 +459,22 @@ class FilterTests(unittest.TestCase):
         self.assertNotEqual(at.metric[0].value, base, "the thresholds change the signals")
         self.assertEqual(len(at.exception), 0)
 
+    def test_hot_events_thresholds_are_in_the_page_and_linked_with_the_sidebar(self):
+        """The thresholds of DimDetectionConfig are drawn in the page too: a change in one place moves the other, and the list follows."""
+        at = self.run_page("pages/8_Hot_Events.py")
+        base = at.metric[0].value
+        at.slider(key="h_v").set_value(1500).run()
+        self.assertEqual(at.sidebar.slider(key="d_v").value, 1500)
+        self.assertNotEqual(at.metric[0].value, base, "the list follows the threshold set in the page")
+        at.sidebar.slider(key="d_v").set_value(2500).run()
+        self.assertEqual(at.slider(key="h_v").value, 2500)
+        at.radio(key="h_mode").set_value("normal").run()
+        self.assertEqual(at.sidebar.radio(key="d_mode").value, "normal")
+        at.slider(key="h_ss").set_value(-0.30).run()
+        self.assertEqual(at.sidebar.slider(key="d_ss").value, -0.30)
+        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
+        self.assertEqual(at.radio(key="h_wh").value, "Current Return")                      # the horizon of the Win Rate is a row of buttons like the other pages
+
     def test_majority_vote_chart_follows_every_filter(self):
         """The vote mode of the ratio chart changes with the majority status, the community, the time range and the tickers."""
         import pyarrow as pa

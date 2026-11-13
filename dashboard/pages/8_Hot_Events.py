@@ -57,7 +57,10 @@ st.caption("Z-score และความรู้สึกในหน้าน
            "volume_spike คือปริมาณพุ่งอย่างเดียว (Reddit Volume Z-score > 1.5 ตาม proposal)  \n"
            "positive_sentiment_spike และ negative_sentiment_spike คือความรู้สึกบวกหรือลบอย่างเดียว  \n"
            "combined_signal คือปริมาณพุ่งและความรู้สึกมีทิศทางพร้อมกัน  \n"
-           "Reddit Volume Z-score คือปริมาณข้อความทั้งหมดของตลาดเทียบ 24 ชั่วโมงก่อนหน้า (เหมือนกันทุกสินทรัพย์ในชั่วโมงเดียวกัน) ส่วน Trading Volume Z-score คือปริมาณซื้อขายของราคาของสินทรัพย์นั้นเอง (ตารางที่ 8 ข้อ 2) ว่างเมื่อไม่มีข้อมูลปริมาณซื้อขาย  \n**ระดับ (signal_level)** low / medium / high คือคะแนนว่าเกินเกณฑ์มากแค่ไหน (สูตรตั้งเองใน configs/detection.yaml ส่วนขยายจาก proposal)  \n"
+           "Reddit Volume Z-score คือปริมาณข้อความทั้งหมดของตลาดเทียบ 24 ชั่วโมงก่อนหน้า (เหมือนกันทุกสินทรัพย์ในชั่วโมงเดียวกัน) ส่วน Trading Volume Z-score คือปริมาณซื้อขายของราคาของสินทรัพย์นั้นเอง (ตารางที่ 8 ข้อ 2) ว่างเมื่อไม่มีข้อมูลปริมาณซื้อขาย  \n**ระดับ (signal_level)** คือคะแนนความแรงของสัญญาณ 1 / 2 / 3 = low / medium / high (สูตรตั้งเองใน configs/detection.yaml ส่วนขยายจาก proposal):  \n"
+           "คะแนนปริมาณ = 1 เมื่อ Reddit Volume Z-score เกิน 1.5 แล้วเพิ่ม 1 คะแนนทุก ๆ 1.0 ของ Z ที่สูงขึ้น (Z 1.5–2.5 = 1, 2.5–3.5 = 2, ตั้งแต่ 3.5 = 3)  \n"
+           "คะแนนความรู้สึก = นับว่า |Sentiment Score เฉลี่ยของชั่วโมง| ถึงกี่เกณฑ์จาก [ขั้นต่ำ, 0.5, 0.8] (ค่าเฉลี่ยของทั้งตลาดมักต่ำกว่า 0.5 จึงมักได้ 1)  \n"
+           "combined_signal ใช้คะแนนที่สูงกว่าของสองอย่าง สูงสุด 3  ในทางปฏิบัติระดับจึงขึ้นกับ Z-score เป็นหลัก ไม่ขึ้นกับสไลเดอร์ Sentiment Threshold  \n"
            "รายการนี้ใช้ประกอบการวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน" % ("{:,}".format(v_min) if v_min else "0 (ไม่กรอง)", common.cut_label(s_min)))
 if found.empty:
     st.info("ไม่พบสัญญาณตามเกณฑ์นี้ในช่วงที่เลือก ลองลดเกณฑ์หรือขยายช่วงเวลา")
@@ -72,9 +75,34 @@ common.table(summary, hide_index=True, width="stretch")
 st.subheader("รายการสัญญาณที่ตรวจพบ (ล่าสุด 300 รายการ)")
 st.session_state.setdefault("h_wh", "Current Return")
 st.session_state.setdefault("h_wr", 0)
-pick_h, pick_wr = st.columns(2)
-horizon = pick_h.selectbox("Horizon ของ Win Rate", [name for _, name in TARGETS], key="h_wh", help="กรอบเวลาที่ใช้ดูว่าราคาตามความรู้สึกหรือไม่ ใช้กับคอลัมน์ผลตอบแทน และ Win Rate / Correlation ของสินทรัพย์ (ค่าจากระบบ 7.4)")
-pick_wr.slider("Win Rate ขั้นต่ำของสินทรัพย์ (%)", 0, 80, key="h_wr", help="แสดงเฉพาะแถวของสินทรัพย์ที่ Win Rate (ที่ Horizon นี้) ไม่ต่ำกว่าค่านี้ ค่า 0 คือไม่กรอง")
+
+# ---- the thresholds of DimDetectionConfig, also here: the same values as the sidebar (changing one moves the other), so the list is built by pressing the filters in one place
+state = st.session_state
+PAIRS = {"h_v": "d_v", "h_mode": "d_mode", "h_s": "d_s", "h_ss": "d_ss"}                    # widget here -> the shared value of the sidebar
+
+
+def to_sidebar(here):
+    def callback():
+        state[PAIRS[here]] = state[here]
+    return callback
+
+
+for here, shared in PAIRS.items():                                                          # the shared value (the sidebar's) is the truth at every run
+    if shared in state:
+        state[here] = state[shared]
+st.markdown("**เกณฑ์การตรวจจับสัญญาณ (DimDetectionConfig)** ค่าเดียวกับแถบด้านซ้าย ปรับที่ไหนก็ได้")
+col_v, col_s = st.columns(2)
+col_v.slider("Reddit Volume Threshold (ชั่วโมงที่ข้อความทั้งตลาดอย่างน้อยกี่ข้อความ ค่า 0 = ไม่กรอง)", 0, 6000, step=100, key="h_v", on_change=to_sidebar("h_v"))
+col_s.radio("Sentiment Threshold", common.SENTIMENT_MODES, format_func=common.MODE_LABELS.get, horizontal=True, key="h_mode", on_change=to_sidebar("h_mode"),
+            help="absolute: เก็บข้อความที่ |ความรู้สึก| ≥ ค่านี้  ค่าปกติ: ค่าบวกเก็บข้อความที่คะแนน ≥ ค่านี้ ค่าลบเก็บข้อความที่คะแนน ≤ ค่านี้  0 = ไม่กรอง")
+if state.get("h_mode", "absolute") == "absolute":
+    col_s.slider("Sentiment Threshold (absolute)", 0.0, 0.95, step=0.05, key="h_s", on_change=to_sidebar("h_s"), label_visibility="collapsed")
+else:
+    col_s.slider("Sentiment Threshold (ค่าปกติ)", -0.95, 0.95, step=0.05, key="h_ss", on_change=to_sidebar("h_ss"), label_visibility="collapsed")
+
+horizon = st.radio("Horizon ของ Win Rate", [name for _, name in TARGETS], horizontal=True, key="h_wh",
+                   help="กรอบเวลาที่ใช้ดูว่าราคาตามความรู้สึกหรือไม่ ใช้กับคอลัมน์ผลตอบแทน และ Win Rate / Correlation ของสินทรัพย์ (ค่าจากระบบ 7.4)")
+st.slider("Win Rate ขั้นต่ำของสินทรัพย์ (%)", 0, 80, key="h_wr", help="แสดงเฉพาะแถวของสินทรัพย์ที่ Win Rate (ที่ Horizon นี้) ไม่ต่ำกว่าค่านี้ ค่า 0 คือไม่กรอง")
 column = dict((name, col) for col, name in TARGETS)[horizon]
 filtering = st.session_state["h_wr"] > 0
 GREEN, RED = "color: #1a9850; font-weight: 600", "color: #d73027; font-weight: 600"
