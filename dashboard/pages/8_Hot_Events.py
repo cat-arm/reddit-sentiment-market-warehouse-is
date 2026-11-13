@@ -39,7 +39,12 @@ communities = list(dict.fromkeys(q("sources").subreddit))                       
 statuses = ["positive", "negative", "neutral"]                                    # every majority status
 content_types = ["Post", "Comment"]                                               # posts and comments
 model = "VADER+FinBERT"                                                           # the final sentiment of the proposal
-z_min, v_min, s_min = 0.0, 0, 0.0                                                 # no threshold: the score below decides what is a signal (a volume spike stays "Z > 1.5" of the proposal)
+state = st.session_state
+state.setdefault("d_v", 0)                                                        # the two thresholds of DimDetectionConfig: the SAME values as the other pages (0 = no filter),
+state.setdefault("d_mode", "absolute")                                            # set in the box below the title (Apply) since this page has no sidebar
+state.setdefault("d_s", 0.0)
+state.setdefault("d_ss", 0.0)
+z_min, v_min, s_min = 0.0, int(state["d_v"]), common.sentiment_cut()              # they filter the hours and the texts out BEFORE the score (a volume spike stays "Z > 1.5" of the proposal)
 found = q("market_signals", start, end, tuple(tickers), tuple(statuses), z_min, s_min, tuple(communities), model, tuple(content_types), v_min, SPIKE_Z)      # every hour of the market x every asset with a price bar
 
 bars = q("price_series_for", tuple(tickers), start, end)[["ticker", "hour_utc", "normalized_atr", "volume"]].rename(columns={"volume": "trading_volume"})
@@ -47,7 +52,6 @@ found = found.merge(bars, on=["ticker", "hour_utc"], how="left")
 
 # ---- the score of a signal: every measure has ONE threshold and some points; the points of the measures a signal passes add up, and the total decides low / medium / high ----
 # (EXTENSION: the proposal names the three levels, not how they are reached)
-state = st.session_state
 LEVELS = ("low", "medium", "high")
 METRICS = [("rz", "Reddit Volume Z-score (ทั้งตลาด) >", 1.5, 3, 0.5), ("mr", "Ticker Mention Rate (%) >", 0.5, 1, 0.5),
            ("ss", "|Sentiment Score| ของชั่วโมง >", 0.05, 2, 0.01), ("sm", "|Sentiment Momentum| (เปลี่ยนจากชั่วโมงก่อน) >", 0.02, 1, 0.01),
@@ -64,6 +68,7 @@ def reset_scoring():
         state["hs_%s_t" % m], state["hs_%s_p" % m] = threshold, points
     for lv in LEVELS:
         state["hs_cut_" + lv] = DEFAULT_CUTS[lv]
+    state["d_v"], state["d_mode"], state["d_s"], state["d_ss"] = 0, "absolute", 0.0, 0.0     # and no filter before the score
 
 
 for m, _, threshold, points, _ in METRICS:
@@ -77,8 +82,16 @@ st.caption("แต่ละตัวชี้วัดมี **เกณฑ์�
            "(เช่น คะแนนเต็ม 10 ผลรวมตั้งแต่ 8 = high)  เว้นเกณฑ์ว่างหรือใส่คะแนน 0 = ไม่ใช้ตัวชี้วัดนั้น  \n"
            "คะแนนมาจาก KPI ที่เขียนไว้ใน proposal (Reddit Volume Z-score, Ticker Mention Rate, Sentiment Score และ Momentum, Trading Volume Z-score, Normalized ATR, Current Return) ซึ่งรู้ ณ ชั่วโมงนั้นและย้อนหลังเท่านั้น (Z-score เทียบ 24 ชั่วโมงก่อนหน้า) ไม่ใช้สถิติย้อนหลังทั้งช่วง (Win Rate, Spearman, Pearson) เพราะตอนที่สัญญาณเกิดยังรู้ค่าเหล่านั้นไม่ได้ ค่าเหล่านั้นแสดงเป็นคอลัมน์ประกอบการตีความ  \n"
            "สัญญาณที่ได้คะแนนไม่ถึงระดับ low จะไม่ถูกแสดง ค่าเริ่มต้นตั้งตามการกระจายของข้อมูลจริง (low ≥ 3, medium ≥ 5, high ≥ 8)")
-with st.expander("เกณฑ์ คะแนน และระดับ", expanded=False):
+with st.expander("ตัวกรอง เกณฑ์ คะแนน และระดับ", expanded=False):
     with st.form("h_score_form", border=False):                                       # nothing below changes until the button Apply is pressed
+        st.markdown("**ตัวกรองข้อมูลก่อนให้คะแนน (DimDetectionConfig)** ค่า 0 = ไม่กรอง  ค่าเดียวกับหน้าอื่น")
+        f_volume, f_sentiment = st.columns(2)
+        f_volume.slider("Reddit Volume Threshold (ชั่วโมงที่ข้อความทั้งตลาดอย่างน้อยกี่ข้อความ)", 0, 6000, step=100, key="d_v")
+        f_sentiment.radio("Sentiment Threshold: โหมด", common.SENTIMENT_MODES, format_func=common.MODE_LABELS.get, horizontal=True, key="d_mode")
+        f_sentiment.slider("absolute: เก็บข้อความที่ |ความรู้สึก| ≥ ค่านี้", 0.0, 0.95, step=0.05, key="d_s")
+        f_sentiment.slider("ค่าปกติ: บวก = คะแนน ≥ ค่านี้, ลบ = คะแนน ≤ ค่านี้", -0.95, 0.95, step=0.05, key="d_ss")
+        st.caption("ใช้ค่าตามโหมดที่เลือกเท่านั้น (อีกแถบไม่มีผล)  ตัวกรองนี้ตัดชั่วโมง/ข้อความออกก่อน แล้วค่อยให้คะแนนตามเกณฑ์ด้านล่าง")
+        st.markdown("**เกณฑ์ คะแนน และระดับ**")
         head = st.columns([4, 2, 2])
         head[0].markdown("**ตัวชี้วัด**")
         head[1].markdown("**เกณฑ์ (ผ่านเมื่อค่า >)**")
@@ -147,10 +160,10 @@ if listed_score.empty:
     st.info("ไม่มีสัญญาณที่ได้คะแนนถึงระดับ low ลองลดเกณฑ์หรือขยายช่วงเวลา")
     st.stop()
 
-st.caption("หน้านี้ใช้ข้อมูลทั้งหมด (ทั้งช่วงข้อมูล Reddit ถึงชั่วโมงล่าสุด, ทุกสินทรัพย์, ทุกชุมชน, โพสต์และคอมเมนต์, โมเดล VADER+FinBERT) ไม่มีตัวกรองด้านซ้าย  \n"
+st.caption("หน้านี้ใช้ข้อมูลทั้งหมด (ทั้งช่วงข้อมูล Reddit ถึงชั่วโมงล่าสุด, ทุกสินทรัพย์, ทุกชุมชน, โพสต์และคอมเมนต์, โมเดล VADER+FinBERT) ไม่มีตัวกรองด้านซ้าย ตัวกรองเดียวคือ DimDetectionConfig ในกล่องด้านบน (ตอนนี้ Reddit Volume อย่างน้อย %s ข้อความต่อชั่วโมง, Sentiment Threshold: %s)  \n"
            "Reddit Volume, Z-score และความรู้สึกคิดจากข้อความทั้งหมดของตลาดในชั่วโมงนั้น ทุกสินทรัพย์ในชั่วโมงเดียวกันจึงได้ค่าตลาดเท่ากัน สินทรัพย์ต่างกันที่ราคา ปริมาณซื้อขาย และจำนวนข้อความที่พูดถึง  \n"
            "ระดับมาจากคะแนนที่ตั้งไว้ด้านบน (proposal ระบุแค่ว่ามี low / medium / high ส่วนวิธีให้คะแนนเป็นส่วนขยาย)  \n"
-           "รายการนี้ใช้ประกอบการวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน")
+           "รายการนี้ใช้ประกอบการวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน" % ("{:,}".format(v_min) if v_min else "0 (ไม่กรอง)", common.cut_label(s_min)))
 
 # ---- 1. how many ----------------------------------------------------------------------------------------------------------------
 st.write("จำนวนสัญญาณ แยกตามกลุ่มสินทรัพย์และระดับ (แท็บคะแนน)")
@@ -191,7 +204,23 @@ def signal_table(basis):
                "ความรู้สึกเฉลี่ย (ทั้งตลาด)": "{:.3f}", "n ของสินทรัพย์ (จำนวนชั่วโมงที่นับ)": "{:,.0f}", "Spearman ρ ของสินทรัพย์": "{:.3f}", "Pearson ρ ของสินทรัพย์": "{:.3f}",
                "Win Rate ของสินทรัพย์ (%)": "{:.1f}", "p ของ Win Rate (ดิบ)": "{:.3f}", "p ของ Win Rate (ปรับ BH ส่วนขยาย)": "{:.3f}"}
     styled = shown.style.apply(colour, subset=[OUTCOME]).format({k: v for k, v in numbers.items() if k in shown.columns}, na_rep="-")
-    st.dataframe(styled, hide_index=True, width="stretch", height=380)          # the numbers stay numbers, so a click on a header sorts them right
+    # a header of the grid cannot take two lines (the grid draws one line and cuts the rest), so the headers are short and every column has a width and a tooltip with the full
+    # name: the whole table is readable on one screen without scrolling sideways
+    HEAD = {"เวลา (UTC)": ("เวลา (UTC)", 125, "เวลาต้นชั่วโมงที่ข้อความโพสต์ (UTC)"), "สินทรัพย์": ("สินทรัพย์", 90, None), "กลุ่ม": ("กลุ่ม", 75, None),
+            "ระดับ": ("ระดับ", 70, "ระดับจากคะแนนรวม"), "คะแนน": ("คะแนน", 60, "คะแนนรวมจากเกณฑ์ที่ตั้งไว้"),
+            "Ticker Mention Count": ("Mention", 70, "Ticker Mention Count: จำนวนข้อความที่พูดถึงสินทรัพย์นี้ในชั่วโมงนั้น"),
+            "Reddit Volume (ทั้งตลาด)": ("Reddit Vol", 85, "Reddit Volume: จำนวนโพสต์และคอมเมนต์ของทั้งตลาดในชั่วโมงนั้น"),
+            "Current Return (%)": ("Cur. Return %", 105, "Current Return (%): ผลตอบแทนของสินทรัพย์ในชั่วโมงเดียวกัน (ln)"),
+            "Trading Volume (ของสินทรัพย์)": ("Trading Vol", 105, "Trading Volume: ปริมาณซื้อขายของสินทรัพย์ในชั่วโมงนั้น (0 = ไม่มีข้อมูล)"),
+            SENT: ("ความรู้สึก" if basis == "sentiment_mean" else "ทิศทาง", 90, "ความรู้สึกเฉลี่ย (หรือทิศทางส่วนใหญ่) ของข้อความทั้งตลาดในชั่วโมงนั้น"),
+            OUTCOME: ("ตามความรู้สึก", 100, "ราคาตามความรู้สึก: ตรง = ราคาของชั่วโมงเดียวกันไปทางเดียวกับความรู้สึก สวน = ตรงข้าม"),
+            "n ของสินทรัพย์ (จำนวนชั่วโมงที่นับ)": ("n", 60, "n ของสินทรัพย์: จำนวนชั่วโมงที่นับใน Win Rate ทั้งช่วงข้อมูล"),
+            "Spearman ρ ของสินทรัพย์": ("Spearman", 85, "Spearman ρ ของสินทรัพย์ (ระบบ 7.4)"), "Pearson ρ ของสินทรัพย์": ("Pearson", 80, "Pearson ρ ของสินทรัพย์ (ระบบ 7.4)"),
+            "Win Rate ของสินทรัพย์ (%)": ("Win Rate %", 90, "Win Rate ของสินทรัพย์ (%) (ระบบ 7.4)"), "p ของ Win Rate (ดิบ)": ("p ดิบ", 65, "p-value ของ Win Rate (Binomial เทียบ 50%)"),
+            "p ของ Win Rate (ปรับ BH ส่วนขยาย)": ("p ปรับ", 65, "p-value ของ Win Rate ที่ปรับด้วย Benjamini-Hochberg (ส่วนขยาย)"),
+            "นัยสำคัญหลังปรับ": ("นัยสำคัญ", 80, "★ = p ปรับ BH ต่ำกว่า 0.05")}
+    config = {name: st.column_config.Column(label=label, width=width, help=tip) for name, (label, width, tip) in HEAD.items() if name in shown.columns}
+    st.dataframe(styled, hide_index=True, width="stretch", height=380, column_config=config)          # the numbers stay numbers, so a click on a header sorts them right
     tested = int(win_table.p.notna().sum())
     passed = int((win_table.p_bh < 0.05).sum())
     st.caption("กดหัวคอลัมน์เพื่อเรียงลำดับ  \n"

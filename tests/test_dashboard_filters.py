@@ -492,6 +492,12 @@ class FilterTests(unittest.TestCase):
         self.assertTrue(any("เรียงจากน้อยไปมาก" in i.value for i in at.info))
         at.button(key="h_level_reset").click().run()
         self.assertEqual(at.metric[0].value, base)                                          # the defaults are back
+        at.slider(key="d_v").set_value(1500)                                                # DimDetectionConfig in the page: filters the hours out before the score (Apply)
+        at.button(key="h_apply").click().run()
+        self.assertNotEqual(at.metric[0].value, base, "the Reddit Volume Threshold of the page filters the hours")
+        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
+        at.button(key="h_level_reset").click().run()                                        # the reset brings the thresholds back too
+        self.assertEqual((at.metric[0].value, at.slider(key="d_v").value), (base, 0))
         keys = [n.key for n in at.number_input]
         for metric in ("rz", "mr", "ss", "sm", "tz", "na", "cr"):                            # every KPI of the proposal that is known in the hour has a threshold and points
             self.assertIn("hs_%s_t" % metric, keys)
