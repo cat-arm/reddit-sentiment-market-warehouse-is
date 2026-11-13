@@ -459,21 +459,24 @@ class FilterTests(unittest.TestCase):
         self.assertNotEqual(at.metric[0].value, base, "the thresholds change the signals")
         self.assertEqual(len(at.exception), 0)
 
-    def test_hot_events_thresholds_are_in_the_page_and_linked_with_the_sidebar(self):
-        """The thresholds of DimDetectionConfig are drawn in the page too: a change in one place moves the other, and the list follows."""
+    def test_hot_events_score_and_levels_are_set_by_the_user_and_the_sidebar_still_filters(self):
+        """Every measure has one threshold and points; the points a signal earns add up and the total decides low / medium / high.  A stricter threshold or
+        a higher cut lists fewer signals, cuts out of order stop the table, the reset button brings the defaults back, the sidebar still filters first."""
         at = self.run_page("pages/8_Hot_Events.py")
         base = at.metric[0].value
-        at.slider(key="h_v").set_value(1500).run()
-        self.assertEqual(at.sidebar.slider(key="d_v").value, 1500)
-        self.assertNotEqual(at.metric[0].value, base, "the list follows the threshold set in the page")
-        at.sidebar.slider(key="d_v").set_value(2500).run()
-        self.assertEqual(at.slider(key="h_v").value, 2500)
-        at.radio(key="h_mode").set_value("normal").run()
-        self.assertEqual(at.sidebar.radio(key="d_mode").value, "normal")
-        at.slider(key="h_ss").set_value(-0.30).run()
-        self.assertEqual(at.sidebar.slider(key="d_ss").value, -0.30)
-        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
         self.assertEqual(at.radio(key="h_wh").value, "Current Return")                      # the horizon of the Win Rate is a row of buttons like the other pages
+        at.number_input(key="hs_rz_t").set_value(3.5).run()                                 # a stricter threshold: fewer signals earn the 3 points of the volume
+        self.assertNotEqual(at.metric[0].value, base)
+        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
+        at.number_input(key="hs_cut_low").set_value(9.0).run()                              # low above medium: the cuts are out of order
+        self.assertTrue(any("เรียงจากน้อยไปมาก" in i.value for i in at.info))
+        at.button(key="h_level_reset").click().run()
+        self.assertEqual(at.metric[0].value, base)                                          # the defaults are back
+        at.sidebar.slider(key="d_v").set_value(1500).run()                                  # the sidebar thresholds filter the hours before the points
+        self.assertNotEqual(at.metric[0].value, base)
+        at.number_input(key="hs_wr_p").set_value(2.0).run()                                 # an asset statistic in the score: the warning of the selection after the results
+        self.assertTrue(any("คัดหลังเห็นผลแล้ว" in w.value for w in at.warning))
+        self.assertEqual(len(at.exception), 0, [e.value for e in at.exception])
 
     def test_majority_vote_chart_follows_every_filter(self):
         """The vote mode of the ratio chart changes with the majority status, the community, the time range and the tickers."""

@@ -151,7 +151,7 @@ def collect(db):
                             "filter": [WIN_MIN, WIN_N, WIN_H], "kept": int(len(kept)), "kept_pass_bh": int((kept.p_bh < 0.05).sum()), "events_listed": listed,
                             "best_p_bh": None if kept.empty else round(float(kept.p_bh.min()), 3),
                             "top": [{"ticker": r.ticker, "horizon": r.horizon, "n": int(r.n), "win_rate": round(r.win_rate, 1), "p_bh": round(float(r.p_bh), 3)} for r in kept.head(5).itertuples()]}
-    _, tables = run_page("8_Hot_Events.py", FULL, DAILY, None, d_z=1.5, d_s=0.05, h_wh=WIN_H, h_wr=WIN_MIN)
+    _, tables = run_page("8_Hot_Events.py", FULL, DAILY, None, d_z=1.5, d_s=0.05, h_wh=WIN_H)
     score_tab = [t for t in tables if "ความรู้สึก (ทั้งตลาด)" in t.columns]          # the tab of the score (the other tab reads the majority)
     shown = len(score_tab[0]) if score_tab else 0
     if shown != min(300, listed):
