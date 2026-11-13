@@ -184,8 +184,24 @@ def logistic_view():
     coefs["label"] = coefs.effect.map("{:+.1f}".format)
     row_order = [data.variable_label(c) for c in data.VARIABLES if c in set(coefs.column)]         # grouped: Level, Direction, Vote, Volume, Lag, Momentum
 
+    imp = one[one.metric.str.startswith("group_importance:")].assign(
+        กลุ่มตัวแปร=lambda d: d.metric.str[17:].map(lambda g: data.VARIABLE_GROUPS.get(g, g)), ช่วง=lambda d: d.horizon.map(TARGET_LABEL),
+        label=lambda d: d.value.map("{:.3f}".format))
+    imp["dark"] = (imp.value / imp.value.max()) > 0.7 if len(imp) else False
+    if not imp.empty:
+        st.write("ความสำคัญของกลุ่มตัวแปร (ผลรวมขนาดสัมประสิทธิ์ของกลุ่ม ยิ่งสูงยิ่งมีอิทธิพลต่อโมเดลมาก) ดูกลุ่มก่อน แล้วเจาะรายตัวแปรด้านล่าง")
+        chart = alt.Chart(imp).encode(
+            x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+            y=alt.Y("กลุ่มตัวแปร:N", sort=[g for g in data.VARIABLE_GROUPS.values() if g in set(imp.กลุ่มตัวแปร)], title=None,
+                    axis=alt.Axis(labelLimit=300, labelOverlap=False)))
+        rect = chart.mark_rect().encode(color=alt.Color("value:Q", title="ความสำคัญ", scale=alt.Scale(scheme="greens")),
+                                        tooltip=["กลุ่มตัวแปร", "ช่วง", alt.Tooltip("value:Q", title="ความสำคัญ", format=".4f")])
+        text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
+        common.show((rect + text).properties(height=34 * imp.กลุ่มตัวแปร.nunique() + 40))
+        st.caption("6 กลุ่มตัวแปรตามที่ proposal กำหนด  กลุ่มที่ค่าสูงกว่ามีอิทธิพลต่อโมเดลมากกว่า แต่เมื่อ AUC ใกล้ 0.5 โมเดลโดยรวมก็ยังทำนายไม่ได้  \nความสำคัญบอกแค่ว่ากลุ่มไหนมีอิทธิพลมาก ไม่บอกทิศทาง (ขึ้นหรือลง) ดูทิศทางของแต่ละตัวแปรในกราฟถัดไป")
+
     # the effect of every variable at every horizon, one heat map (the same layout as the heat maps above: no horizon to pick)
-    st.write("ผลของแต่ละตัวแปรในแต่ละ Horizon (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")
+    st.write("เจาะรายตัวแปร: ผลของแต่ละตัวแปรในแต่ละ Horizon (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น มีทิศทางบวก/ลบ)")
     chart = alt.Chart(coefs).encode(
         x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
         y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
@@ -199,21 +215,6 @@ def logistic_view():
                "สีเขียวคือดันให้ขึ้น สีแดงคือดันให้ลง  \nCurrent Return คือชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักแรงกว่าคอลัมน์อื่น เพราะราคากับความรู้สึกเปลี่ยนไปพร้อมกัน  \n"
                "`sentiment_mean` คือความรู้สึกของชั่วโมงปัจจุบัน (lag 0) ส่วน sentiment_lag_1h ถึง 12h คือความรู้สึกของชั่วโมงก่อนหน้า  \n"
                "**ตัวแปรที่มีผลจริงต้องผ่านครบ**: ค่าสูงพอ (อย่างน้อยราว 1 จุดเปอร์เซ็นต์) ทิศทางเดียวกันในหลาย Horizon และโมเดลโดยรวมมี AUC ห่างจาก 0.5 หากค่าน้อยหรือทิศทางสลับไปมา แสดงว่าไม่มีผล")
-    imp = one[one.metric.str.startswith("group_importance:")].assign(
-        กลุ่มตัวแปร=lambda d: d.metric.str[17:].map(lambda g: data.VARIABLE_GROUPS.get(g, g)), ช่วง=lambda d: d.horizon.map(TARGET_LABEL),
-        label=lambda d: d.value.map("{:.3f}".format))
-    imp["dark"] = (imp.value / imp.value.max()) > 0.7 if len(imp) else False
-    if not imp.empty:
-        st.write("ความสำคัญของกลุ่มตัวแปร (ผลรวมขนาดสัมประสิทธิ์ของกลุ่ม ยิ่งสูงยิ่งมีอิทธิพลต่อโมเดลมาก)")
-        chart = alt.Chart(imp).encode(
-            x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-            y=alt.Y("กลุ่มตัวแปร:N", sort=[g for g in data.VARIABLE_GROUPS.values() if g in set(imp.กลุ่มตัวแปร)], title=None,
-                    axis=alt.Axis(labelLimit=300, labelOverlap=False)))
-        rect = chart.mark_rect().encode(color=alt.Color("value:Q", title="ความสำคัญ", scale=alt.Scale(scheme="greens")),
-                                        tooltip=["กลุ่มตัวแปร", "ช่วง", alt.Tooltip("value:Q", title="ความสำคัญ", format=".4f")])
-        text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
-        common.show((rect + text).properties(height=34 * imp.กลุ่มตัวแปร.nunique() + 40))
-        st.caption("6 กลุ่มตัวแปรตามที่ proposal กำหนด  กลุ่มที่ค่าสูงกว่ามีอิทธิพลต่อโมเดลมากกว่า แต่เมื่อ AUC ใกล้ 0.5 โมเดลโดยรวมก็ยังทำนายไม่ได้")
 
 
 logistic_view()
