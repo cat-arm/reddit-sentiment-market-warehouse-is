@@ -45,16 +45,29 @@ v_min = int(st.session_state.get("d_v", 0))
 s_min = common.sentiment_cut()                              # the Sentiment Threshold of the sidebar (a float, or the name of a signed variant), the same on pages 5, 6 and 7
 found = q("market_signals", start, end, tuple(tickers), tuple(statuses), z_min, s_min, tuple(communities), model, tuple(content_types), v_min, SPIKE_Z)      # the hours of the whole market that pass, x the assets chosen
 
+MIN_TEXTS = 3                                                     # the asset's own sentiment needs this many texts in the hour (a mean of 1-2 texts is noise)
+own = common.hourly_base("Ticker", common.text_variant(), tuple(tickers), start, end, tuple(communities), model, tuple(content_types))
+own = own[["series", "hour_utc", "sentiment_mean", "momentum", "own_zscore", "voter_agreement", "sent_texts"]].rename(columns={
+    "series": "ticker", "sentiment_mean": "t_sent", "momentum": "t_mom", "own_zscore": "t_oz", "voter_agreement": "t_va", "sent_texts": "t_n"})
+for col in ("t_sent", "t_mom", "t_va"):
+    own.loc[own.t_n < MIN_TEXTS, col] = np.nan                    # too few texts: the asset's own sentiment measures do not score
+bars = q("price_series_for", tuple(tickers), start, end)[["ticker", "hour_utc", "rsi", "normalized_atr"]]
+found = found.merge(own, on=["ticker", "hour_utc"], how="left").merge(bars, on=["ticker", "hour_utc"], how="left")
+
 cards_slot = st.container()                                       # the cards come first on the page; they are filled once the score below is known
 # ---- the score of a signal: every measure has ONE threshold and some points; the points of the measures a signal passes add up, and the total decides low / medium / high ----
 # (EXTENSION: the proposal names the three levels, not how they are reached)
 state = st.session_state
 LEVELS = ("low", "medium", "high")
-METRICS = [("rz", "Reddit Volume Z-score (ทั้งตลาด) >", 1.5, 4, 0.5), ("tz", "Trading Volume Z-score (ของสินทรัพย์) >", 2.0, 2, 0.5),
-           ("mr", "Ticker Mention Rate (%) >", 0.5, 1, 0.5), ("ss", "|Sentiment Score| ของชั่วโมง >", 0.05, 3, 0.01)]
-# (key, label, default threshold, default points, step); the points add up to 10.  Only what is known in the hour itself and from the hours before it: no statistic of the
-# whole history (Spearman, Win Rate ...) is a point, because it could not be known when the signal appeared (look-ahead); those stay as columns beside the signal.
-DEFAULT_CUTS = {"low": 4, "medium": 6, "high": 8}                                      # the total points a signal needs for the level (of 10)
+METRICS = [("rz", "Reddit Volume Z-score (ทั้งตลาด) >", 1.5, 2, 0.5), ("oz", "Reddit Volume Z-score ของสินทรัพย์เอง (ข้อความที่พูดถึง) >", 1.5, 1, 0.5),
+           ("mr", "Ticker Mention Rate (%) >", 0.5, 1, 0.5), ("ss", "|Sentiment Score| ของทั้งตลาด >", 0.05, 1, 0.01),
+           ("ts", "|Sentiment Score| ของสินทรัพย์เอง >", 0.2, 1, 0.05), ("al", "ความรู้สึกของสินทรัพย์สอดคล้องกับตลาด (1 = ทิศเดียวกัน) >", 0.0, 1, 0.5),
+           ("va", "ความเห็นตรงกัน (voter agreement ของสินทรัพย์) >", 0.6, 0, 0.05), ("sm", "|Sentiment Momentum| ของสินทรัพย์ (เปลี่ยนจากชั่วโมงก่อน) >", 0.2, 0, 0.05),
+           ("tz", "Trading Volume Z-score (ของสินทรัพย์) >", 2.0, 1, 0.5), ("cr", "|Current Return| (%) >", 1.0, 1, 0.1),
+           ("rs", "|RSI − 50| (ห่างจากกลาง) >", 20.0, 0, 1.0), ("na", "Normalized ATR (%) (ความผันผวน) >", 1.0, 1, 0.1)]
+# (key, label, default threshold, default points, step); the default points add up to 10.  Every measure is a KPI of the dashboards and is known in the hour itself or from the
+# hours before it: no statistic of the whole history (Spearman, Win Rate ...) is a point, because it could not be known when the signal appeared (look-ahead); those stay as columns.
+DEFAULT_CUTS = {"low": 3, "medium": 5, "high": 7}                                      # the total points a signal needs for the level (of 10)
 
 
 def reset_scoring():
@@ -73,7 +86,7 @@ for lv in LEVELS:
 st.subheader("ตั้งค่าคะแนนและระดับของสัญญาณ (low / medium / high)")
 st.caption("แต่ละตัวชี้วัดมี **เกณฑ์เดียว** และ **คะแนน**: ถ้าสัญญาณนั้นผ่านเกณฑ์ (ค่า > เกณฑ์) ได้คะแนนของตัวชี้วัดนั้น แล้วเอาคะแนนที่ได้มาบวกกัน ผลรวมถึงกี่คะแนนก็ได้ระดับนั้น "
            "(เช่น คะแนนเต็ม 10 ผลรวมตั้งแต่ 8 = high)  เว้นเกณฑ์ว่างหรือใส่คะแนน 0 = ไม่ใช้ตัวชี้วัดนั้น  \n"
-           "คะแนนใช้เฉพาะสิ่งที่รู้ ณ ชั่วโมงนั้นและย้อนหลัง (Z-score เทียบ 24 ชั่วโมงก่อนหน้า, Mention Rate, ความรู้สึกของชั่วโมง) ไม่ใช้สถิติย้อนหลังทั้งช่วง (Win Rate, Spearman, Pearson) เพราะตอนที่สัญญาณเกิดยังรู้ค่าเหล่านั้นไม่ได้ ค่าเหล่านั้นแสดงเป็นคอลัมน์ประกอบการตีความ  \n"
+           "คะแนนมาจาก KPI ของแดชบอร์ดทั้งหมด (ปริมาณ Reddit, ความรู้สึกของตลาดและของสินทรัพย์เอง, ปริมาณซื้อขาย, ผลตอบแทน, RSI, ความผันผวน) ซึ่งรู้ ณ ชั่วโมงนั้นและย้อนหลังเท่านั้น (Z-score เทียบ 24 ชั่วโมงก่อนหน้า) ไม่ใช้สถิติย้อนหลังทั้งช่วง (Win Rate, Spearman, Pearson) เพราะตอนที่สัญญาณเกิดยังรู้ค่าเหล่านั้นไม่ได้ ค่าเหล่านั้นแสดงเป็นคอลัมน์ประกอบการตีความ  \n"
            "ตัวกรองด้านซ้าย (รวมสองเกณฑ์ Reddit Volume / Sentiment Threshold) ยังทำงานเหมือนเดิม คือกรองชั่วโมงและข้อความออกก่อน แล้วค่อยให้คะแนน  \n"
            "สัญญาณที่ได้คะแนนไม่ถึงระดับ low จะไม่ถูกแสดง ค่าเริ่มต้นตั้งตามการกระจายของข้อมูลจริง")
 with st.expander("เกณฑ์ คะแนน และระดับ", expanded=True):
@@ -108,8 +121,10 @@ if not cuts["low"] <= cuts["medium"] <= cuts["high"] or cuts["low"] <= 0:
 if cuts["high"] > total:
     st.warning("ระดับ high ต้องการ %g คะแนน แต่คะแนนเต็มมีแค่ %g จึงไม่มีสัญญาณระดับ high" % (cuts["high"], total))
 GREEN, RED = "color: #1a9850; font-weight: 600", "color: #d73027; font-weight: 600"
-SOURCE = {"rz": lambda d: d.reddit_volume_zscore_24, "tz": lambda d: pd.to_numeric(d.volume_zscore_24, errors="coerce"), "mr": lambda d: d.mention_rate,
-          "ss": lambda d: d.sentiment_mean.abs()}
+SOURCE = {"rz": lambda d: d.reddit_volume_zscore_24, "oz": lambda d: d.t_oz, "mr": lambda d: d.mention_rate, "ss": lambda d: d.sentiment_mean.abs(),
+          "ts": lambda d: d.t_sent.abs(), "al": lambda d: np.sign(d.t_sent) * np.sign(d.sentiment_mean), "va": lambda d: d.t_va, "sm": lambda d: d.t_mom.abs(),
+          "tz": lambda d: pd.to_numeric(d.volume_zscore_24, errors="coerce"), "cr": lambda d: pd.to_numeric(d.log_return, errors="coerce").abs(),
+          "rs": lambda d: (pd.to_numeric(d.rsi, errors="coerce") - 50).abs(), "na": lambda d: pd.to_numeric(d.normalized_atr, errors="coerce")}
 
 
 def listed_for(basis):
@@ -131,9 +146,13 @@ def listed_for(basis):
     level = pd.Series("", index=listed.index).mask(score >= cuts["low"], "low").mask(score >= cuts["medium"], "medium").mask(score >= cuts["high"], "high")
     # the type of the signal follows the same thresholds: the volume side (Reddit Volume Z-score) and the sentiment side (|Sentiment Score|) of the proposal
     nothing = pd.Series(False, index=listed.index)
-    volume_side = (SOURCE["rz"](listed) > rules["rz"][0]) if "rz" in rules else nothing
-    sentiment_side = (SOURCE["ss"](listed) > rules["ss"][0]) if "ss" in rules else nothing
-    kind = np.select([volume_side & sentiment_side, volume_side, sentiment_side & (listed.sentiment_mean > 0), sentiment_side],
+
+    def passes(metric):
+        return (SOURCE[metric](listed) > rules[metric][0]) if metric in rules else nothing
+    volume_side = passes("rz") | passes("oz")                                  # the volume side: the market's or the asset's own Reddit volume is past its threshold
+    sentiment_side = passes("ss") | passes("ts")                               # the sentiment side: the market's or the asset's own sentiment is past its threshold
+    direction_of_kind = np.where(passes("ts"), listed.t_sent, listed.sentiment_mean)       # the sign of the sentiment that passed (the asset's own when it passed)
+    kind = np.select([volume_side & sentiment_side, volume_side, sentiment_side & (direction_of_kind > 0), sentiment_side],
                      ["combined_signal", "volume_spike", "positive_sentiment_spike", "negative_sentiment_spike"], "")
     listed = listed.assign(score=score, level_name=level, kind=kind)
     return listed[(level != "") & (listed.kind != "")], win_table             # a signal needs the volume side or the sentiment side; the other measures only add points

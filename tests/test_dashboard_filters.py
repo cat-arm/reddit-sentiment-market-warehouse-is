@@ -474,6 +474,9 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(at.metric[0].value, base)                                          # the defaults are back
         at.sidebar.slider(key="d_v").set_value(1500).run()                                  # the sidebar thresholds filter the hours before the points
         self.assertNotEqual(at.metric[0].value, base)
+        keys = [n.key for n in at.number_input]
+        for metric in ("rz", "oz", "mr", "ss", "ts", "al", "va", "sm", "tz", "cr", "rs", "na"):      # every KPI of the dashboards that is known in the hour has a threshold and points
+            self.assertIn("hs_%s_t" % metric, keys)
         self.assertNotIn("hs_wr_p", [n.key for n in at.number_input])                       # no statistic of the whole history is a point (look-ahead)
         for row in at.dataframe:
             if "ชนิด" in row.value.columns:
