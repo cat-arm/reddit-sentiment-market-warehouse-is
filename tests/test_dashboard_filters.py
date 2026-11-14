@@ -439,7 +439,7 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(len(at.exception), 0, key)
             at.checkbox(key="dl_" + key).set_value(True)
             at.checkbox(key="dr_" + key).set_value(True).run()
-        for measure in ("Current Return (ชั่วโมงเดียวกัน ส่วนขยาย)", "ผลตอบแทนล่วงหน้า 2h", "ผลตอบแทนล่วงหน้า 12h"):      # sentiment vs return bars
+        for measure in ("Current Return (ชั่วโมงเดียวกัน)", "ผลตอบแทนล่วงหน้า 2h", "ผลตอบแทนล่วงหน้า 12h"):      # sentiment vs return bars
             at.radio(key="s_bar_measure").set_value(measure).run()
             self.assertEqual(len(at.exception), 0, measure)
         at.radio(key="s_ratio_mode").set_value("ผลโหวตส่วนใหญ่ (สัดส่วนชั่วโมง)")      # the ratio chart can count the majority votes
@@ -560,7 +560,7 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(len(at.info), 0)
         at = tick_only(at, ["SPY"])
         self.assertEqual(at.metric[0].label, "Reddit Volume ของสินทรัพย์ที่เลือก รวม")
-        self.assertEqual(len(at.info), 1)                            # the page says what it now counts
+        self.assertEqual(len(at.info), 0)                            # the label of the first card says what it counts: no explanatory note
 
     def test_every_chart_can_switch_to_bars(self):
         """The line / bar switch sits on each chart (not in the sidebar) and every chart survives being a bar chart."""

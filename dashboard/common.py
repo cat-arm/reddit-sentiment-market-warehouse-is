@@ -365,7 +365,7 @@ def _detection_filter(kind, sentiment=False, locked=False):
         state.setdefault("d_s", 0.0)
         state.setdefault("d_ss", 0.0)
         state.setdefault("d_mode", "absolute")
-        st.sidebar.caption("Reddit Volume Threshold (ส่วนขยาย: ชั่วโมงที่มีข้อความทั้งตลาดอย่างน้อยกี่ข้อความ ค่า 0 คือไม่กรอง)")
+        st.sidebar.caption("Reddit Volume Threshold (ชั่วโมงที่มีข้อความทั้งตลาดอย่างน้อยกี่ข้อความ ค่า 0 คือไม่กรอง)")
         if locked:
             st.sidebar.warning("ปิดใช้งานชั่วคราว: panel ที่เลือกใช้เกณฑ์ตายตัวของตาราง 12 (เลือก panel ทุกข้อความเพื่อปรับเกณฑ์)")
         st.sidebar.slider("Reddit Volume Threshold", 0, 6000, step=100, key="d_v", label_visibility="collapsed", disabled=locked)

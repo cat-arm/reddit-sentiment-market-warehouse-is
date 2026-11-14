@@ -60,10 +60,6 @@ if restricted:
     cards.append(("Ticker Mention Rate (%)", "n/a" if not base else "{:.3f}".format(100.0 * counted / base),
                   "Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดของแหล่งข้อมูลเดียวกัน × 100"))
 common.kpi_cards(cards)
-if restricted:
-    st.info("เลือกหลักทรัพย์บางตัว จึงแสดง**จำนวนโพสต์และความคิดเห็นที่พูดถึงหลักทรัพย์เหล่านั้น** แทนข้อความทั้งหมดของตลาด "
-            "(ข้อความเดียวที่พูดถึงหลายตัวที่เลือกนับหลายครั้ง) เลือกให้ครบทุกตัวเพื่อกลับไปดูข้อความทั้งหมด")
-    st.caption("Z-score คำนวณจากจำนวนข้อความที่พูดถึงหลักทรัพย์ที่เลือก เทียบกับ 24 ชั่วโมงก่อนหน้า (ไม่รวมชั่วโมงปัจจุบัน)")
 
 # Posts, comments, then the total (posts + comments): one chart above the other (no dual axis: posts are only ~1 % of the texts, so a shared
 # axis hides them and two axes make the lines cross meaninglessly).  A day without any text in the six communities is
@@ -82,9 +78,6 @@ z = common.line(shown, "time", "zscore", "Reddit Volume Z-score" + ("" if not re
 zero = common.zero_rule()       # Z = 0: normal volume
 rule = common.ref_rule(1.5)
 common.show(z + zero + rule, width="stretch")
-st.caption("เส้นแดงคือ Z-score ของปริมาณ เทียบกับ 24 ชั่วโมงก่อนหน้า" + ("" if how == "Hourly" else "  \nค่าของแต่ละจุดคือชั่วโมงที่สูงที่สุดในช่วงนั้น") + "  \n"
-           "เส้นทึบสีเทาคือระดับ 0 (ปริมาณปกติ)  \n"
-           "เส้นประคือระดับ 1.5 หากเส้นแดงอยู่เหนือเส้นนี้ ถือว่าปริมาณสูงผิดปกติ (spike)")
 
 if not restricted:
     by_source = q("total_volume_by_source", start, end, src_ids)

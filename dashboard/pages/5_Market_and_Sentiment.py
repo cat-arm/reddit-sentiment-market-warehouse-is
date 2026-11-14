@@ -130,7 +130,7 @@ def model_series(model):
 
 by_model = {name: model_series(model) for model, name, _ in MODEL_LINES}
 overall = {name: by_model[name].attrs.get("overall", float("nan")) for _, name, _ in MODEL_LINES}
-st.subheader("ความรู้สึกเฉลี่ยรายชั่วโมงแยกตามแบบจำลอง (%s) ส่วนขยาย" % label)
+st.subheader("ความรู้สึกเฉลี่ยรายชั่วโมงแยกตามแบบจำลอง (%s)" % label)
 ticks = st.columns(len(MODEL_LINES))
 visible = [(name, color) for (model, name, color), cell in zip(MODEL_LINES, ticks)
            if cell.checkbox("%s (%s)" % (name, common.COLOR_NAMES.get(color, "เทาเข้ม" if color == "#555555" else "เขียวมะกอก")), value=True, key="ms_" + model)]
@@ -151,13 +151,6 @@ else:
     common.show((lines + hover + common.zero_rule()).properties(height=common.CHART_HEIGHT), width="stretch")
     both = by_model["VADER"].merge(by_model["FinBERT"], on="time", suffixes=("_v", "_f")).dropna()
     agree = "n/a" if len(both) < 3 else "{:+.2f}".format(both.sentiment_mean_v.corr(both.sentiment_mean_f))
-    st.caption("ผลรวม (กฎรวมผล) คือค่าความรู้สึกสุดท้ายที่ใช้ทั้งโครงการ (final_sentiment หลังแก้ความขัดแย้งระหว่าง VADER กับ FinBERT) ส่วน VADER และ FinBERT คือคะแนนดิบของแต่ละแบบจำลองก่อนรวมผล  \n"
-               "VADER ให้ค่า compound ส่วน FinBERT ให้ P(positive) − P(negative) สเกลจึงแกว่งไม่เท่ากัน ดูทิศทางขึ้นลงของสองเส้นมากกว่าขนาด  \n"
-               "ตัวกรอง Sentiment ทางซ้ายใช้กับ**แต่ละเส้นด้วยคะแนนของแบบจำลองนั้นเอง** (เช่น ตั้ง 0.30 เส้น VADER เก็บข้อความที่ VADER ให้ |คะแนน| ≥ 0.30) ชุดข้อความของสามเส้นจึงไม่ใช่ชุดเดียวกัน  \n"
-               "ความสอดคล้องของค่าเฉลี่ยรายช่วงระหว่าง VADER กับ FinBERT (สหสัมพันธ์ Pearson) = **%s**  ช่วงที่เส้นขาดหมายถึงไม่มีข้อความ ไม่ใช่ความรู้สึกเป็นกลาง" % agree)
-st.caption("ค่าเฉลี่ยของทุกข้อความในช่วงนี้: " + " · ".join("%s %s" % (name, "n/a" if np.isnan(overall[name]) else "{:+.3f}".format(overall[name])) for _, name, _ in MODEL_LINES) + "  \n"
-               "FinBERT เฉลี่ยติดลบกว่า VADER เป็นเรื่องปกติของข้อมูลนี้ ไม่ใช่ข้อผิดพลาด: FinBERT ฝึกจากข่าวการเงิน อ่านคำอย่าง down / miss / drop เป็นลบ (ทั้งชุดข้อมูล ลบ 34% บวก 17%) และข้อความของคอมเมนต์รวมหัวข้อโพสต์แม่ที่มักเป็นข่าวลบ"
-               " ส่วน VADER ตามคำศัพท์ทั่วไปจึงเอียงบวกกว่า (ทั้งชุดข้อมูล บวก 31% ลบ 39% แต่ค่าเฉลี่ยเป็นบวก) ผลรวมหลังกฎรวมผลจึงใกล้ศูนย์")
 
 st.subheader("ราคาปิดเทียบค่าความรู้สึกเฉลี่ย (%s)" % label)
 price_col = "close"
@@ -168,18 +161,14 @@ if shown.sentiment_mean.notna().sum() == 0:
 else:
     price_title = "ราคาปิด (USD)" if one else "ราคาปิด (เฉลี่ยของที่เลือก)"
     common.dual_chart(shown, "time", price_col, "sentiment_mean", price_title, "Sentiment Score", "s_price_sent", "ราคาปิด", "Sentiment Score")
-    st.caption("สีน้ำเงินคือราคาปิด  \nสีเขียวอมฟ้าคือ Sentiment Score (ผลรวม final_sentiment ÷ จำนวนข้อความของชั่วโมงนั้น)  \n"
-               "ช่วงที่เส้นสีเขียวอมฟ้าขาดหมายถึงไม่มีข้อความ ไม่ใช่ค่าความรู้สึกเป็นกลาง")
 
     st.subheader("Reddit Volume เทียบค่าความรู้สึกเฉลี่ย (%s)" % label)
     common.dual_chart(shown, "time", "reddit_volume", "sentiment_mean", "Reddit Volume (จำนวนข้อความ)", "Sentiment Score", "s_z_sent",
                       "Reddit Volume", "Sentiment Score", left_color=common.C_Z, left_fmt=",.0f")
-    st.caption("สีแดงคือ Reddit Volume (จำนวนโพสต์และคอมเมนต์ของช่วงนั้น)  \nสีเขียวอมฟ้าคือ Sentiment Score  \n"
-               "หากมีการกล่าวถึงมากผิดปกติและความรู้สึกเปลี่ยนตาม สองเส้นจะเปลี่ยนไปในทิศทางเดียวกันหรือสวนทางกัน")
 
 # ---- does higher sentiment go with a higher return?  every ticked ticker-hour with text is one sample
 st.subheader("ความสัมพันธ์ระหว่างระดับความรู้สึกกับผลตอบแทน")
-MEASURES = {"Current Return (ชั่วโมงเดียวกัน ส่วนขยาย)": "log_return", **{"ผลตอบแทนล่วงหน้า %s" % h: "future_return_" + h for h in common.data.HORIZONS}}
+MEASURES = {"Current Return (ชั่วโมงเดียวกัน)": "log_return", **{"ผลตอบแทนล่วงหน้า %s" % h: "future_return_" + h for h in common.data.HORIZONS}}
 st.session_state.setdefault("s_bar_measure", list(MEASURES)[0])        # default: Current Return
 picked = st.radio("วัดผลตอบแทนแบบ", list(MEASURES), horizontal=True, key="s_bar_measure", label_visibility="collapsed")
 column = MEASURES[picked]
@@ -206,14 +195,6 @@ else:
     zero = common.zero_rule()
     common.show(bars + errors + zero, width="stretch")
     paired = samples[["sentiment_mean", column]].dropna()
-    st.caption("**วิธีอ่าน**  \n"
-               "นำทุก ticker-hour ที่มีข้อความมาจัดเป็น 5 ระดับตาม Sentiment Score ของชั่วโมงนั้น โดยใช้เกณฑ์ตายตัวของ proposal  \n"
-               "ค่า ±0.05 เป็นขอบของความรู้สึกเป็นกลาง และค่า ±0.30 เป็นเกณฑ์ความรู้สึกชัดเจน  \n"
-               "แท่งคือผลตอบแทนเฉลี่ยของระดับนั้น (ระดับที่ไม่มีข้อมูลจะไม่มีแท่ง)  \n"
-               "เส้นสีดำคือช่วงเชื่อมั่น 95%% หากเส้นคร่อมศูนย์ แสดงว่าแยกจากศูนย์ไม่ได้  \n"
-               "ค่าสหสัมพันธ์ Spearman ระหว่างความรู้สึกกับผลตอบแทนเท่ากับ %+.3f (%s ticker-hour)  \n"
-               "ใช้ผลตอบแทนแทนระดับราคา เนื่องจากระดับราคามีแนวโน้มระยะยาวที่ทำให้การเทียบกับความรู้สึกโดยตรงคลาดเคลื่อน"
-               % (paired.sentiment_mean.corr(paired[column], method="spearman"), "{:,}".format(len(paired))))
 
 st.subheader("สัดส่วนความคิดเห็นเชิงบวก ลบ และเป็นกลาง")
 RATIO_MODES = ("ความคิดเห็นจริง (สัดส่วนข้อความ)", "ผลโหวตส่วนใหญ่ (สัดส่วนชั่วโมง)")
@@ -261,8 +242,5 @@ else:
         common.table(ranked[["อันดับ", "series", "กลุ่ม", "w", "sentiment", "pos", "neg"]].rename(columns={
             "series": "สินทรัพย์", "w": "จำนวนข้อความ", "sentiment": "Sentiment Score เฉลี่ย", "pos": "เชิงบวก (%)",
             "neg": "เชิงลบ (%)"}).round(3), hide_index=True, width="stretch", height=min(420, 60 + 36 * len(ranked)))
-        st.caption("เริ่มต้นเรียงจาก Sentiment Score เฉลี่ยสูงไปต่ำ คลิกหัวคอลัมน์เพื่อเรียงตามคอลัมน์นั้น (คลิกซ้ำเพื่อกลับทิศ) อันดับคือลำดับตอนเริ่มต้น ไม่เปลี่ยนตามการเรียง  \n"
-                   "ไม่มีเกณฑ์จำนวนข้อความขั้นต่ำ สินทรัพย์ที่มีข้อความน้อยค่าเฉลี่ยจึงแกว่งง่าย ดูคอลัมน์จำนวนข้อความประกอบ เฉลี่ยถ่วงน้ำหนักด้วยจำนวนข้อความของแต่ละชั่วโมง นับเฉพาะข้อความที่พูดถึงสินทรัพย์นั้น "
-                   "ในชุมชน แบบจำลอง และประเภทเนื้อหาที่เลือก ชั่วโมงที่ไม่มีข้อความไม่นับ (ไม่ใช่ค่าเป็นกลาง)")
 
 # ---- DimDetectionConfig drill-down: the hours that meet the thresholds of the sidebar, and what the price did next

@@ -20,7 +20,7 @@ import streamlit as st  # noqa: E402
 from dashboard import common, data  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
-common.setup("Logistic Regression (ส่วนขยาย: โมเดลทายทิศทางราคาจากความรู้สึก)", "📈")
+common.setup("Logistic Regression (โมเดลทายทิศทางราคาจากความรู้สึก)", "📈")
 state = st.session_state
 if state.get("l9_family") in ("Ticker", "compare") and state.get("l9_kind") == "baseline":        # the random baseline belongs to Global only
     state["l9_kind"] = "all"
@@ -131,8 +131,6 @@ def logistic_compare(lg, a_key, b_key):
     text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
     st.write("ผลต่างของผลแต่ละตัวแปร B − A (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")
     common.show((rect + text).properties(height=30 * len(row_order) + 40))
-    st.caption("ค่าในช่องคือผลของตัวแปรใน B ลบด้วยผลของตัวแปรเดียวกันใน A (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น เมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน) สีเขียวคือ B ดันให้ขึ้นมากกว่า A สีแดงคือน้อยกว่า ชี้ที่ช่องเพื่อดูค่าของ A และ B  \n"
-               "เป็นการเทียบเชิงพรรณนา โมเดลของสอง panel ฝึกจากข้อมูลคนละชุด (strong / quality เป็นส่วนย่อยของ ทุกข้อความ) และ AUC ของโมเดลใกล้ 0.5 ผลต่างที่เห็นจึงมักเป็นเสียงรบกวน ไม่ควรตีความเกินจริง")
 
 
 def auc_rows(lg_all):
@@ -156,17 +154,10 @@ def auc_rows(lg_all):
     count = chart.mark_text(fontSize=9, dy=10).encode(text="n_label:N", color=ink("#555555"))
     st.write("AUC ของทุก panel เทียบกับ Baseline สุ่ม (แต่ละ Horizon) ปุ่มเลือก panel ด้านล่างใช้กับกราฟตัวแปรเท่านั้น")
     common.show((rect + text + count).properties(height=50 * len(names) + 130))
-    st.caption("AUC คือโอกาสที่โมเดลจะให้คะแนนชั่วโมงที่ราคาขึ้นจริง สูงกว่าชั่วโมงที่ราคาลงจริง: 0.5 เท่ากับสุ่ม (สีเหลือง) เขียวคือดีกว่าสุ่ม แดงคือแย่กว่าสุ่ม  \n"
-               "แถว Baseline คือโมเดลที่ใช้ทิศทางสุ่มแทนความรู้สึก ควรอยู่ราว 0.50 หาก panel ไหนไม่สูงกว่า Baseline ชัดเจน แปลว่าตัวแปรความรู้สึกไม่ได้ช่วยทำนาย  \n"
-               "ในช่องมี n (จำนวนแถวที่ฝึกโมเดล) ⚠ = น้อยกว่า 30 และ \"ข้อมูลไม่พอ\" = ข้อมูลน้อยเกินไปสำหรับแบ่งฝึกและทดสอบข้ามเวลา 5 รอบ ค่า AUC ที่ใช้ข้อมูลน้อยแกว่งได้มาก  \n"
-               "Current Return คือผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักสูงกว่าช่วงอื่น")
 
 
 def logistic_view():
     """The stored Logistic Regression: AUC of every panel and horizon, then the coefficients and the importance of the variable groups."""
-    st.caption("ฝึกโมเดลสดจากชั่วโมงที่ผ่านตัวกรองด้านซ้าย (ฝึกและทดสอบข้ามช่วงเวลา 5 รอบ ไม่สลับเวลา) ไม่ใช่ผลที่เก็บไว้ ตอนไม่กรองได้ผลเท่ากับตารางที่เก็บไว้  "
-               "โมเดลทายว่าผลตอบแทนจะ \"ขึ้น\" หรือ \"ลง\" จากตัวแปรความรู้สึกทั้ง 6 กลุ่ม  AUC เท่ากับ 0.5 หมายถึงทำนายได้ไม่ดีกว่าการสุ่ม  "
-               "panel ทุกข้อความ (Global, Ticker) ตามเกณฑ์ด้านซ้าย ส่วน panel อื่นใช้เกณฑ์ตายตัวของตาราง 12 ไม่ตามเกณฑ์ด้านซ้าย")
     with st.expander("รายละเอียดวิธีทำ (Logistic Regression)"):
         st.markdown(METHOD_NOTE)
     lg_all = live_rows("ALL")                                                              # the assets are chosen in the sidebar (class and ticker boxes)
@@ -178,14 +169,14 @@ def logistic_view():
     st.write("สัมประสิทธิ์และความสำคัญของตัวแปร เลือก panel ได้ (ปุ่มด้านล่างติดอยู่ตอนเลื่อน)")
     with common.sticky_bar("l9_bar"):                                                     # the picker stays at the top while the long heat maps below scroll
         log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="l9_family",
-                              label_visibility="collapsed")                                  # the same layers as the heat map of Statistical Analysis
+                              )                                  # the same layers as the heat map of Statistical Analysis
         if log_family == "compare":
             a_key, b_key = logistic_pickers()
         else:
             log_kinds = data.PANEL_VARIANTS if log_family == "global" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}
             if st.session_state.get("l9_kind") not in log_kinds:
                 st.session_state["l9_kind"] = "all"
-            log_kind = st.radio("ชนิดข้อความ", list(log_kinds), format_func=log_kinds.get, horizontal=True, key="l9_kind", label_visibility="collapsed")
+            log_kind = st.radio("ชนิดข้อความ", list(log_kinds), format_func=log_kinds.get, horizontal=True, key="l9_kind")
     if log_family == "compare":
         logistic_compare(lg, a_key, b_key)
         return
@@ -216,7 +207,6 @@ def logistic_view():
                                         tooltip=["กลุ่มตัวแปร", "ช่วง", alt.Tooltip("value:Q", title="ความสำคัญ", format=".4f")])
         text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
         common.show((rect + text).properties(height=34 * imp.กลุ่มตัวแปร.nunique() + 40))
-        st.caption("6 กลุ่มตัวแปรตามที่ proposal กำหนด  กลุ่มที่ค่าสูงกว่ามีอิทธิพลต่อโมเดลมากกว่า แต่เมื่อ AUC ใกล้ 0.5 โมเดลโดยรวมก็ยังทำนายไม่ได้  \nความสำคัญบอกเพียงว่ากลุ่มไหนมีอิทธิพลมาก ไม่บอกทิศทาง (ขึ้นหรือลง) ดูทิศทางของแต่ละตัวแปรในกราฟถัดไป")
 
     # the effect of every variable at every horizon, one heat map (the same layout as the heat maps above: no horizon to pick)
     st.write("เจาะรายตัวแปร: ผลของแต่ละตัวแปรในแต่ละ Horizon (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น มีทิศทางบวก/ลบ)")
@@ -229,10 +219,6 @@ def logistic_view():
                  alt.Tooltip("value:Q", title="สัมประสิทธิ์มาตรฐาน (ค่าดิบของโมเดล)", format="+.4f")])
     text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
     common.show((rect + text).properties(height=30 * len(row_order) + 40))
-    st.caption("ค่าในช่องคือจำนวนจุดเปอร์เซ็นต์ที่โอกาสขึ้นเปลี่ยนไปเมื่อตัวแปรเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน (คิดจากสัมประสิทธิ์ ÷ 4 × 100 ซึ่งใช้ได้เมื่อโอกาสใกล้ 50% ดูสัมประสิทธิ์ดิบของโมเดลได้ที่ tooltip)  \n"
-               "สีเขียวคือดันให้ขึ้น สีแดงคือดันให้ลง  \nCurrent Return คือชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) จึงมักแรงกว่าคอลัมน์อื่น เนื่องจากราคากับความรู้สึกเปลี่ยนไปพร้อมกัน  \n"
-               "`sentiment_mean` คือความรู้สึกของชั่วโมงปัจจุบัน (lag 0) ส่วน sentiment_lag_1h ถึง 12h คือความรู้สึกของชั่วโมงก่อนหน้า  \n"
-               "**ตัวแปรที่มีผลจริงต้องผ่านครบ**: ค่าสูงพอ (อย่างน้อยราว 1 จุดเปอร์เซ็นต์) ทิศทางเดียวกันในหลาย Horizon และโมเดลโดยรวมมี AUC ห่างจาก 0.5 หากค่าน้อยหรือทิศทางสลับไปมา แสดงว่าไม่มีผล")
 
 
 logistic_view()

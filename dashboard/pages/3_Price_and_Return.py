@@ -87,23 +87,19 @@ def trend(col, title, color, key, height=common.CHART_HEIGHT, log=False, **kw):
 price_title = "ราคาปิด (USD)" if one else ("ราคาปิด (ค่าแรก = 100)" if per_ticker else "ราคาปิด")      # several lines: each rebased; the average: "(เฉลี่ยของที่เลือก)" is added by `trend`
 common.show(trend("close" if one else "price_index", price_title, common.C_PRICE, "p_close"), width="stretch")
 if not one:
-    st.caption("เลือกหลายตัวจึงปรับราคาแต่ละตัวให้ค่าแรกของช่วง = 100 เพื่อเทียบกันได้ (ราคาจริงต่างขนาดกันมาก เช่น SPY หลักร้อย BTC หลักแสน)")
+    pass
 common.show(trend("volume" if one else "volume_index", "ปริมาณซื้อขาย (หน่วย)" if one else ("ปริมาณซื้อขาย (ค่าเฉลี่ย = 100)" if per_ticker else "ปริมาณซื้อขาย"),
                       common.C_VOLUME, "p_volume"), width="stretch")
 common.show(trend("rsi", "RSI", common.C_RATE, "p_rsi", y_domain=[0, 100])
                 + alt.Chart(alt.Data(values=[{"y": 30}, {"y": 70}])).mark_rule(strokeDash=[4, 4], color="gray")
                 .encode(y="y:Q"), width="stretch")
-st.caption("RSI (Relative Strength Index) คือดัชนีความแข็งแกร่งสัมพัทธ์ในช่วง 0 ถึง 100 (Wilder 14 แท่ง) วัดความเร็วและขนาดการเปลี่ยนแปลงของราคา  \n"
-           "เส้นประที่ 30 และ 70 เป็นระดับที่นิยมใช้อ่านภาวะขายมากเกินไปและซื้อมากเกินไป")
 if len(tickers) <= MAX_LINES:
     common.show(trend("atr", "ATR (USD)" if one else "ATR (USD) แกนลอการิทึม", common.C_ATR, "p_atr", log=True, y_zero=one)
                     if not one else common.line(shown, "time", "atr", "ATR (USD)", common.C_ATR, 220, y_zero=True,
                                                 bar=common.kind(st, "p_atr")), width="stretch")
-    st.caption("ATR (Average True Range) คือค่าเฉลี่ยของ True Range 24 ชั่วโมง วัดระดับความผันผวนของราคาโดยไม่พิจารณาทิศทาง  \n"
-               "ค่าเป็นดอลลาร์สหรัฐ จึงไม่สามารถเทียบข้ามสินทรัพย์ได้ ให้ดู Normalized ATR แทน")
 common.show(trend("normalized_atr", "Normalized ATR (%)" if one else "Normalized ATR", common.C_NATR, "p_natr", y_zero=True), width="stretch")
 if not one:
-    st.caption("Normalized ATR หน่วยเป็น % ของราคาปิด (ATR 24 ชั่วโมง ÷ ราคาปิด × 100)")
+    pass
 
 # ---- the measures of every ticked ticker
 st.subheader("รายละเอียดค่าวัดของหลักทรัพย์ที่เลือก")
@@ -120,8 +116,6 @@ measures = snap[["สินทรัพย์", "กลุ่ม", "last_close",
 formats = {c: "{:.4f}" for c in measures.columns if c not in ("สินทรัพย์", "กลุ่ม")}
 formats["ราคาปิดล่าสุด (USD)"] = "{:,.2f}"
 st.dataframe(measures.style.format(formats, na_rep="-"), hide_index=True, width="stretch", height=min(420, 60 + 36 * len(snap)))      # a missing value shows "-", never None
-st.caption("**RSI:** RSI ล่าสุด = ค่า RSI ของชั่วโมงสุดท้ายในช่วงที่เลือก  สัดส่วน RSI > 70 = สัดส่วนของชั่วโมงที่ RSI เกิน 70 (ซื้อมากเกินไป)  สัดส่วน RSI < 30 = สัดส่วนของชั่วโมงที่ต่ำกว่า 30 (ขายมากเกินไป)  \n"
-           "**ผลตอบแทน:** ผลตอบแทน Current คือค่าเฉลี่ยต่อชั่วโมงของ Current Return (ผลตอบแทนของชั่วโมงเดียวกัน ส่วนขยาย) ส่วน 1h ถึง 12h คือผลตอบแทนล่วงหน้าเฉลี่ย ทุกคอลัมน์เป็นค่าเฉลี่ยในช่วงที่เลือก (ผลรวมของ Current Return ทั้งช่วงอยู่ในการ์ดด้านบน) ช่องที่ว่างหมายถึงไม่มีแท่งราคาครบตามกรอบเวลา (หุ้นและ ETF ที่ 12h ไม่มีเลย เนื่องจากตลาดปิดกลางคืน)")
 
 # ---- below, as before: asset classes (computed over the ticked tickers)
 st.subheader("ผลตอบแทนล่วงหน้าแยกตามกลุ่มสินทรัพย์")
@@ -142,14 +136,8 @@ else:
     common.table(fr[["กลุ่ม", "กรอบเวลา", "n", "mean_return_pct", "ราคาขึ้นกี่ % ของแท่ง"]].rename(columns={
         "n": "จำนวนตัวอย่าง", "mean_return_pct": "ผลตอบแทนเฉลี่ย (%)"}),
         hide_index=True, width="stretch")
-    st.caption("**ราคาขึ้นกี่ % ของแท่ง** คือสัดส่วนของแท่งราคาที่ผลตอบแทนเป็นบวก (ราคาขึ้น) จากแท่งที่ราคาขยับ (ไม่นับแท่งที่ผลตอบแทนเท่ากับ 0 พอดี) 50 = ขึ้นกับลงพอ ๆ กัน เหมือนโยนเหรียญ  \n"
-               "จำนวนตัวอย่างของหุ้นและ ETF ที่ 6h มีน้อย และที่ 12h เป็น 0 เนื่องจากตลาดปิดกลางคืนจึงมีแท่งราคารายชั่วโมงไม่ครบ มิได้หมายความว่าผลตอบแทนเป็น 0")
 
 st.subheader("กลุ่มสินทรัพย์ใดผันผวนสูงที่สุด")
-st.caption("ผันผวน = ราคาขยับแรงเพียงใดโดยไม่สนทิศขึ้นหรือลง  เรียงจากกลุ่มที่ผันผวนสูงสุด **คลิกที่แถวของกลุ่มเพื่อดูรายตัวของกลุ่มนั้น** (หุ้นและ ETF แบ่งเป็นกลุ่มย่อย อ่านค่าเทียบกับกลุ่มย่อยของตัวเอง)  \n"
-           "**Normalized ATR** = ความผันผวนสัมพัทธ์ (ATR 24 ชั่วโมง ÷ ราคาปิด × 100) เป็น KPI ของ proposal  \n"
-           "**|Current Return| เฉลี่ย** ใช้ค่าสัมบูรณ์เนื่องจากหากเฉลี่ยผลตอบแทนโดยตรง ชั่วโมงที่ขึ้นกับลงจะหักล้างกันจนใกล้ 0 ทั้งที่ราคาขยับแรง (ส่วนขยาย)  \n"
-           "**จำนวนแท่งราคา** = จำนวนแท่งราคารายชั่วโมงที่ใช้คำนวณ")
 tr = q("ticker_risk", start, end, tickers)
 tr["สินทรัพย์"] = tr.ticker.map(lambda t: "%s (%s)" % (t, names.get(t, "")))
 # the stock_etf group is shown split into stocks and ETFs (EXTENSION: their volatility differs a lot; the ETF drawer tells index ETFs from bitcoin ETFs); the other groups as they are

@@ -57,7 +57,6 @@ common.kpi_cards([
      "Ticker Mention Count ÷ ปริมาณโพสต์และความคิดเห็นทั้งหมดในช่วงเดียวกัน × 100"),
     ("Reddit Volume Z-score สูงสุด (ของที่เลือก)", common.money(volume.zscore.max()),
      "Z-score ของจำนวนโพสต์และความคิดเห็นที่พูดถึงสินทรัพย์ที่เลือก เทียบกับ 24 ชั่วโมงก่อนหน้า (ไม่ใช่ของทั้งตลาดในหน้า 5–8)" + common.REDDIT_Z_NOTE)])
-st.caption("Z-score คิดจากจำนวนโพสต์และความคิดเห็นที่พูดถึงสินทรัพย์ที่เลือก (ไม่ใช่จำนวนครั้งที่ถูกเมนชัน) เทียบกับ 24 ชั่วโมงก่อนหน้า (ใช้ในชุดข้อมูล panel_Ticker_spike)")
 
 # ================================================================================================ ranking
 st.header("สินทรัพย์ที่ถูกพูดถึงมากที่สุด")
@@ -94,4 +93,3 @@ common.show(common.line(shown, "time", "rate", "Ticker Mention Rate (%)", common
 st.subheader("พูดถึงที่ไหน (ชุมชน × ประเภทเนื้อหา)")
 source = q("volume_by_source", tickers, start, end, src_ids)
 common.community_table(source, "mentions")
-st.caption("จำนวนครั้งที่สินทรัพย์ที่เลือกถูกพูดถึง (Ticker Mention Count) แยกตามชุมชนและประเภทเนื้อหา เปอร์เซ็นต์คิดจากผลรวมของคอลัมน์นั้น (รวมลงมาได้ 100)")

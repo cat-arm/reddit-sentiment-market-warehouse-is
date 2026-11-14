@@ -42,7 +42,6 @@ communities = common.selected_communities()
 statuses = common.selected_statuses()
 content_types = common.selected_content_types()
 CARDS = ["Historical Win Rate", "Spearman p-value", "Pearson p-value"]
-st.caption("**หมายเหตุ:** ไม่มีเกณฑ์จำนวนตัวอย่างขั้นต่ำ ทุกค่าที่คำนวณได้จะแสดง (สหสัมพันธ์ต้องมีอย่างน้อย 3 ชั่วโมงจึงมีค่าทางคณิตศาสตร์) ค่าที่ n น้อยกว่า 30 ติดเครื่องหมาย ⚠ แปลว่าไม่น่าเชื่อถือ ให้ดู n และ ★ (p ปรับ BH) ประกอบเสมอ")
 if not tickers or not communities or not statuses or not content_types:
     common.nothing_selected(CARDS, "ยังไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
 z_th = st.session_state.get("d_z", 0.0)
@@ -100,8 +99,6 @@ st.markdown("**Panel Global** (ความรู้สึกรวมของ�
 stat_all = card_row("global")
 st.markdown("**Panel Ticker** (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้นโดยตรง)")
 stat_ticker = card_row("Ticker")
-st.caption("การ์ดทั้งสองแถวคิดจาก panel ทุกข้อความของชั่วโมงที่ผ่านตัวกรองทุกอัน (รวม Reddit Volume Threshold และ Sentiment Threshold ในแถบซ้าย)  ค่า p-value เป็นเชิงพรรณนา "
-           "เนื่องจากข้อมูลรายชั่วโมงเกี่ยวเนื่องกันและกรอบเวลาซ้อนทับกัน")
 
 
 def asset_label(ticker):
@@ -170,19 +167,9 @@ def panel_view(stat, measure):
         st.info("ไม่มีค่า %s ของสินทรัพย์ที่เลือกใน panel นี้ (ข้อมูลน้อยกว่า 3 ชั่วโมงต่อคู่ คำนวณสหสัมพันธ์ไม่ได้)" % measure)
         return
     common.show(heatmap(stat, measure))
-    st.caption("ทุกช่องแสดง 3 ค่า: S = Spearman, P = Pearson, W = Win Rate (%%)  เลือกปุ่มด้านบนเพื่อเปลี่ยนว่าสีของช่องตามค่าไหน (ค่าที่เลือกพิมพ์ตัวใหญ่ตัวหนา)  \n"
-               "ทุกค่ามี p-value (ก่อนปรับ) ต่อท้าย และบรรทัดล่างสุดคือ n (จำนวนชั่วโมงของ Spearman / Pearson) กับ Win n (จำนวนชั่วโมงที่นับใน Win Rate ไม่รวมกรณีที่ราคาหรือความรู้สึกเป็น 0) ชี้ที่ช่องเพื่อดู p ปรับ BH  \n   p ต่ำกว่า 0.05 ถือว่าน่าสนใจ แต่ต้องดู p ปรับ BH ด้วย  \n"
-               "เครื่องหมาย ★ ท้ายค่า หมายถึง p-value ของค่านั้นที่ปรับด้วย Benjamini-Hochberg (ส่วนขยาย) แล้วต่ำกว่า 0.05  \n"
-               "ช่องว่างหมายถึงคำนวณไม่ได้ (น้อยกว่า 3 ชั่วโมง) ไม่ใช่ค่า 0  \n⚠ หน้า n หมายถึง n น้อยกว่า 30 ไม่น่าเชื่อถือ  \n"
-               "Current Return คือผลตอบแทนของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย) ส่วน 1h ถึง 12h คือผลตอบแทนล่วงหน้า  \n"
-               "%s"
-               % ("สี: แดงคือต่ำกว่า 50 เขียวคือสูงกว่า 50 (50 เท่ากับการสุ่ม)" if measure == "Win Rate" else
-                  "สี: แดงคือค่าลบ เขียวคือค่าบวก ค่า 0 คือไม่มีความสัมพันธ์"))
 
 
 st.radio("วัดความรู้สึกด้วย", list(PREDICTOR_OF), horizontal=True, key="p5_basis")
-st.caption("proposal 7.4 เทียบทิศทางของทั้งคะแนนความรู้สึก (sentiment_mean) และประเภทความรู้สึกส่วนใหญ่ (majority_final_status)  \n"
-           "แบบ majority ไม่ใช้คะแนน ใช้เพียง บวก (+1) ลบ (−1) หรือเป็นกลาง (0 = ไม่มีทิศทาง ไม่นับใน Win Rate)  การ์ด แท็บ และตารางจัดอันดับเปลี่ยนตามตัวเลือกนี้")
 
 # ---- the nine panels of table 12 in two layers: the family (Global / Ticker / Baseline), then the kind of text (all / strong / quality / spike) ------------
 FAMILIES = {"global": "Global (ความรู้สึกรวมของทั้งตลาด)", "Ticker": "Ticker (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น)", "compare": "เปรียบเทียบ 2 panel"}
@@ -249,9 +236,6 @@ def compare_view(a_key, b_key, measure):
     higher, total = int((d["diff"] > 0).sum()), len(d)
     st.caption("**สรุป:** %s สูงกว่า %s ใน %d จาก %d ช่อง (ต่ำกว่า %d ช่อง) ผลต่างเฉลี่ย %s" % (PANEL_CHOICES[b_key], PANEL_CHOICES[a_key], higher, total, int((d["diff"] < 0).sum()),
                ("%+.2f จุดเปอร์เซ็นต์" if pct else "%+.4f") % d["diff"].mean()))
-    st.caption("สีเขียวคือ B สูงกว่า A สีแดงคือ B ต่ำกว่า A ในช่องมีค่า A, ค่า B, ผลต่าง Δ (Win Rate เป็นจุดเปอร์เซ็นต์ ในวงเล็บคือเปอร์เซ็นต์เทียบกับค่า A ส่วน Spearman และ Pearson เป็นผลต่างของ ρ เนื่องจากเปอร์เซ็นต์ของค่าใกล้ 0 ไม่มีความหมาย) และ n ของสองฝั่ง ⚠ = n ฝั่งใดน้อยกว่า 30  \n"
-               "เป็นการเทียบเชิงพรรณนา ยังไม่ผ่านการทดสอบนัยสำคัญของผลต่าง (panel strong / quality เป็นส่วนย่อยของ panel ทุกข้อความ ไม่ใช่ข้อมูลอิสระ)  \n"
-               "สไลเดอร์ Reddit Volume Threshold และ Sentiment Threshold ด้านซ้ายมีผลเฉพาะฝั่งที่เป็น **ทุกข้อความ** ฝั่งอื่นใช้เกณฑ์ตายตัวของตาราง 12 ตัวกรองอื่นมีผลกับทั้งสองฝั่ง")
     table = pd.DataFrame({"สินทรัพย์": d.ticker, "Horizon": d.period, "A": d.a, "B": d.b, "B − A": d["diff"], "เปอร์เซ็นต์เทียบ A (%)": d.rel if pct else np.nan,
                           "n A": d.na, "n B": d.nb, "n น้อย": np.where((d.na < 30) | (d.nb < 30), "⚠", "")}).sort_values("B − A", ascending=False)
     if not pct:
@@ -262,34 +246,27 @@ def compare_view(a_key, b_key, measure):
 
 kind = None
 with common.sticky_bar("p5_bar"):                                                  # the picker of the panel and of the measure stays at the top while the heat map scrolls
-    family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="p5_family_all", label_visibility="collapsed")
+    family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="p5_family_all")
     KINDS = data.PANEL_VARIANTS if family != "Ticker" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}       # the random baseline is a view of Global only
     if family == "compare":
         a_key, b_key = compare_pickers()
-        measure = st.radio("แสดง", VIEWS, horizontal=True, key="p5_cmp_measure", label_visibility="collapsed")
+        measure = st.radio("ตัวชี้วัด", VIEWS, horizontal=True, key="p5_cmp_measure")
     else:
-        kind = st.radio("ชนิดข้อความ", list(KINDS), format_func=KINDS.get, horizontal=True, key="p5_panel", label_visibility="collapsed")
-        measure = st.radio("แสดง", VIEWS, horizontal=True, key="p5_measure_all", label_visibility="collapsed")
+        kind = st.radio("ชนิดข้อความ", list(KINDS), format_func=KINDS.get, horizontal=True, key="p5_panel")
+        measure = st.radio("ตัวชี้วัด", VIEWS, horizontal=True, key="p5_measure_all")
 if family == "compare":
     compare_view(a_key, b_key, measure)
 elif kind == "all":
     chosen = stat_all if family == "global" else stat_ticker                       # the panels that follow the sidebar: the cards above
-    st.caption("panel นี้ตามตัวกรองด้านซ้ายทุกอัน รวม Reddit Volume Threshold และ Sentiment Threshold (กรอง**ทีละข้อความ**ก่อนเฉลี่ยเป็นความรู้สึกรายชั่วโมง ส่วน Volume กรอง**ทั้งชั่วโมง**)")
 else:                                                                              # the fixed panels: their own cut of table 12, whatever the two thresholds of the sidebar say
     chosen = common.panel_stat(family, kind, tuple(tickers), start, end, tuple(communities), model, tuple(statuses),
                                0.0, 0.0, tuple(content_types), predictor, 0)
     if kind == "baseline":
-        st.caption("**Baseline ทิศทางสุ่ม** คือเส้นเทียบ: ใช้ชั่วโมงเดียวกับ panel Global แต่ **โยนเหรียญแทนความรู้สึก** (ทิศทางบวก/ลบสุ่ม ด้วยเมล็ดตายตัว จึงได้ค่าเดิมทุกครั้ง) หากความรู้สึกจริงช่วยทำนายราคาได้ "
-                   "Win Rate ของ panel อื่นต้องสูงกว่า Baseline อย่างชัดเจน ส่วน Baseline เองควรอยู่ราว 50% และสหสัมพันธ์ใกล้ 0 (หากไม่ใช่ แปลว่าราคาเองมีแนวโน้มที่ทำให้ Win Rate เบี่ยง ไม่ใช่เนื่องจากความรู้สึก)  \n"
-                   "panel นี้ใช้เกณฑ์ตายตัว ไม่ตาม Reddit Volume Threshold และ Sentiment Threshold ด้านซ้าย (ตัวกรองอื่นยังมีผล)")
+        pass
     else:
         rule = {"strong": "ตัดแถว (ชั่วโมง × สินทรัพย์) ที่ |Sentiment Score เฉลี่ยของชั่วโมง| ต่ำกว่า 0.05 ออก",
                 "quality": "เก็บเฉพาะแถวที่ |Sentiment Score เฉลี่ยของชั่วโมง| ตั้งแต่ 0.30",
                 "spike": "เก็บเฉพาะแถวของชั่วโมงที่ Reddit Volume Z-score > 1.5"}[kind]
-        st.caption("ข้อมูลของหน้านี้คือตาราง ชั่วโมง × สินทรัพย์ × Sentiment Score เฉลี่ย / ทิศทางส่วนใหญ่ แต่ละ panel **กรองแถว**ของตารางนี้ก่อน แล้วค่อยคำนวณ Spearman, Pearson และ Win Rate ใหม่  \n"
-                   "**%s**: %s  \n"
-                   "ไม่ตาม Reddit Volume Threshold และ Sentiment Threshold ด้านซ้าย ตัวกรองอื่น (ช่วงเวลา สินทรัพย์ ชุมชน โมเดล ประเภทข้อความ ความรู้สึกส่วนใหญ่) ยังมีผล  \n"
-                   "ทั้งโหมดคะแนนและโหมด majority กรองแถวด้วย Sentiment Score เฉลี่ยของชั่วโมงเดียวกัน (majority เปลี่ยนเพียงวิธีอ่านทิศทาง)" % (KINDS[kind], rule))
 if family != "compare":
     panel_view(chosen, measure)
 
@@ -311,18 +288,14 @@ else:
         "กลุ่ม": one.index.map(lambda t: GROUP_LABELS.get(group_of.get(t), "")), "สินทรัพย์": one.index,
         "Reddit Volume (ข้อความที่พูดถึง)": one.index.map(reddit_volume), "Trading Volume (เฉลี่ยต่อชั่วโมง)": one.index.map(trading_volume),
         "Spearman ρ": one.spearman_rho.values, "Pearson ρ": one.pearson_rho.values, "Win Rate (%)": one.winrate.values,
-        "p ดิบ (Win Rate)": one.win_p.values, "p ปรับ BH (Win Rate, ส่วนขยาย)": one.win_bh.values,
+        "p ดิบ (Win Rate)": one.win_p.values, "p ปรับ BH (Win Rate)": one.win_bh.values,
         "นัยสำคัญหลังปรับ": np.where(one.win_bh.values < 0.05, "★", ""),
         "n (Win Rate)": one.win_n.values, "n น้อย": np.where((one.win_n.values < 30) | (one.n.values < 30), "⚠", ""),
         RETURN_NAME: one.mean_return.values})
-    table = table.sort_values("p ปรับ BH (Win Rate, ส่วนขยาย)", na_position="last")
+    table = table.sort_values("p ปรับ BH (Win Rate)", na_position="last")
     formats = {"Reddit Volume (ข้อความที่พูดถึง)": "{:,.0f}", "Trading Volume (เฉลี่ยต่อชั่วโมง)": "{:,.0f}", "n (Win Rate)": "{:,.0f}", "Win Rate (%)": "{:.1f}",
-               "p ดิบ (Win Rate)": "{:.3f}", "p ปรับ BH (Win Rate, ส่วนขยาย)": "{:.3f}", "Spearman ρ": "{:+.3f}", "Pearson ρ": "{:+.3f}",
+               "p ดิบ (Win Rate)": "{:.3f}", "p ปรับ BH (Win Rate)": "{:.3f}", "Spearman ρ": "{:+.3f}", "Pearson ρ": "{:+.3f}",
                RETURN_NAME: "{:+.4f}"}
     st.dataframe(table.style.format(formats, na_rep="-"), hide_index=True, width="stretch", height=420)
-    st.caption("แถวละ สินทรัพย์ เรียงเริ่มต้นตาม p ปรับ BH ของ Win Rate จากน้อยไปมาก (คลิกที่หัวคอลัมน์เพื่อเรียงใหม่)  \n"
-               "Spearman, Pearson และ Win Rate คิดที่ Horizon ที่เลือกด้านบน ผลตอบแทนเฉลี่ยก็เป็นของ Horizon นั้นด้วย (Current Return คือส่วนขยาย) คิดจากชั่วโมงที่ผ่านตัวกรองและเกณฑ์ที่ตั้งไว้  \n"
-               "Reddit Volume คือจำนวนโพสต์และความคิดเห็นที่พูดถึงสินทรัพย์นั้นในช่วงที่เลือก ส่วน Trading Volume คือปริมาณซื้อขายเฉลี่ยต่อชั่วโมง (หน่วยต่างกันตามสินทรัพย์ ไม่สามารถเทียบข้ามสินทรัพย์ได้)")
 
 
-st.caption("Logistic Regression (AUC และสัมประสิทธิ์ของตัวแปร) อยู่ที่หน้า **Logistic Regression** เนื่องจากเป็นผลที่เก็บไว้ทั้งชุดข้อมูล ไม่ตามตัวกรองของหน้านี้")

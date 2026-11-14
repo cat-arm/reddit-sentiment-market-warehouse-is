@@ -19,7 +19,7 @@ from dashboard.common import q  # noqa: E402
 
 CARDS = ["Reddit Volume รวม", "Reddit Volume Z-score สูงสุด", "Current Return รวมทั้งช่วง (%)", "Volume Z-score สูงสุด (ปริมาณซื้อขาย)"]
 
-common.setup("Price and Reddit (ส่วนขยาย: ราคาเทียบปริมาณ Reddit)", "🔗")
+common.setup("Price and Reddit (ราคาเทียบปริมาณ Reddit)", "🔗")
 _, start, end, _ = common.sidebar(sources=True, multi=True)
 how = common.granularity(start, end, "g_price_reddit")
 tickers = common.selected_tickers()
@@ -27,8 +27,6 @@ src_ids = common.selected_sources()
 if not tickers or not src_ids:
     common.nothing_selected(CARDS, "ยังไม่ได้เลือกหลักทรัพย์หรือแหล่งข้อมูล จึงไม่มีข้อมูลแสดง")
 one = len(tickers) == 1
-st.caption("**ส่วนขยายนอก proposal:** หน้า Price and Return ที่เพิ่มปริมาณ Reddit (โพสต์และความคิดเห็นทั้งหมดของตลาดในแหล่งข้อมูลที่เลือก) ลงบนแกนเวลาเดียวกัน  \n"
-           + ("แสดงราคาปิดของสินทรัพย์ที่เลือก" if one else "เลือกหลายตัวจึงแสดงดัชนีที่สะสมจากผลตอบแทนเฉลี่ยของทุกตัว (ชั่วโมงแรก = 100) เนื่องจากแต่ละตัวซื้อขายไม่พร้อมกัน") + "  ดูด้วยตาว่าตอนปริมาณ Reddit สูงขึ้น ราคาเป็นอย่างไร เป็นเพียงการเทียบ ไม่ใช่เหตุและผล")
 
 hourly = q("price_series_for", tickers, start, end)
 reddit = q("total_volume_series", start, end, src_ids)
@@ -44,7 +42,7 @@ suffix = "" if one else " (เฉลี่ยของ %d ตัว)" % hourly.t
 common.kpi_cards([
     (CARDS[0], "{:,}".format(int(reddit.texts.sum())) if not reddit.empty else "0", "โพสต์และความคิดเห็นทั้งหมดของตลาดในแหล่งข้อมูลที่เลือก (ไม่แยกตามสินทรัพย์)"),
     (CARDS[1], common.money(reddit.zscore.max()) if not reddit.empty else "n/a", "Z-score ของปริมาณ Reddit ทั้งตลาดสูงสุดในช่วง เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน" + common.REDDIT_Z_NOTE),
-    (CARDS[2], common.money(returns.mean()), "ln(close_t ÷ close_t−1) × 100 รวมทุกชั่วโมงในช่วงที่เลือก (ผลรวมของ Current Return ส่วนขยาย)" + suffix),
+    (CARDS[2], common.money(returns.mean()), "ln(close_t ÷ close_t−1) × 100 รวมทุกชั่วโมงในช่วงที่เลือก" + suffix),
     (CARDS[3], common.money(trading_z.max()), "Z-score ของปริมาณซื้อขายของราคา (ตารางที่ 8 ข้อ 2) สูงสุดในช่วง ไม่ใช่ปริมาณ Reddit" + ("" if one else " (สูงสุดของทุกตัวที่เลือก)") + common.TRADING_Z_NOTE)])
 
 # ---- the price and the trading volume at the chosen level of time.  One asset: its close and its volume.  Several: the assets are not all traded in the same
@@ -76,23 +74,16 @@ MEASURES = {"Reddit Volume": ("texts", "Reddit Volume (ครั้ง)", common
             "Ticker Mention Count": ("mentions", "Ticker Mention Count (ครั้ง)", common.C_REDDIT, ",.4g")}
 picked = st.radio("เทียบกับ", list(MEASURES), horizontal=True, key="pr_reddit_measure")
 r_col, r_title, r_color, r_fmt = MEASURES[picked]
-st.caption("เลือกว่าจะเทียบกับ Reddit Volume (โพสต์และความคิดเห็นทั้งหมดของตลาด) หรือ Ticker Mention Count (จำนวนครั้งที่สินทรัพย์ที่เลือกถูกพูดถึง) ทุกกราฟด้านล่างเปลี่ยนตาม สีเส้นเหมือนหน้า Reddit Volume และ Ticker Mentions  \nZ-score ดูในการ์ดด้านบน")
 
 st.subheader("ราคาเทียบ %s" % picked)
 common.dual_chart(merged, "time", price_col, r_col, price_title, r_title, "pr_price", "ราคาปิด", picked, right_color=r_color, right_fmt=r_fmt, left_fmt=",.4g")
-st.caption("สีน้ำเงินคือราคา อีกเส้นคือ Reddit ที่เลือก ดูว่าช่วงที่เส้น Reddit พุ่ง ราคาเป็นอย่างไร")
 
 st.subheader("ปริมาณซื้อขายเทียบ %s" % picked)
 common.dual_chart(merged, "time", volume_raw_col, r_col, volume_raw_title, r_title, "pr_volume", "ปริมาณซื้อขาย", picked,
                   left_color=common.C_VOLUME, right_color=r_color, left_fmt=",.4g", right_fmt=r_fmt)
-st.caption("สีเขียวคือปริมาณซื้อขายของราคา" + ("" if one else " (เลือกหลายตัว: ปริมาณของแต่ละตัวเทียบกับค่าเฉลี่ยของตัวเอง = 100 แล้วเฉลี่ยของที่เลือก เหมือนหน้า Price and Return เนื่องจากแต่ละตัวมีหน่วยและขนาดต่างกัน)") + " ดูว่าปริมาณซื้อขายพุ่งพร้อมกับ Reddit ไหม ส่วน Z-score ของทั้งสองปริมาณดูในการ์ดด้านบน")
 
 st.subheader("RSI เทียบ %s" % picked)
 common.dual_chart(merged, "time", "rsi", r_col, rsi_title, r_title, "pr_rsi", "RSI", picked, left_color=common.C_RATE, right_color=r_color, left_fmt=".1f", right_fmt=r_fmt)
-st.caption("สีม่วงคือ RSI (ดัชนีความแข็งแกร่งสัมพัทธ์ 0 ถึง 100 เกิน 70 มักอ่านว่าซื้อมากเกินไป ต่ำกว่า 30 ขายมากเกินไป)")
 
 st.subheader("Normalized ATR เทียบ %s" % picked)
 common.dual_chart(merged, "time", "normalized_atr", r_col, natr_title, r_title, "pr_natr", "Normalized ATR", picked, left_color=common.C_NATR, right_color=r_color, left_fmt=".3f", right_fmt=r_fmt)
-st.caption("สีชมพูคือ Normalized ATR (ความผันผวนสัมพัทธ์ = ATR 24 ชั่วโมง ÷ ราคาปิด × 100) ดูว่าตอน Reddit คึกคัก ความผันผวนสูงขึ้นไหม")
-st.warning("**ดูภาพรวมย้อนหลัง ไม่ใช่สัญญาณซื้อขาย**  \n"
-           "เหตุการณ์ใหญ่ทำให้ทั้ง Reddit และราคาขยับพร้อมกัน จึงเห็นเส้นขึ้นลงไปด้วยกันได้โดยมิได้หมายความว่าอย่างหนึ่งทำให้อีกอย่างขยับ")
