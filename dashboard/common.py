@@ -54,8 +54,9 @@ C_VOLUME = "#2ca02c"           # market trading volume                (green)
 C_REDDIT = "#ff7f0e"           # Reddit volume, comments, mentions    (orange)
 C_REDDIT_LIGHT = "#ffbb78"     # posts (a small share of the Reddit texts)
 C_Z = "#d62728"                # Reddit Volume Z-score                (red: unusual)
-C_SENT = "#17becf"             # Sentiment Score                      (teal: a neutral colour, not a verdict)
-C_RATE = "#9467bd"             # Ticker Mention Rate, RSI             (purple)
+C_SENT = "#8e44ad"             # Sentiment Score                      (dark purple: far from the blue of the price and the orange of the Reddit volume)
+C_RATE = "#17becf"             # Ticker Mention Rate                  (teal)
+C_RSI = "#34495e"              # RSI                                  (dark slate)
 C_ATR = "#8c564b"              # ATR                                  (brown)
 C_NATR = "#e377c2"             # Normalized ATR                       (pink)
 
@@ -755,7 +756,7 @@ def multi_series_chart(df, x, y, series, title, height=CHART_HEIGHT, bar=False, 
     return chart.properties(height=CHART_HEIGHT)
 
 
-COLOR_NAMES = {C_PRICE: "น้ำเงิน", C_VOLUME: "เขียว", C_REDDIT: "ส้ม", C_Z: "แดง", C_SENT: "เขียวอมฟ้า", C_RATE: "ม่วง"}
+COLOR_NAMES = {C_PRICE: "น้ำเงิน", C_VOLUME: "เขียว", C_REDDIT: "ส้ม", C_Z: "แดง", C_SENT: "ม่วง", C_RATE: "เขียวอมฟ้า", C_RSI: "เทาเข้ม", C_ATR: "น้ำตาล", C_NATR: "ชมพู"}
 
 
 def dual_axis(df, x, left, right, left_title, right_title, height=CHART_HEIGHT, left_color=C_PRICE, right_color=C_SENT,

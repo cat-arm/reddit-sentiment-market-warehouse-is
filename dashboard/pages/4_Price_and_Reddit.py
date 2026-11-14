@@ -83,7 +83,7 @@ common.dual_chart(merged, "time", volume_raw_col, r_col, volume_raw_title, r_tit
                   left_color=common.C_VOLUME, right_color=r_color, left_fmt=",.4g", right_fmt=r_fmt)
 
 st.subheader("RSI เทียบ %s" % picked)
-common.dual_chart(merged, "time", "rsi", r_col, rsi_title, r_title, "pr_rsi", "RSI", picked, left_color=common.C_RATE, right_color=r_color, left_fmt=".1f", right_fmt=r_fmt)
+common.dual_chart(merged, "time", "rsi", r_col, rsi_title, r_title, "pr_rsi", "RSI", picked, left_color=common.C_RSI, right_color=r_color, left_fmt=".1f", right_fmt=r_fmt)
 
 st.subheader("Normalized ATR เทียบ %s" % picked)
 common.dual_chart(merged, "time", "normalized_atr", r_col, natr_title, r_title, "pr_natr", "Normalized ATR", picked, left_color=common.C_NATR, right_color=r_color, left_fmt=".3f", right_fmt=r_fmt)

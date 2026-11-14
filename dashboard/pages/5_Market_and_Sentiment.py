@@ -164,7 +164,7 @@ else:
 
     st.subheader("Reddit Volume เทียบค่าความรู้สึกเฉลี่ย (%s)" % label)
     common.dual_chart(shown, "time", "reddit_volume", "sentiment_mean", "Reddit Volume (จำนวนข้อความ)", "Sentiment Score", "s_z_sent",
-                      "Reddit Volume", "Sentiment Score", left_color=common.C_Z, left_fmt=",.0f")
+                      "Reddit Volume", "Sentiment Score", left_color=common.C_REDDIT, left_fmt=",.0f")
 
 # ---- does higher sentiment go with a higher return?  every ticked ticker-hour with text is one sample
 st.subheader("ความสัมพันธ์ระหว่างระดับความรู้สึกกับผลตอบแทน")

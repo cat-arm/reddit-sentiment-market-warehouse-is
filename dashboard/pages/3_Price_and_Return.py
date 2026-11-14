@@ -90,7 +90,7 @@ if not one:
     pass
 common.show(trend("volume" if one else "volume_index", "ปริมาณซื้อขาย (หน่วย)" if one else ("ปริมาณซื้อขาย (ค่าเฉลี่ย = 100)" if per_ticker else "ปริมาณซื้อขาย"),
                       common.C_VOLUME, "p_volume"), width="stretch")
-common.show(trend("rsi", "RSI", common.C_RATE, "p_rsi", y_domain=[0, 100])
+common.show(trend("rsi", "RSI", common.C_RSI, "p_rsi", y_domain=[0, 100])
                 + alt.Chart(alt.Data(values=[{"y": 30}, {"y": 70}])).mark_rule(strokeDash=[4, 4], color="gray")
                 .encode(y="y:Q"), width="stretch")
 if len(tickers) <= MAX_LINES:
