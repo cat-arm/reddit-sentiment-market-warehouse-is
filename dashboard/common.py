@@ -530,7 +530,7 @@ def sidebar(assets=True, sources=False, multi=False, sentiment=False, detection=
     return ticker, epoch(start_day), epoch(end_day, end_of_day=True), groups
 
 
-def nothing_selected(labels, message="ไม่ได้เลือกแหล่งข้อมูลหรือหลักทรัพย์ จึงไม่มีข้อมูลแสดง"):
+def nothing_selected(labels, message="ยังไม่ได้เลือกแหล่งข้อมูลหรือหลักทรัพย์ จึงไม่มีข้อมูลแสดง"):
     """Cards at 0 and a short note, then stop the page: used when a filter has nothing ticked."""
     kpi_cards([(label, "0", None) for label in labels])
     st.info(message)
@@ -787,7 +787,7 @@ def dual_chart(df, x, left, right, left_title, right_title, key, left_name, righ
     show_left = first.checkbox("%s (%s)" % (left_name, COLOR_NAMES.get(left_color, "")), value=True, key="dl_" + key)
     show_right = second.checkbox("%s (%s)" % (right_name, COLOR_NAMES.get(right_color, "")), value=True, key="dr_" + key)
     if not (show_left or show_right):
-        st.info("ติ๊กแสดงอย่างน้อย 1 เส้น")
+        st.info("เลือกแสดงอย่างน้อย 1 เส้น")
         return
     show(dual_axis(df, x, left, right, left_title, right_title, left_color=left_color, right_color=right_color,
                    show_left=show_left, show_right=show_right, **kwargs))

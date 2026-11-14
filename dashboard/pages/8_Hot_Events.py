@@ -73,9 +73,9 @@ for lv in LEVELS:
     state.setdefault("hs_cut_" + lv, DEFAULT_CUTS[lv])
 
 st.subheader("ตั้งค่าคะแนนและระดับของสัญญาณ (low / medium / high)")
-st.caption("แต่ละตัวชี้วัดมี **เกณฑ์เดียว** และ **คะแนน**: ถ้าสัญญาณนั้นผ่านเกณฑ์ (ค่า > เกณฑ์) ได้คะแนนของตัวชี้วัดนั้น แล้วเอาคะแนนที่ได้มาบวกกัน ผลรวมถึงกี่คะแนนก็ได้ระดับนั้น "
+st.caption("แต่ละตัวชี้วัดมี **เกณฑ์เดียว** และ **คะแนน**: หากสัญญาณนั้นผ่านเกณฑ์ (ค่า > เกณฑ์) ได้คะแนนของตัวชี้วัดนั้น แล้วนำคะแนนที่ได้มารวมกัน ผลรวมถึงกี่คะแนนก็ได้ระดับนั้น "
            "(เช่น คะแนนเต็ม 10 ผลรวมตั้งแต่ 8 = high)  เว้นเกณฑ์ว่างหรือใส่คะแนน 0 = ไม่ใช้ตัวชี้วัดนั้น  \n"
-           "คะแนนมาจาก KPI ที่เขียนไว้ใน proposal (Reddit Volume Z-score, Ticker Mention Rate, Sentiment Score และ Momentum, Trading Volume Z-score, Normalized ATR, Current Return) ซึ่งรู้ ณ ชั่วโมงนั้นและย้อนหลังเท่านั้น (Z-score เทียบ 24 ชั่วโมงก่อนหน้า) ไม่ใช้สถิติย้อนหลังทั้งช่วง (Win Rate, Spearman, Pearson) เพราะตอนที่สัญญาณเกิดยังรู้ค่าเหล่านั้นไม่ได้ ค่าเหล่านั้นแสดงเป็นคอลัมน์ประกอบการตีความ  \n"
+           "คะแนนมาจาก KPI ที่เขียนไว้ใน proposal (Reddit Volume Z-score, Ticker Mention Rate, Sentiment Score และ Momentum, Trading Volume Z-score, Normalized ATR, Current Return) ซึ่งรู้ ณ ชั่วโมงนั้นและย้อนหลังเท่านั้น (Z-score เทียบ 24 ชั่วโมงก่อนหน้า) ไม่ใช้สถิติย้อนหลังทั้งช่วง (Win Rate, Spearman, Pearson) เนื่องจากตอนที่สัญญาณเกิดยังรู้ค่าเหล่านั้นไม่ได้ ค่าเหล่านั้นแสดงเป็นคอลัมน์ประกอบการตีความ  \n"
            "สัญญาณที่ได้คะแนนไม่ถึงระดับ low จะไม่ถูกแสดง ค่าเริ่มต้นตั้งตามการกระจายของข้อมูลจริง (low ≥ 3, medium ≥ 5, high ≥ 8)")
 with st.expander("เกณฑ์ คะแนน และระดับ", expanded=False):
     with st.form("h_score_form", border=False):                                       # nothing below changes until the button Apply is pressed
@@ -97,7 +97,7 @@ with st.expander("เกณฑ์ คะแนน และระดับ", exp
         apply_col, reset_col, _ = st.columns([2, 2, 6])
         apply_col.form_submit_button("ใช้เกณฑ์นี้ (Apply)", type="primary", key="h_apply")
         reset_col.form_submit_button("คืนค่าเริ่มต้น", on_click=reset_scoring, key="h_level_reset")
-    st.caption("แก้เกณฑ์ คะแนน หรือระดับแล้วกด **ใช้เกณฑ์นี้ (Apply)** เกณฑ์จึงจะทำงานกับการ์ดและตารางด้านล่าง (ยังไม่กด ตัวเลขด้านล่างยังเป็นของเกณฑ์เดิม)")
+    st.caption("แก้เกณฑ์ คะแนน หรือระดับแล้วคลิก **ใช้เกณฑ์นี้ (Apply)** เกณฑ์จึงจะทำงานกับการ์ดและตารางด้านล่าง (ยังไม่คลิก ตัวเลขด้านล่างยังเป็นของเกณฑ์เดิม)")
 
 horizon, column = "Current Return", "log_return"                          # the statistics beside a signal are those of the same hour (Current Return); no horizon to pick
 rules = {m: (float(state["hs_%s_t" % m]), float(state["hs_%s_p" % m])) for m, *_ in METRICS if state.get("hs_%s_t" % m) is not None and float(state["hs_%s_p" % m]) > 0}
@@ -109,7 +109,7 @@ if not cuts["low"] <= cuts["medium"] <= cuts["high"] or cuts["low"] <= 0:
     st.info("คะแนนของระดับต้องเรียงจากน้อยไปมาก: low ≤ medium ≤ high และ low มากกว่า 0")
     st.stop()
 if cuts["high"] > total:
-    st.warning("ระดับ high ต้องการ %g คะแนน แต่คะแนนเต็มมีแค่ %g จึงไม่มีสัญญาณระดับ high" % (cuts["high"], total))
+    st.warning("ระดับ high ต้องการ %g คะแนน แต่คะแนนเต็มมีเพียง %g จึงไม่มีสัญญาณระดับ high" % (cuts["high"], total))
 GREEN, RED = "color: #1a9850; font-weight: 600", "color: #d73027; font-weight: 600"
 SOURCE = {"rz": lambda d: d.reddit_volume_zscore_24, "mr": lambda d: d.mention_rate, "ss": lambda d: d.sentiment_mean.abs(), "sm": lambda d: d.momentum.abs(),
           "tz": lambda d: pd.to_numeric(d.volume_zscore_24, errors="coerce"), "na": lambda d: pd.to_numeric(d.normalized_atr, errors="coerce"),
@@ -139,18 +139,18 @@ def listed_for(basis):
 
 listed_score, _ = listed_for("sentiment_mean")
 if found.empty:
-    st.info("ไม่พบชั่วโมงตามตัวกรองด้านซ้ายในช่วงที่เลือก ลองลดเกณฑ์หรือขยายช่วงเวลา")
+    st.info("ไม่พบชั่วโมงตามตัวกรองด้านซ้ายในช่วงที่เลือก โปรดลดเกณฑ์หรือขยายช่วงเวลา")
     st.stop()
 common.kpi_cards([(CARDS[0], "{:,}".format(len(listed_score)), "สัญญาณที่ได้คะแนนถึงระดับ low และตัดสินได้ (นับตามแท็บคะแนน) ที่ต่ำกว่า low ถูกคัดทิ้ง"),
                   (CARDS[1], str(listed_score.ticker.nunique()), None),
                   (CARDS[2], "{:,}".format(listed_score.hour_utc.nunique()), "หลายสินทรัพย์เกิดในชั่วโมงเดียวกันได้")])
 if listed_score.empty:
-    st.info("ไม่มีสัญญาณที่ได้คะแนนถึงระดับ low ลองลดเกณฑ์หรือขยายช่วงเวลา")
+    st.info("ไม่มีสัญญาณที่ได้คะแนนถึงระดับ low โปรดลดเกณฑ์หรือขยายช่วงเวลา")
     st.stop()
 
 st.caption("หน้านี้ใช้ข้อมูลทั้งหมด (ทั้งช่วงข้อมูล Reddit ถึงชั่วโมงล่าสุด, ทุกสินทรัพย์, ทุกชุมชน, โพสต์และคอมเมนต์, โมเดล VADER+FinBERT) ไม่มีตัวกรองด้านซ้าย  \n"
            "Reddit Volume, Z-score และความรู้สึกคิดจากข้อความทั้งหมดของตลาดในชั่วโมงนั้น ทุกสินทรัพย์ในชั่วโมงเดียวกันจึงได้ค่าตลาดเท่ากัน สินทรัพย์ต่างกันที่ราคา ปริมาณซื้อขาย และจำนวนข้อความที่พูดถึง  \n"
-           "ระดับมาจากคะแนนที่ตั้งไว้ด้านบน (proposal ระบุแค่ว่ามี low / medium / high ส่วนวิธีให้คะแนนเป็นส่วนขยาย)  \n"
+           "ระดับมาจากคะแนนที่ตั้งไว้ด้านบน (proposal ระบุเพียงว่ามี low / medium / high ส่วนวิธีให้คะแนนเป็นส่วนขยาย)  \n"
            "รายการนี้ใช้ประกอบการวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน")
 
 # ---- 1. how many ----------------------------------------------------------------------------------------------------------------
@@ -171,11 +171,11 @@ def signal_table(basis):
     listed, win_table = listed_for(basis)
     listed = listed[listed.level_name.isin(levels_shown)]
     if listed.empty:
-        st.info("ไม่มีสัญญาณในระดับที่เลือกที่ตัดสินได้ ในแท็บนี้ ลองเลือกระดับเพิ่มหรือลดเกณฑ์")
+        st.info("ไม่มีสัญญาณในระดับที่เลือกที่ตัดสินได้ ในแท็บนี้ โปรดเลือกระดับเพิ่มหรือลดเกณฑ์")
         return
     view = listed.head(300)
     follow = np.sign(view.direction) * np.sign(view[column])                   # +1 the price went with the sentiment, -1 against
-    OUTCOME = "ราคาตามความรู้สึก"
+    OUTCOME = "Price vs sentiment"
     SENT = "ความรู้สึกเฉลี่ย (ทั้งตลาด)" if basis == "sentiment_mean" else "ทิศทางส่วนใหญ่ (ทั้งตลาด)"
     shown = pd.DataFrame({
         "เวลา (UTC)": pd.to_datetime(view.hour_utc, unit="s", utc=True).dt.strftime("%Y-%m-%d %H:%M"),
@@ -183,11 +183,11 @@ def signal_table(basis):
         "Ticker Mention Count": view.mentions, "Reddit Volume (ทั้งตลาด)": view.market_volume, "Current Return (%)": view.log_return,
         "Trading Volume (ของสินทรัพย์)": view.trading_volume,
         SENT: view.sentiment_mean if basis == "sentiment_mean" else view.majority_final_status,
-        OUTCOME: np.where(follow > 0, "ตรง", np.where(follow < 0, "สวน", "-")),
+        OUTCOME: np.where(follow > 0, "Match", np.where(follow < 0, "Opposite", "-")),
         "n ของสินทรัพย์ (จำนวนชั่วโมงที่นับ)": view.pair_n, "Spearman ρ ของสินทรัพย์": view.pair_rho, "Pearson ρ ของสินทรัพย์": view.pair_pearson,
         "Win Rate ของสินทรัพย์ (%)": view.pair_win_rate, "p ของ Win Rate (ดิบ)": view.pair_p, "p ของ Win Rate (ปรับ BH ส่วนขยาย)": view.pair_p_bh,
         "นัยสำคัญหลังปรับ": np.where(view.pair_p_bh < 0.05, "★", "")})
-    colour = lambda col: [GREEN if v == "ตรง" else (RED if v == "สวน" else "") for v in col]
+    colour = lambda col: [GREEN if v == "Match" else (RED if v == "Opposite" else "") for v in col]
     numbers = {"คะแนน": "{:.1f}", "Ticker Mention Count": "{:,.0f}", "Reddit Volume (ทั้งตลาด)": "{:,.0f}", "Trading Volume (ของสินทรัพย์)": "{:,.0f}", "Current Return (%)": "{:+.3f}",
                "ความรู้สึกเฉลี่ย (ทั้งตลาด)": "{:.3f}", "n ของสินทรัพย์ (จำนวนชั่วโมงที่นับ)": "{:,.0f}", "Spearman ρ ของสินทรัพย์": "{:.3f}", "Pearson ρ ของสินทรัพย์": "{:.3f}",
                "Win Rate ของสินทรัพย์ (%)": "{:.1f}", "p ของ Win Rate (ดิบ)": "{:.3f}", "p ของ Win Rate (ปรับ BH ส่วนขยาย)": "{:.3f}"}
@@ -201,7 +201,7 @@ def signal_table(basis):
             "Current Return (%)": ("Cur. Return %", 105, "Current Return (%): ผลตอบแทนของสินทรัพย์ในชั่วโมงเดียวกัน (ln)"),
             "Trading Volume (ของสินทรัพย์)": ("Trading Vol", 105, "Trading Volume: ปริมาณซื้อขายของสินทรัพย์ในชั่วโมงนั้น (0 = ไม่มีข้อมูล)"),
             SENT: ("ความรู้สึก" if basis == "sentiment_mean" else "ทิศทาง", 90, "ความรู้สึกเฉลี่ย (หรือทิศทางส่วนใหญ่) ของข้อความทั้งตลาดในชั่วโมงนั้น"),
-            OUTCOME: ("ตามความรู้สึก", 100, "ราคาตามความรู้สึก: ตรง = ราคาของชั่วโมงเดียวกันไปทางเดียวกับความรู้สึก สวน = ตรงข้าม"),
+            OUTCOME: ("Price vs sent.", 100, "Price vs sentiment: Match = ราคาของชั่วโมงเดียวกันเคลื่อนไหวไปทางเดียวกับความรู้สึก, Opposite = ทิศทางตรงข้าม"),
             "n ของสินทรัพย์ (จำนวนชั่วโมงที่นับ)": ("n", 60, "n ของสินทรัพย์: จำนวนชั่วโมงที่นับใน Win Rate ทั้งช่วงข้อมูล"),
             "Spearman ρ ของสินทรัพย์": ("Spearman", 85, "Spearman ρ ของสินทรัพย์ (ระบบ 7.4)"), "Pearson ρ ของสินทรัพย์": ("Pearson", 80, "Pearson ρ ของสินทรัพย์ (ระบบ 7.4)"),
             "Win Rate ของสินทรัพย์ (%)": ("Win Rate %", 90, "Win Rate ของสินทรัพย์ (%) (ระบบ 7.4)"), "p ของ Win Rate (ดิบ)": ("p ดิบ", 65, "p-value ของ Win Rate (Binomial เทียบ 50%)"),
@@ -211,11 +211,11 @@ def signal_table(basis):
     st.dataframe(styled, hide_index=True, width="stretch", height=380, column_config=config)          # the numbers stay numbers, so a click on a header sorts them right
     tested = int(win_table.p.notna().sum())
     passed = int((win_table.p_bh < 0.05).sum())
-    st.caption("กดหัวคอลัมน์เพื่อเรียงลำดับ  \n"
-               "**ราคาตามความรู้สึก**: \"ตรง\" (เขียว) คือราคาของชั่วโมงเดียวกันไปทางเดียวกับความรู้สึก \"สวน\" (แดง) คือตรงข้าม  รายการแสดงเฉพาะสัญญาณที่ตัดสินได้ คือมีราคา ผลตอบแทนไม่ใช่ 0 และทิศทางความรู้สึกไม่ใช่ 0  \n"
+    st.caption("คลิกที่หัวคอลัมน์เพื่อเรียงลำดับ  \n"
+               "**Price vs sentiment**: \"Match\" (เขียว) หมายถึงราคาของชั่วโมงเดียวกันเคลื่อนไหวไปทางเดียวกับความรู้สึก \"Opposite\" (แดง) หมายถึงทิศทางตรงข้าม  รายการแสดงเฉพาะสัญญาณที่ตัดสินได้ คือมีราคา ผลตอบแทนไม่ใช่ 0 และทิศทางความรู้สึกไม่ใช่ 0  \n"
                "Spearman, Pearson, Win Rate และ p เป็นค่าของสินทรัพย์ (ทุกแถวของสินทรัพย์เดียวกันได้ค่าเดียวกัน) จากหน้า Statistical Analysis (ระบบ 7.4, panel Global ทุกข้อความ, ตัวกรองชุดเดียวกัน) ที่ Current Return  \n"
                "n คือจำนวนชั่วโมงของสินทรัพย์นั้นที่นับใน Win Rate ทั้งช่วงที่เลือก ไม่ใช่จำนวนแถวที่เห็น (ตารางแสดงล่าสุด 300 แถว) p คือ p-value ของ Win Rate (Binomial เทียบ 50%%) ★ คือ p ปรับ BH ต่ำกว่า 0.05 (BH เป็นส่วนขยายจาก proposal)  \n"
-               "ทดสอบ %d คู่ (สินทรัพย์ × Horizon) ถ้าไม่มีความสัมพันธ์จริง คาดว่าราว %.1f คู่จะได้ p ต่ำกว่า 0.05 เพียงเพราะโชค ผ่านการปรับ BH จริง %d คู่" % (tested, 0.05 * tested, passed))
+               "ทดสอบ %d คู่ (สินทรัพย์ × Horizon) หากไม่มีความสัมพันธ์จริง คาดว่าราว %.1f คู่จะได้ p ต่ำกว่า 0.05 เพียงโดยความบังเอิญ ผ่านการปรับ BH จริง %d คู่" % (tested, 0.05 * tested, passed))
 
 
 with tab_score:

@@ -35,7 +35,7 @@ v_th = int(st.session_state.get("d_v", 0))             # the Reddit Volume Thres
 s_th = common.sentiment_cut()                           # a float (absolute) or the name of the signed variant
 if not tickers or not communities or not statuses or not content_types:
     common.nothing_selected(["Sentiment Score", "Sentiment Momentum", "Reddit Volume Z-score สูงสุด"],
-                            "ไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
+                            "ยังไม่ได้เลือกหลักทรัพย์ ชุมชน หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
 one = len(tickers) == 1
 names = dict(zip(q("tickers").ticker, q("tickers").name))
 label = tickers[0] if one else "รวม %d ตัว" % len(tickers)
@@ -135,7 +135,7 @@ ticks = st.columns(len(MODEL_LINES))
 visible = [(name, color) for (model, name, color), cell in zip(MODEL_LINES, ticks)
            if cell.checkbox("%s (%s)" % (name, common.COLOR_NAMES.get(color, "เทาเข้ม" if color == "#555555" else "เขียวมะกอก")), value=True, key="ms_" + model)]
 if not visible:
-    st.info("ติ๊กแสดงอย่างน้อย 1 เส้น")
+    st.info("เลือกแสดงอย่างน้อย 1 เส้น")
 elif all(by_model[name].sentiment_mean.notna().sum() == 0 for name, _ in visible):
     st.info("ไม่มีข้อความที่พูดถึง %s ในช่วงนี้" % label)
 else:
@@ -212,7 +212,7 @@ else:
                "แท่งคือผลตอบแทนเฉลี่ยของระดับนั้น (ระดับที่ไม่มีข้อมูลจะไม่มีแท่ง)  \n"
                "เส้นสีดำคือช่วงเชื่อมั่น 95%% หากเส้นคร่อมศูนย์ แสดงว่าแยกจากศูนย์ไม่ได้  \n"
                "ค่าสหสัมพันธ์ Spearman ระหว่างความรู้สึกกับผลตอบแทนเท่ากับ %+.3f (%s ticker-hour)  \n"
-               "ใช้ผลตอบแทนแทนระดับราคา เพราะระดับราคามีแนวโน้มระยะยาวที่ทำให้การเทียบกับความรู้สึกโดยตรงคลาดเคลื่อน"
+               "ใช้ผลตอบแทนแทนระดับราคา เนื่องจากระดับราคามีแนวโน้มระยะยาวที่ทำให้การเทียบกับความรู้สึกโดยตรงคลาดเคลื่อน"
                % (paired.sentiment_mean.corr(paired[column], method="spearman"), "{:,}".format(len(paired))))
 
 st.subheader("สัดส่วนความคิดเห็นเชิงบวก ลบ และเป็นกลาง")
@@ -224,13 +224,13 @@ if mode == RATIO_MODES[0]:
                         value_name="สัดส่วน").dropna()
     ratios["ประเภท"] = ratios["ประเภท"].map({"pos_ratio": "บวก", "neg_ratio": "ลบ", "neu_ratio": "เป็นกลาง"})
     caption = ("สัดส่วนของข้อความบวก ลบ และเป็นกลางในชั่วโมงที่ผ่านตัวกรอง (ค่าจริงของ pos_ratio, neg_ratio และ neu_ratio)  \n"
-               "ชั่วโมงที่ส่วนใหญ่เป็นประเภทที่ติ๊กออกจะไม่ถูกนับ แต่ชั่วโมงที่เหลือยังมีข้อความประเภทนั้นปนอยู่")
+               "ชั่วโมงที่ส่วนใหญ่เป็นประเภทที่ยกเลิกการเลือกจะไม่ถูกนับ แต่ชั่วโมงที่เหลือยังมีข้อความประเภทนั้นปนอยู่")
 else:
     votes = data.vote_shares(series, None if how == "Hourly" else common.RESAMPLE[how])
     ratios = votes.rename(columns={"share": "สัดส่วน"}).assign(ประเภท=lambda d: d.status.map(
         {"positive": "บวก", "negative": "ลบ", "neutral": "เป็นกลาง"}))
     caption = ("สัดส่วนของ**ชั่วโมง**ที่ผลโหวตส่วนใหญ่เป็นบวก ลบ หรือเป็นกลาง (1 ชั่วโมงนับเป็น 1 โหวต)  \n"
-               "ประเภทที่ติ๊กออกจะเป็น 0 ทั้งหมด")
+               "ประเภทที่ยกเลิกการเลือกจะเป็น 0 ทั้งหมด")
 if not ratios.empty:
     area = (alt.Chart(ratios).mark_area().encode(
         x=alt.X("time:T", title=None), y=alt.Y("สัดส่วน:Q", stack="normalize", axis=alt.Axis(format="%")),
@@ -242,7 +242,7 @@ if not ratios.empty:
 # ---- which asset is the most positive / negative?  (management question 2 of 7.3): one row per ticked ticker
 st.subheader("สินทรัพย์ใดมีความรู้สึกเป็นบวกหรือลบมากที่สุด")
 if one:
-    st.info("เลือกหลักทรัพย์ตัวเดียว จึงไม่มีอะไรให้เรียงอันดับ ติ๊กหลายตัวเพื่อเทียบกัน")
+    st.info("เลือกหลักทรัพย์ตัวเดียว จึงไม่มีอะไรให้เรียงอันดับ เลือกหลายตัวเพื่อเทียบกัน")
 else:
     passes = data.threshold_mask(per_ticker, z_th, 0.0, v_min=v_th) & per_ticker.majority.isin(statuses)      # the hours that pass the Reddit Volume Threshold and the majority filter
     has_text = per_ticker[passes].dropna(subset=["sentiment_mean"])

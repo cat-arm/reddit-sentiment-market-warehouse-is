@@ -25,10 +25,10 @@ how = common.granularity(start, end, "g_price_reddit")
 tickers = common.selected_tickers()
 src_ids = common.selected_sources()
 if not tickers or not src_ids:
-    common.nothing_selected(CARDS, "ไม่ได้เลือกหลักทรัพย์หรือแหล่งข้อมูล จึงไม่มีข้อมูลแสดง")
+    common.nothing_selected(CARDS, "ยังไม่ได้เลือกหลักทรัพย์หรือแหล่งข้อมูล จึงไม่มีข้อมูลแสดง")
 one = len(tickers) == 1
 st.caption("**ส่วนขยายนอก proposal:** หน้า Price and Return ที่เพิ่มปริมาณ Reddit (โพสต์และความคิดเห็นทั้งหมดของตลาดในแหล่งข้อมูลที่เลือก) ลงบนแกนเวลาเดียวกัน  \n"
-           + ("แสดงราคาปิดของสินทรัพย์ที่เลือก" if one else "เลือกหลายตัวจึงแสดงดัชนีที่สะสมจากผลตอบแทนเฉลี่ยของทุกตัว (ชั่วโมงแรก = 100) เพราะแต่ละตัวซื้อขายไม่พร้อมกัน") + "  ดูด้วยตาว่าตอนปริมาณ Reddit สูงขึ้น ราคาเป็นอย่างไร เป็นแค่การเทียบ ไม่ใช่เหตุและผล")
+           + ("แสดงราคาปิดของสินทรัพย์ที่เลือก" if one else "เลือกหลายตัวจึงแสดงดัชนีที่สะสมจากผลตอบแทนเฉลี่ยของทุกตัว (ชั่วโมงแรก = 100) เนื่องจากแต่ละตัวซื้อขายไม่พร้อมกัน") + "  ดูด้วยตาว่าตอนปริมาณ Reddit สูงขึ้น ราคาเป็นอย่างไร เป็นเพียงการเทียบ ไม่ใช่เหตุและผล")
 
 hourly = q("price_series_for", tickers, start, end)
 reddit = q("total_volume_series", start, end, src_ids)
@@ -85,7 +85,7 @@ st.caption("สีน้ำเงินคือราคา อีกเส้�
 st.subheader("ปริมาณซื้อขายเทียบ %s" % picked)
 common.dual_chart(merged, "time", volume_raw_col, r_col, volume_raw_title, r_title, "pr_volume", "ปริมาณซื้อขาย", picked,
                   left_color=common.C_VOLUME, right_color=r_color, left_fmt=",.4g", right_fmt=r_fmt)
-st.caption("สีเขียวคือปริมาณซื้อขายของราคา" + ("" if one else " (เลือกหลายตัว: ปริมาณของแต่ละตัวเทียบกับค่าเฉลี่ยของตัวเอง = 100 แล้วเฉลี่ยของที่เลือก เหมือนหน้า Price and Return เพราะแต่ละตัวมีหน่วยและขนาดต่างกัน)") + " ดูว่าปริมาณซื้อขายพุ่งพร้อมกับ Reddit ไหม ส่วน Z-score ของทั้งสองปริมาณดูในการ์ดด้านบน")
+st.caption("สีเขียวคือปริมาณซื้อขายของราคา" + ("" if one else " (เลือกหลายตัว: ปริมาณของแต่ละตัวเทียบกับค่าเฉลี่ยของตัวเอง = 100 แล้วเฉลี่ยของที่เลือก เหมือนหน้า Price and Return เนื่องจากแต่ละตัวมีหน่วยและขนาดต่างกัน)") + " ดูว่าปริมาณซื้อขายพุ่งพร้อมกับ Reddit ไหม ส่วน Z-score ของทั้งสองปริมาณดูในการ์ดด้านบน")
 
 st.subheader("RSI เทียบ %s" % picked)
 common.dual_chart(merged, "time", "rsi", r_col, rsi_title, r_title, "pr_rsi", "RSI", picked, left_color=common.C_RATE, right_color=r_color, left_fmt=".1f", right_fmt=r_fmt)
@@ -95,4 +95,4 @@ st.subheader("Normalized ATR เทียบ %s" % picked)
 common.dual_chart(merged, "time", "normalized_atr", r_col, natr_title, r_title, "pr_natr", "Normalized ATR", picked, left_color=common.C_NATR, right_color=r_color, left_fmt=".3f", right_fmt=r_fmt)
 st.caption("สีชมพูคือ Normalized ATR (ความผันผวนสัมพัทธ์ = ATR 24 ชั่วโมง ÷ ราคาปิด × 100) ดูว่าตอน Reddit คึกคัก ความผันผวนสูงขึ้นไหม")
 st.warning("**ดูภาพรวมย้อนหลัง ไม่ใช่สัญญาณซื้อขาย**  \n"
-           "เหตุการณ์ใหญ่ทำให้ทั้ง Reddit และราคาขยับพร้อมกัน จึงเห็นเส้นขึ้นลงไปด้วยกันได้โดยไม่ได้แปลว่าอย่างหนึ่งทำให้อีกอย่างขยับ")
+           "เหตุการณ์ใหญ่ทำให้ทั้ง Reddit และราคาขยับพร้อมกัน จึงเห็นเส้นขึ้นลงไปด้วยกันได้โดยมิได้หมายความว่าอย่างหนึ่งทำให้อีกอย่างขยับ")
