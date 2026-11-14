@@ -40,11 +40,7 @@ statuses = ["positive", "negative", "neutral"]                                  
 content_types = ["Post", "Comment"]                                               # posts and comments
 model = "VADER+FinBERT"                                                           # the final sentiment of the proposal
 state = st.session_state
-state.setdefault("d_v", 0)                                                        # the two thresholds of DimDetectionConfig: the SAME values as the other pages (0 = no filter),
-state.setdefault("d_mode", "absolute")                                            # set in the box below the title (Apply) since this page has no sidebar
-state.setdefault("d_s", 0.0)
-state.setdefault("d_ss", 0.0)
-z_min, v_min, s_min = 0.0, int(state["d_v"]), common.sentiment_cut()              # they filter the hours and the texts out BEFORE the score (a volume spike stays "Z > 1.5" of the proposal)
+z_min, v_min, s_min = 0.0, 0, 0.0                                                 # no filter before the score: the score decides what is a signal (a volume spike stays "Z > 1.5" of the proposal)
 found = q("market_signals", start, end, tuple(tickers), tuple(statuses), z_min, s_min, tuple(communities), model, tuple(content_types), v_min, SPIKE_Z)      # every hour of the market x every asset with a price bar
 
 bars = q("price_series_for", tuple(tickers), start, end)[["ticker", "hour_utc", "normalized_atr", "volume"]].rename(columns={"volume": "trading_volume"})
@@ -68,7 +64,6 @@ def reset_scoring():
         state["hs_%s_t" % m], state["hs_%s_p" % m] = threshold, points
     for lv in LEVELS:
         state["hs_cut_" + lv] = DEFAULT_CUTS[lv]
-    state["d_v"], state["d_mode"], state["d_s"], state["d_ss"] = 0, "absolute", 0.0, 0.0     # and no filter before the score
 
 
 for m, _, threshold, points, _ in METRICS:
@@ -82,15 +77,8 @@ st.caption("แต่ละตัวชี้วัดมี **เกณฑ์�
            "(เช่น คะแนนเต็ม 10 ผลรวมตั้งแต่ 8 = high)  เว้นเกณฑ์ว่างหรือใส่คะแนน 0 = ไม่ใช้ตัวชี้วัดนั้น  \n"
            "คะแนนมาจาก KPI ที่เขียนไว้ใน proposal (Reddit Volume Z-score, Ticker Mention Rate, Sentiment Score และ Momentum, Trading Volume Z-score, Normalized ATR, Current Return) ซึ่งรู้ ณ ชั่วโมงนั้นและย้อนหลังเท่านั้น (Z-score เทียบ 24 ชั่วโมงก่อนหน้า) ไม่ใช้สถิติย้อนหลังทั้งช่วง (Win Rate, Spearman, Pearson) เพราะตอนที่สัญญาณเกิดยังรู้ค่าเหล่านั้นไม่ได้ ค่าเหล่านั้นแสดงเป็นคอลัมน์ประกอบการตีความ  \n"
            "สัญญาณที่ได้คะแนนไม่ถึงระดับ low จะไม่ถูกแสดง ค่าเริ่มต้นตั้งตามการกระจายของข้อมูลจริง (low ≥ 3, medium ≥ 5, high ≥ 8)")
-with st.expander("ตัวกรอง เกณฑ์ คะแนน และระดับ", expanded=False):
+with st.expander("เกณฑ์ คะแนน และระดับ", expanded=False):
     with st.form("h_score_form", border=False):                                       # nothing below changes until the button Apply is pressed
-        st.markdown("**ตัวกรองข้อมูลก่อนให้คะแนน (DimDetectionConfig)** ค่า 0 = ไม่กรอง  ค่าเดียวกับหน้าอื่น")
-        f_volume, f_sentiment = st.columns(2)
-        f_volume.slider("Reddit Volume Threshold (ชั่วโมงที่ข้อความทั้งตลาดอย่างน้อยกี่ข้อความ)", 0, 6000, step=100, key="d_v")
-        f_sentiment.radio("Sentiment Threshold: โหมด", common.SENTIMENT_MODES, format_func=common.MODE_LABELS.get, horizontal=True, key="d_mode")
-        f_sentiment.slider("absolute: เก็บข้อความที่ |ความรู้สึก| ≥ ค่านี้", 0.0, 0.95, step=0.05, key="d_s")
-        f_sentiment.slider("ค่าปกติ: บวก = คะแนน ≥ ค่านี้, ลบ = คะแนน ≤ ค่านี้", -0.95, 0.95, step=0.05, key="d_ss")
-        st.caption("ใช้ค่าตามโหมดที่เลือกเท่านั้น (อีกแถบไม่มีผล)  ตัวกรองนี้ตัดชั่วโมง/ข้อความออกก่อน แล้วค่อยให้คะแนนตามเกณฑ์ด้านล่าง")
         st.markdown("**เกณฑ์ คะแนน และระดับ**")
         head = st.columns([4, 2, 2])
         head[0].markdown("**ตัวชี้วัด**")
@@ -160,10 +148,10 @@ if listed_score.empty:
     st.info("ไม่มีสัญญาณที่ได้คะแนนถึงระดับ low ลองลดเกณฑ์หรือขยายช่วงเวลา")
     st.stop()
 
-st.caption("หน้านี้ใช้ข้อมูลทั้งหมด (ทั้งช่วงข้อมูล Reddit ถึงชั่วโมงล่าสุด, ทุกสินทรัพย์, ทุกชุมชน, โพสต์และคอมเมนต์, โมเดล VADER+FinBERT) ไม่มีตัวกรองด้านซ้าย ตัวกรองเดียวคือ DimDetectionConfig ในกล่องด้านบน (ตอนนี้ Reddit Volume อย่างน้อย %s ข้อความต่อชั่วโมง, Sentiment Threshold: %s)  \n"
+st.caption("หน้านี้ใช้ข้อมูลทั้งหมด (ทั้งช่วงข้อมูล Reddit ถึงชั่วโมงล่าสุด, ทุกสินทรัพย์, ทุกชุมชน, โพสต์และคอมเมนต์, โมเดล VADER+FinBERT) ไม่มีตัวกรองด้านซ้าย  \n"
            "Reddit Volume, Z-score และความรู้สึกคิดจากข้อความทั้งหมดของตลาดในชั่วโมงนั้น ทุกสินทรัพย์ในชั่วโมงเดียวกันจึงได้ค่าตลาดเท่ากัน สินทรัพย์ต่างกันที่ราคา ปริมาณซื้อขาย และจำนวนข้อความที่พูดถึง  \n"
            "ระดับมาจากคะแนนที่ตั้งไว้ด้านบน (proposal ระบุแค่ว่ามี low / medium / high ส่วนวิธีให้คะแนนเป็นส่วนขยาย)  \n"
-           "รายการนี้ใช้ประกอบการวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน" % ("{:,}".format(v_min) if v_min else "0 (ไม่กรอง)", common.cut_label(s_min)))
+           "รายการนี้ใช้ประกอบการวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน")
 
 # ---- 1. how many ----------------------------------------------------------------------------------------------------------------
 st.write("จำนวนสัญญาณ แยกตามกลุ่มสินทรัพย์และระดับ (แท็บคะแนน)")
