@@ -101,7 +101,7 @@ def reason(r):
 def variable_chart(feats, row):
     """The AUC of the price-only model plus ONE Reddit variable, one dot per variable: the dashed line is the price-only AUC (the base), the dotted grey line 0.5 (a random guess),
     the black line the 95% interval of the gain put on the base.  Green dot = the interval is above the base (kept), grey = it is not (taken out)."""
-    base_auc = row.get("price_only_auc")
+    base_auc = feats.auc_price_val.iloc[0] if "auc_price_val" in feats and not feats.empty else None            # the price-only AUC on the VALIDATION set: the gains are measured there
     var = feats[(feats.kind == "variable") & (feats.side == "reddit")].copy()
     if var.empty or base_auc is None or pd.isna(base_auc):
         return
@@ -112,7 +112,7 @@ def variable_chart(feats, row):
     var["ผล"] = ["ช่วยจริง" if low > 0 else "ไม่ช่วย" for low in var.add_one_low]
     var = var.sort_values("AUC", ascending=False)
     base = alt.Chart(var).encode(y=alt.Y("ตัวแปร:N", sort=list(var["ตัวแปร"]), title=None, axis=alt.Axis(labelLimit=420, labelOverlap=False)))
-    whisker = base.mark_rule(color="#333333").encode(x=alt.X("ต่ำ:Q", scale=alt.Scale(zero=False), title="Area Under the ROC Curve (AUC) ของแบบจำลองราคาล้วน + ตัวแปรนี้"), x2="สูง:Q")
+    whisker = base.mark_rule(color="#333333").encode(x=alt.X("ต่ำ:Q", scale=alt.Scale(zero=False), title="Area Under the ROC Curve (AUC) บน validation ของแบบจำลองราคาล้วน + ตัวแปรนี้"), x2="สูง:Q")
     dots = base.mark_circle(size=110, opacity=1).encode(
         x="AUC:Q", color=alt.Color("ผล:N", title=None, scale=alt.Scale(domain=["ช่วยจริง", "ไม่ช่วย"], range=["#1a9850", "#9e9e9e"])),
         tooltip=["ตัวแปร", alt.Tooltip("AUC:Q", title="Area Under the ROC Curve (AUC)", format=".4f"), alt.Tooltip("ต่ำ:Q", title="ช่วงเชื่อมั่น 95% ต่ำ", format=".4f"), alt.Tooltip("สูง:Q", title="ช่วงเชื่อมั่น 95% สูง", format=".4f"), "ผล"])
@@ -130,7 +130,7 @@ def reduced_metrics(row):
     out = pd.DataFrame([{"แบบจำลอง": "ก่อนตัด (ทุกตัวแปร 19 ตัว)", **{v: full[k] for k, v in names.items()}},
                         {"แบบจำลอง": "หลังตัด (%d ตัวแปรที่เก็บไว้)" % red["n_vars"], **{v: red[k] for k, v in names.items()}}])
     st.dataframe(out.style.format({v: "{:.3f}" for v in names.values()}), hide_index=True, width="stretch")
-    st.caption("ตัวแปรที่เก็บไว้เลือกจากชุดทดสอบเอง ค่าหลังตัดจึงอาจสูงเกินจริงเล็กน้อย")
+    st.caption("ตัวแปรที่เก็บไว้ถูกเลือกด้วยชุด validation ตารางนี้ใช้ชุดทดสอบประเมินครั้งเดียว ไม่ได้ใช้เลือกตัวแปร")
 
 
 def variable_table(feats):
@@ -148,10 +148,10 @@ def variable_table(feats):
 
 overview()
 common.block("การตัดตัวแปร",
-             "จากตัวแปรทั้งหมด 19 ตัว (Reddit 16 ตัว + ราคา 3 ตัว) ใช้ดูว่าตัวใดเก็บไว้ ตัวใดตัดออก และเพราะอะไร ของ panel ที่เลือก (Global หรือ Ticker ทุกข้อความ) ที่ Current Return คำนวณสดตามตัวกรองด้านซ้าย",
-             how="เริ่มจากแบบจำลองราคาล้วน (3 ตัว) แล้วเติมตัวแปร Reddit ทีละตัว ตัวที่ทำให้ Area Under the ROC Curve (AUC) เพิ่มอย่างมีนัยสำคัญ (ช่วงเชื่อมั่น 95% ไม่คร่อม 0) เก็บไว้ ตัวที่ไม่เพิ่มตัดออก · "
-                 "ทุกครั้งใช้ชุดฝึกและชุดทดสอบเดียวกับด้านบน, L1 คือวิธีที่บีบตัวแปรซ้ำซ้อนให้เป็น 0")
-family = st.radio("panel", ["global", "Ticker"], format_func=lambda f: "Global (ความรู้สึกรวมของทั้งตลาด)" if f == "global" else "Ticker (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น)", horizontal=True, key="lg_family")
+             "จากตัวแปรทั้งหมด 19 ตัว (Reddit 16 ตัว + ราคา 3 ตัว) ใช้ดูว่าตัวใดเก็บไว้ ตัวใดตัดออก และเพราะอะไร ของ panel Global (ความรู้สึกรวมของทั้งตลาด) ที่ Current Return คำนวณสดตามตัวกรองด้านซ้าย",
+             how="แบ่งเวลาเป็น ชุดฝึก → ชุด validation → ชุดทดสอบ: ตัวแปรถูกเลือกด้วย validation (ส่วนท้ายของชุดฝึก) ไม่ใช้ชุดทดสอบ · เริ่มจากแบบจำลองราคาล้วน (3 ตัว) แล้วเติมตัวแปร Reddit ทีละตัว ตัวที่ทำให้ Area Under the ROC Curve (AUC) บน validation เพิ่มอย่างมีนัยสำคัญ (ช่วงเชื่อมั่น 95% ไม่คร่อม 0) เก็บไว้ ตัวที่ไม่เพิ่มตัดออก · "
+                 "แล้วใช้ชุดทดสอบประเมินแบบจำลองสุดท้ายครั้งเดียว (ตารางก่อนตัด / หลังตัด) · L1 คือวิธีที่บีบตัวแปรซ้ำซ้อนให้เป็น 0")
+family = "global"
 row, feats = common.logistic_test_live(family, "all", tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_th, s_th, tuple(content_types), 0,
                                         "log_return", BOOT)
 if row.get("status") != "ok":

@@ -214,7 +214,7 @@ _EVAL_LOCK = threading.Lock()                                                   
 def logistic_test_live(family, variant, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, v_th, target, boot=100):
     """EXTENSION: the evaluation of `analysis.logistic_eval` for ONE panel and ONE horizon on the rows that pass the filters of the sidebar: train 75% / test 25% of the hours
     with a gap of 12 hours, L1 / L2 and C chosen inside the train part only, AUC on the test set with a day-block bootstrap interval (`boot` rounds), and the table of the
-    variables (L1 selection, drop-one, add-one).  -> (dict of the panel row, DataFrame of the variables; empty for the Baseline or when there is not enough data)."""
+    variables (L1 selection, drop-one, add-one on the VALIDATION set, the last third of the train part: the test set never chooses a variable).  -> (dict of the panel row, DataFrame of the variables; empty for the Baseline or when there is not enough data)."""
     from analysis import logistic_eval as E
     part = logistic_frame(family, variant, "ALL", tickers, start, end, communities, model, statuses, z_th, s_th, content_types, v_th)
     column = {label: col for col, label in E.HORIZONS.items()}[target]                       # `target` is the label of the horizon ('log_return', '1h' ...), the column differs
@@ -225,11 +225,10 @@ def logistic_test_live(family, variant, tickers, start, end, communities, model,
     with _EVAL_LOCK:
         row, context = E.analysis_panel(part, name, horizon, column, boot)
         features = E.analysis_features(context, {"panel": name, "horizon": horizon}, boot) if context is not None and variant != "baseline" else []
-        kept = [r["name"] for r in features if r["kind"] == "variable" and (r["side"] == "price" or r["add_one_low"] > 0)]
-        if context is not None and kept:                                                    # the model with only the variables kept in the table (price base + the Reddit variables that help)
-            reduced = E.evaluate_set(context["hours"], context["x"], context["y"], context["columns"], kept, boot)
-            if reduced is not None:
-                row["reduced"] = {**E.test_metrics(context["y"][context["test"]], reduced["p"]), "n_vars": len(kept)}
+        if context is not None and features:                                                # the cut: kept on the VALIDATION set, scored on the test set once (the model with every variable against the cut one)
+            cut = E.cut_on_test(context, features, boot)
+            if cut is not None:
+                row["reduced"] = {**cut["reduced"], "n_vars": cut["n_kept"], "delta_auc": cut["delta_auc"], "delta_low": cut["delta_low"], "delta_high": cut["delta_high"]}
     return row, pd.DataFrame(features)
 
 

@@ -110,6 +110,30 @@ class PanelAnalysisTests(unittest.TestCase):
         self.assertGreater(groups.loc["Market", "drop_one_delta"], groups.loc["Volume", "drop_one_delta"])
         self.assertTrue(pd.isna(groups.loc["Market", "add_one_delta"]))                    # the price group is the base of the add-one gain
 
+    def test_the_variables_are_chosen_on_a_validation_set_that_is_not_the_test_set(self):
+        """Advisor 2026-11-17: train -> validation -> test.  The validation set is the end of the train part (a gap of 12 hours between them) and never touches the test set."""
+        hours, train, test = self.context["hours"], self.context["train"], self.context["test"]
+        sub, val = le.validation_split(hours, train)
+        self.assertFalse(set(val) & set(test))
+        self.assertFalse(set(sub) & set(val))
+        self.assertTrue(set(sub) | set(val) <= set(train))
+        self.assertGreaterEqual(hours[val].min() - hours[sub].max(), (le.GAP_HOURS + 1) * 3600)      # a gap between the sub-train and the validation set
+        self.assertLess(hours[val].max(), hours[test].min())                                           # time order: sub-train < validation < test
+        rows = le.analysis_features(self.context, {"panel": "panel_global", "horizon": "log_return"}, boot=40)
+        self.assertEqual({r["n_val"] for r in rows}, {len(val)})                                      # the rows say which set they were measured on
+
+    def test_the_cut_is_scored_on_the_test_set_with_the_variables_of_the_validation(self):
+        rows = le.analysis_features(self.context, {"panel": "panel_global", "horizon": "log_return"}, boot=40)
+        kept = le.kept_variables(rows)
+        self.assertTrue(set(le.PRICE_FEATURES) <= set(kept))                                          # the price base is always kept
+        by_name = {r["name"]: r for r in rows if r["kind"] == "variable"}
+        for name in kept:
+            self.assertTrue(by_name[name]["side"] == "price" or by_name[name]["add_one_low"] > 0)       # a Reddit variable is kept only when its VALIDATION interval is above 0
+        cut = le.cut_on_test(self.context, rows, boot=40)
+        self.assertEqual(cut["kept"], kept)
+        self.assertLessEqual(cut["reduced_auc_low"], cut["reduced"]["auc"] + 1e-9)
+        self.assertEqual(len(cut["full"]) , len(cut["reduced"]))                                       # the same metrics for both models
+
 
 if __name__ == "__main__":
     unittest.main()
