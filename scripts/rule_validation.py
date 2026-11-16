@@ -23,7 +23,7 @@ Three sub-commands:
 Choices not fixed by the proposal (also in docs/METHOD_DECISIONS_NOT_IN_PROPOSAL.md): strata are the final_method
 values grouped as in the proposal (agree / one neutral + keyword / one neutral, no keyword / opposite + keyword /
 opposite, no keyword); only comments are sampled (a submission is title + body in every variant); the tuning and
-test sets are a random 50/50 split inside every stratum; hard_conflict_mixed_zero (0.01%) is skipped; a text the
+test sets are a random 50/50 split inside every stratum; hard_conflict_mixed_zero (0.01%) was skipped at first and added later by `topup`; a text the
 labeller cannot judge is labelled `unclear` and left out of every accuracy figure (its count is reported).
 Read-only on the database.  The sheet holds real Reddit text: keep it out of git (output/ is ignored).
 
@@ -58,6 +58,7 @@ STRATA = {
     "small_conflict_no_keyword": ("small_conflict_no_rule",),
     "hard_conflict_keyword": ("hard_conflict_rule",),
     "hard_conflict_no_keyword": ("hard_conflict_no_rule",),
+    "hard_conflict_mixed_zero": ("hard_conflict_mixed_zero",),       # added 2026-11-15 by `topup` (0.01% of the texts)
 }
 LABELS = ("positive", "negative", "neutral")
 UNCLEAR = "unclear"
@@ -210,6 +211,65 @@ def sample(args):
                                  int(bool(body))))
     print("wrote %d comments -> %s (fill human_label: positive / negative / neutral / unclear)"
           % (len(records), sheet_path))
+    return 0
+
+
+def topup(args):
+    """Add comments to the EXISTING labeling_sheet.csv / sample_key.csv until every final_method (the nine cases of the resolution
+    rule) has `--target` sampled comments, half tune and half test.  Rows already there (and their labels) are never touched and
+    never re-drawn; a case that already has `--target` or more is left alone; a case with none (hard_conflict_mixed_zero) is added.
+    New rows get an empty human_label and no Thai translation; the sheet is appended to, the key too.  Read-only on the database."""
+    out = Path(args.out_dir)
+    sheet_path, key_path = out / "labeling_sheet.csv", out / "sample_key.csv"
+    with key_path.open(newline="", encoding="utf-8") as handle:
+        key_rows = list(csv.DictReader(handle))
+    have = {}
+    for row in key_rows:
+        have.setdefault(row["final_method"], {"tune": 0, "test": 0})[row["split"]] += 1
+    taken = {int(row["src_rowid"]) for row in key_rows}
+    half = args.target // 2
+    rng = random.Random(args.seed)
+    db = connect(args.db, readonly=True)
+    try:
+        plan, records = [], []
+        for stratum, methods in STRATA.items():
+            for method in methods:
+                got = have.get(method, {"tune": 0, "test": 0})
+                slots = ["tune"] * max(0, half - got["tune"]) + ["test"] * max(0, half - got["test"])
+                ids = array("q", (row[0] for row in db.execute(
+                    "SELECT s.src_rowid FROM sentiment_item s JOIN filtered_text t ON t.src_rowid = s.src_rowid "
+                    "WHERE s.final_method = ? AND t.content_type = 'comment' ORDER BY s.src_rowid", (method,))))
+                population = sum(1 for rowid in ids)
+                pool = [rowid for rowid in ids if rowid not in taken]
+                picked = sorted(pool[i] for i in rng.sample(range(len(pool)), min(len(slots), len(pool))))
+                plan.append((method, got["tune"], got["test"], len(slots), len(picked)))
+                rng.shuffle(slots)
+                for rowid, split in zip(picked, slots):
+                    records.append((stratum, population, rowid, split))
+        if args.dry_run:
+            for method, tune, test, need, found in plan:
+                print("%-28s have tune %2d test %2d -> add %2d (found %d)" % (method, tune, test, need, found))
+            return 0
+        rng.shuffle(records)
+        with sheet_path.open(newline="", encoding="utf-8-sig") as handle:
+            last = max(int(row["sample_id"][1:]) for row in csv.DictReader(handle))
+        with sheet_path.open("a", newline="", encoding="utf-8") as sheet, key_path.open("a", newline="", encoding="utf-8") as key:
+            sheet_writer, key_writer = csv.writer(sheet), csv.writer(key)
+            for number, (stratum, population, rowid, split) in enumerate(records, last + 1):
+                row = db.execute(
+                    "SELECT s.vader_score, s.vader_status, s.finbert_score, s.finbert_status, s.rule_signal, "
+                    "s.final_sentiment, s.final_status, s.final_method, s.is_ambiguous, t.own_text "
+                    "FROM sentiment_item s JOIN filtered_text t ON t.src_rowid = s.src_rowid "
+                    "WHERE s.src_rowid = ?", (rowid,)).fetchone()
+                title, body = post_context(db, rowid)
+                vader, vader_status, finbert, finbert_status, rule, final, final_status, method, ambiguous, own = row
+                sample_id = "S%04d" % number
+                sheet_writer.writerow((sample_id, own, title, cut_words(body), "", "", "", ""))
+                key_writer.writerow((sample_id, split, stratum, population, rowid, method, vader, vader_status, finbert,
+                                     finbert_status, rule, final, final_status, ambiguous, int(bool(title)), int(bool(body))))
+    finally:
+        db.close()
+    print("added %d comments (S%04d..S%04d) to %s; label them in human_label" % (len(records), last + 1, last + len(records), sheet_path))
     return 0
 
 
@@ -379,6 +439,24 @@ def accuracy_table(labelled):
     return table
 
 
+def per_method_section(labelled):
+    """Accuracy per final_method (the nine cases of the resolution rule) and split, with n: the strata merge the two small
+    keyword cases, this table keeps them apart (their samples are small: read with care)."""
+    cells = {}
+    for row, label in labelled:
+        cell = cells.setdefault((row["final_method"], row["split"]), [0, 0, 0, 0])
+        cell[0] += 1
+        cell[1] += row["vader_status"] == label
+        cell[2] += row["finbert_status"] == label
+        cell[3] += row["final_status"] == label
+    lines = ["## ความแม่นรายกรณีของกฎรวมผล (final_method, แยกกรณีเล็กที่ถูกรวมในตารางกลุ่ม)", "",
+             "n น้อยมากในกรณี small_conflict_rule_agrees / small_conflict_rule_clash อ่านด้วยความระวัง; hard_conflict_mixed_zero ไม่ถูกสุ่ม", "",
+             "| กรณี | ชุด | n | VADER | FinBERT | รวมผล (final) |", "|---|---|---|---|---|---|"]
+    for (method, split), (n, v, f, x) in sorted(cells.items()):
+        lines.append("| %s | %s | %d | %.1f%% | %.1f%% | %.1f%% |" % (method, split, n, 100.0 * v / n, 100.0 * f / n, 100.0 * x / n))
+    return lines + [""]
+
+
 def weighted_accuracy(rows, correct):
     """Accuracy of `correct(key row, label) -> bool` over `rows`, every stratum weighted by its population."""
     per = {}
@@ -442,11 +520,15 @@ COMPARATORS = (("VADER", lambda r, lab: r["vader_status"] == lab), ("FinBERT", l
                ("เป็นกลางทุกข้อ", lambda r, lab: lab == "neutral"))
 
 
-def rule_rows(labelled):
-    """[(stratum, comparator name, n, final hits, other hits, only final, only other, p)] for one set of rows."""
+CASES = tuple(method for methods in STRATA.values() for method in methods)       # the nine final_method cases of the resolution rule
+
+
+def rule_rows(labelled, key="stratum", names=None):
+    """[(group, comparator name, n, final hits, other hits, only final, only other, p)] for one set of rows; groups are the strata (default)
+    or, with key="final_method" and names=CASES, the nine cases."""
     result = []
-    for stratum in STRATA:
-        rows = [(r, lab) for r, lab in labelled if r["stratum"] == stratum]
+    for stratum in names or STRATA:
+        rows = [(r, lab) for r, lab in labelled if r[key] == stratum]
         if not rows:
             continue
         for name, other in COMPARATORS:
@@ -457,6 +539,53 @@ def rule_rows(labelled):
             result.append((stratum, name, len(rows), hits_final, hits_other, only_final, only_other,
                            paired_p(only_final, only_other)))
     return result
+
+
+def decision_section(labelled):
+    """The decision rule set BEFORE seeing the results (see the header of the report), applied to every one of the nine cases: an alternative
+    replaces the combined rule only when it beats it by >= 5 points in the tune set AND by the same sign in the test set with exact sign-test p < 0.05."""
+    lines = ["## ผลตามเกณฑ์ตัดสินที่ตั้งไว้ รายกรณี (9 กรณี)", "",
+             "ส่วนต่าง = ความแม่นของวิธีเทียบ − ความแม่นของกฎรวมผล (จุดร้อยละ; บวก = วิธีเทียบดีกว่า) · p = sign test แบบ exact ของชุด test · "
+             "เปลี่ยนกฎก็ต่อเมื่อส่วนต่างชุด tune ≥ +5 และชุด test เป็นบวกด้วย และ p < 0.05; ไม่ถึง = คงกฎรวมผล", "",
+             "| กรณี | เทียบกับ | ส่วนต่าง tune | ส่วนต่าง test | p (test) | ผล |", "|---|---|---|---|---|---|"]
+    tune = {(r[0], r[1]): r for r in rule_rows([x for x in labelled if x[0]["split"] == "tune"], "final_method", CASES)}
+    test = {(r[0], r[1]): r for r in rule_rows([x for x in labelled if x[0]["split"] == "test"], "final_method", CASES)}
+    change = 0
+    for key in tune:
+        a, b = tune[key], test.get(key)
+        if not b:
+            continue
+        d_tune, d_test = 100.0 * (a[4] - a[3]) / a[2], 100.0 * (b[4] - b[3]) / b[2]
+        change_it = d_tune >= 5 and d_test > 0 and b[7] < 0.05
+        change += change_it
+        lines.append("| %s | %s | %+.0f | %+.0f | %.3f | %s |" % (key[0], key[1], d_tune, d_test, b[7], "**เปลี่ยนกฎ**" if change_it else "คงกฎ"))
+    lines += ["", "รวม: เปลี่ยนกฎ %d จาก %d การเปรียบเทียบ" % (change, len(tune)), ""]
+    return lines
+
+
+CONFLICT_CASES = tuple(c for c in CASES if c not in ("same_direction", "same_direction_far", "both_neutral"))     # the cases where the rule has a conflict to resolve
+
+
+def pooled_section(labelled):
+    """ADDITIONAL, not set before the results: every labelled comment pooled (tune + test; no rule was tuned on the tune set, so pooling is allowed), the
+    nine cases weighted equally (the sample holds the same number of comments per case), and the same pooled over the six conflict cases only (the only
+    ones where the combined rule differs from the models).  Exact sign test of the combined rule against each single model.  Read next to the
+    population-weighted table: the largest case (small_conflict_no_rule, 37% of the texts) favours FinBERT, which the equal weights hide."""
+    lines = ["## รวมทุกกรณี (เพิ่มเติม — ไม่ได้ตั้งเกณฑ์ไว้ก่อนดูผล)", "",
+             "รวมชุด tune + test (ไม่ได้ปรับกฎด้วยชุด tune จึงรวมได้) ทุกกรณีน้ำหนักเท่ากันเพราะสุ่มจำนวนเท่ากัน ต่างจากตารางถ่วงน้ำหนักตามจำนวนข้อความจริงที่กรณีใหญ่สุด "
+             "(small_conflict_no_rule 37% ของข้อความ) FinBERT สูงกว่า — ต้องอ่านคู่กัน · p = sign test แบบ exact", "",
+             "| ขอบเขต | n | VADER | FinBERT | กฎรวมผล | p เทียบ VADER | p เทียบ FinBERT |", "|---|---|---|---|---|---|---|"]
+    for title, cases in (("ทั้ง 9 กรณี", CASES), ("6 กรณีที่โมเดลขัดกัน", CONFLICT_CASES)):
+        rows = [(r, lab) for r, lab in labelled if r["final_method"] in cases]
+        n = len(rows)
+        acc = {m: 100.0 * sum(r[m + "_status"] == lab for r, lab in rows) / n for m in ("vader", "finbert", "final")}
+        ps = []
+        for m in ("vader", "finbert"):
+            only_final = sum(r["final_status"] == lab and r[m + "_status"] != lab for r, lab in rows)
+            only_other = sum(r[m + "_status"] == lab and r["final_status"] != lab for r, lab in rows)
+            ps.append("%.4f (%d : %d)" % (paired_p(only_final, only_other), only_final, only_other))
+        lines.append("| %s | %d | %.1f%% | %.1f%% | %.1f%% | %s | %s |" % (title, n, acc["vader"], acc["finbert"], acc["final"], ps[0], ps[1]))
+    return lines + ["", "(ในวงเล็บ = ข้อที่ถูกเฉพาะกฎรวมผล : ข้อที่ถูกเฉพาะวิธีเทียบ)", ""]
 
 
 def rule_table(title, rows, with_holm):
@@ -527,17 +656,39 @@ def distribution_section(labelled):
     return lines + [""]
 
 
+def cap_per_split(labelled, cap, seed):
+    """Keep at most `cap` labelled rows per (final_method, split) - the nine cases of the rule, so the two small keyword cases that
+    share a stratum are not thinned by each other: a seeded random pick (rows ordered by sample_id first, so the pick
+    does not depend on file order).  The sheet is not changed; the cap only decides which rows enter the accuracy tables."""
+    rng = random.Random(seed)
+    groups = {}
+    for row, label in sorted(labelled, key=lambda item: item[0]["sample_id"]):
+        groups.setdefault((row["final_method"], row["split"]), []).append((row, label))
+    kept = []
+    for key in sorted(groups):
+        rows = groups[key]
+        kept += rng.sample(rows, cap) if len(rows) > cap else rows
+    return kept
+
+
 def evaluate(args):
     out = Path(args.out_dir)
     labelled, unlabelled, unclear, second = read_sheet(out)
     if not labelled:
         raise SystemExit("no labelled rows in %s - fill human_label first" % (out / "labeling_sheet.csv"))
+    suffix = ""
+    if args.cap_per_split:
+        before = len(labelled)
+        labelled = cap_per_split(labelled, args.cap_per_split, args.cap_seed)
+        suffix = "_cap%d" % args.cap_per_split
+        print("cap %d per stratum and split (seed %d): %d of %d labelled rows kept" % (args.cap_per_split, args.cap_seed, len(labelled), before))
     table = accuracy_table(labelled)
     variants = read_variants(out)
     lines = ["# Rule validation (proposal 7.3 step 5)", "",
              *file_header("ความแม่นของ VADER เดี่ยว, FinBERT เดี่ยว, วิธีรวมผล และรูปแบบข้อความ 3 แบบ เมื่อเทียบกับป้ายที่ผู้พัฒนาติดเอง "
                           "(%d คอมเมนต์ที่ใช้ได้, ยังไม่มีป้าย %d, ติด unclear %d)" % (len(labelled), unlabelled, unclear),
-                          "scripts/rule_validation.py evaluate", "python steps/26_rule_validation.py evaluate",
+                          "scripts/rule_validation.py evaluate", "python steps/26_rule_validation.py evaluate" + (
+                              " --cap-per-split %d --cap-seed %d" % (args.cap_per_split, args.cap_seed) if args.cap_per_split else ""),
                           "labeling_sheet.csv (ป้าย) + sample_key.csv + variant_scores.csv ในโฟลเดอร์เดียวกัน"), "",
              "ความแม่น = สัดส่วนที่ประเภทความรู้สึก (positive/negative/neutral) ตรงกับป้ายที่ผู้พัฒนาติดเอง; "
              "ชุด tune ใช้ปรับกฎ, ชุด test ใช้ยืนยัน/รายงานผล", "",
@@ -556,6 +707,9 @@ def evaluate(args):
             lines.append("| **ถ่วงน้ำหนักตามจำนวนข้อความของกลุ่ม** | | %.1f%% | %.1f%% | %.1f%% |"
                          % (100 * overall["vader"], 100 * overall["finbert"], 100 * overall["final"]))
         lines.append("")
+    lines += per_method_section(labelled)
+    lines += decision_section(labelled)
+    lines += pooled_section(labelled)
     lines += distribution_section(labelled)
     lines += ["## เทียบกฎรวมผล (final) กับทางเลือกง่าย ๆ ทีละกลุ่ม", "",
               "ทางเลือก: ใช้ VADER เดี่ยว, FinBERT เดี่ยว, หรือตอบ neutral ทุกข้อ (= \"คง neutral\" ตามข้อสังเกตของอาจารย์). "
@@ -573,11 +727,12 @@ def evaluate(args):
         lines += ["## ความสอดคล้องระหว่างผู้ติดป้าย", "",
                   "ผู้ติดป้ายสองคนตรงกัน %d/%d ข้อความ, Cohen's kappa = %s" % (
                       sum(a == b for a, b in pairs), len(pairs), "–" if value is None else "%.2f" % value), ""]
-    (out / "rule_validation.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    with (out / "rule_validation.csv").open("w", newline="", encoding="utf-8") as sink:
+    (out / ("rule_validation%s.md" % suffix)).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with (out / ("rule_validation%s.csv" % suffix)).open("w", newline="", encoding="utf-8") as sink:
         sink.write("\n".join(file_header(
             "จำนวนข้อความที่แต่ละวิธีตอบถูก แยกตามกลุ่มกฎและชุด tune/test (ข้อมูลชุดเดียวกับ rule_validation.md)",
-            "scripts/rule_validation.py evaluate", "python steps/26_rule_validation.py evaluate",
+            "scripts/rule_validation.py evaluate", "python steps/26_rule_validation.py evaluate" + (
+                " --cap-per-split %d --cap-seed %d" % (args.cap_per_split, args.cap_seed) if args.cap_per_split else ""),
             "labeling_sheet.csv + sample_key.csv", comment=True)) + "\n")
         writer = csv.writer(sink)
         writer.writerow(("stratum", "split", "n", "vader_correct", "finbert_correct", "final_correct"))
@@ -602,14 +757,23 @@ def main(argv=None):
     drawer.add_argument("--stratum", action="append", help="draw only this stratum (repeatable)")
     drawer.add_argument("--exclude-dir", action="append",
                         help="never re-draw texts listed in <dir>/sample_key.csv (repeatable)")
+    adder = sub.add_parser("topup", help="add comments to the existing sheet until every final_method has --target of them")
+    adder.add_argument("--db", default=str(DEFAULT_DB))
+    adder.add_argument("--out-dir", default=str(OUT_DIR))
+    adder.add_argument("--target", type=int, default=50, help="comments per final_method, half tune and half test")
+    adder.add_argument("--seed", type=int, default=20261115)
+    adder.add_argument("--dry-run", action="store_true", help="only print how many rows would be added")
     scorer = sub.add_parser("score", help="score the three text variants of every sampled comment")
     scorer.add_argument("--db", default=str(DEFAULT_DB))
     scorer.add_argument("--out-dir", default=str(OUT_DIR))
     scorer.add_argument("--device", default="auto", choices=("auto", "cpu", "mps", "cuda"))
     checker = sub.add_parser("evaluate", help="compare VADER / FinBERT / final / text variants against the human labels")
     checker.add_argument("--out-dir", default=str(OUT_DIR))
+    checker.add_argument("--cap-per-split", type=int, default=0,
+                         help="use at most N labelled rows per final_method (case) and split (seeded random pick); writes rule_validation_capN.md/.csv")
+    checker.add_argument("--cap-seed", type=int, default=20261104, help="seed of the pick above (fixed before looking at the result)")
     args = parser.parse_args(argv)
-    return {"sample": sample, "score": score, "evaluate": evaluate}[args.command](args)
+    return {"sample": sample, "topup": topup, "score": score, "evaluate": evaluate}[args.command](args)
 
 
 if __name__ == "__main__":

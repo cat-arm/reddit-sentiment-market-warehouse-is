@@ -104,7 +104,8 @@ class RuleValidationTests(unittest.TestCase):
                 writer.writerows(sheet)
             self.assertEqual(rule_validation.main(["evaluate", "--out-dir", str(out)]), 0)
             report = (out / "rule_validation.md").read_text(encoding="utf-8")
-            for expected in ("same_direction_far", "cascade", "Holm", "Cohen's kappa", "unclear 7"):
+            unclear = len(range(2, len(sheet), 4))                                       # every 4th row (offset 2) is labelled unclear
+            for expected in ("same_direction_far", "cascade", "Holm", "Cohen's kappa", "unclear %d" % unclear):
                 self.assertIn(expected, report)
 
     def test_accuracy_counts_and_weighting(self):
