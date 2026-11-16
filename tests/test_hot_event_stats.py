@@ -42,7 +42,7 @@ class HotEventsLookupTests(unittest.TestCase):
         checked = 0
         for row in table.itertuples(index=False):
             ticker, rate = row[1], row[table.columns.get_loc("Win Rate ของสินทรัพย์ (%)")]
-            key = (ticker, "Current Return")
+            key = (ticker, "Current Return")                                               # the default period of the page
             if key in win and rate == rate:
                 self.assertAlmostEqual(float(rate), win[key][0], places=0, msg=ticker)
                 checked += 1
