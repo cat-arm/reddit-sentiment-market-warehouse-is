@@ -19,7 +19,9 @@ def panel(n_hours=400, tickers=("AAA", "BBB"), signal=True, seed=0):
                    "sentiment_abs_mean": abs(s), "pos_ratio": 0.4 + 0.1 * s, "neg_ratio": 0.3 - 0.1 * s,
                    "majority_final_status": "positive" if s > 0 else "negative", "voter_agreement_ratio": 0.5,
                    "reddit_volume_zscore_24": rng.normal(), "random_direction": rng.choice([-1, 1]),
-                   "sentiment_momentum_1h": rng.normal()}
+                   "sentiment_momentum_1h": rng.normal(),
+                   "reddit_total_volume": rng.integers(50, 500), "reddit_mention_count": rng.integers(0, 50), "reddit_mention_rate": rng.uniform(0, 10),
+                   "volume": rng.uniform(1e3, 1e5), "market_volume_zscore_24": rng.normal(), "normalized_atr": rng.uniform(0.1, 2)}      # Volume (3 more) and Market groups
             for k in (1, 2, 3, 6, 12):
                 row["sentiment_lag_%dh" % k] = rng.normal()
             drive = s if signal else rng.normal()

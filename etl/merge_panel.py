@@ -11,6 +11,8 @@ Base = `market_hourly_features` (valid price bars only, one row per ticker x hou
 Columns: scope, variant, ticker, big_group (DimTicker.AssetClass), hour_utc (epoch s of the floored hour),
          market columns (close ... volume_zscore_24 renamed market_volume_zscore_24),
          every Reddit feature of reddit_hourly_features, and has_reddit_data (1 if a Reddit row exists).
+reddit_total_volume = all texts of the hour, reddit_mention_count = texts that mention this ticker in the hour, reddit_mention_rate (%) = count / total x 100
+(EXTENSION 2026-11-15: variables of the Logistic Regression, the same in every scope; 0 when the ticker has no text that hour, NULL when the whole hour has none).
 Missing Reddit hour: reddit_volume = 0 (no texts is a real count), every sentiment column stays NULL
 (0 would mean "neutral", which is a different statement).  Rebuilt on every run.
 
@@ -38,6 +40,9 @@ SELECT s.scope, s.variant, m.ticker, d.AssetClass AS big_group,
        {market},
        m.volume_zscore_24 AS market_volume_zscore_24,
        COALESCE(r.reddit_volume, 0) AS reddit_volume,
+       t.reddit_volume AS reddit_total_volume,
+       COALESCE(k.reddit_volume, 0) AS reddit_mention_count,
+       100.0 * COALESCE(k.reddit_volume, 0) / NULLIF(t.reddit_volume, 0) AS reddit_mention_rate,
        {reddit},
        CASE WHEN r.hour_utc IS NULL THEN 0 ELSE 1 END AS has_reddit_data
 FROM market_hourly_features m
@@ -49,6 +54,10 @@ LEFT JOIN reddit_hourly_features r
        ON r.variant = s.variant
       AND r.ticker = CASE s.scope WHEN 'ticker' THEN m.ticker ELSE 'ALL' END
       AND r.hour_utc = CAST(strftime('%s', m.hour_bucket) AS INTEGER)
+LEFT JOIN reddit_hourly_features k            -- the texts that mention THIS ticker (whatever the scope), for the Ticker Mention Rate
+       ON k.variant = 'all' AND k.ticker = m.ticker AND k.hour_utc = CAST(strftime('%s', m.hour_bucket) AS INTEGER)
+LEFT JOIN reddit_hourly_features t            -- all the texts of the hour
+       ON t.variant = 'all' AND t.ticker = 'ALL' AND t.hour_utc = CAST(strftime('%s', m.hour_bucket) AS INTEGER)
 """
 
 

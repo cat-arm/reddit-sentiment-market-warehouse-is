@@ -8,7 +8,10 @@ AUC-ROC against a random baseline, coefficients as feature importance.  Decision
   groups     Level     sentiment_mean, sentiment_abs_mean
              Direction pos_ratio, neg_ratio
              Vote      majority_final_status (positive=+1, neutral=0, negative=-1), voter_agreement_ratio
-             Volume    reddit_volume_zscore_24
+             Volume    reddit_volume_zscore_24, reddit_total_volume, reddit_mention_count, reddit_mention_rate     (the last three: EXTENSION 2026-11-15; total = all texts of the hour, count = texts that mention the asset, rate = count / total x 100; the same in Global and Ticker)
+             Market    log_trading_volume, market_volume_zscore_24, normalized_atr     (EXTENSION 2026-11-15, price side of the SAME hour:
+                       known when the bar closes, so no leakage; a trading volume of 0 is MISSING (as in etl.market_features), the
+                       volume enters as ln(volume) because it spans orders of magnitude between assets)
              Lag       sentiment_lag_1h/2h/3h/6h/12h
              Momentum  sentiment_momentum_1h
              panel_baseline uses the single column random_direction instead (a no-information yardstick)
@@ -52,7 +55,8 @@ GROUPS = {
     "Level": ["sentiment_mean", "sentiment_abs_mean"],
     "Direction": ["pos_ratio", "neg_ratio"],
     "Vote": ["majority_final_status_num", "voter_agreement_ratio"],
-    "Volume": ["reddit_volume_zscore_24"],
+    "Volume": ["reddit_volume_zscore_24", "reddit_total_volume", "reddit_mention_count", "reddit_mention_rate"],
+    "Market": ["log_trading_volume", "market_volume_zscore_24", "normalized_atr"],
     "Lag": ["sentiment_lag_1h", "sentiment_lag_2h", "sentiment_lag_3h", "sentiment_lag_6h", "sentiment_lag_12h"],
     "Momentum": ["sentiment_momentum_1h"],
 }
@@ -68,6 +72,7 @@ def prepare(df):
     """Add the numeric vote column; returns a copy sorted by time."""
     out = df.copy()
     out["majority_final_status_num"] = out["majority_final_status"].map(VOTE)
+    out["log_trading_volume"] = np.log(out["volume"].where(out["volume"] > 0))        # volume 0 = no data -> missing, never a value
     return out.sort_values(["hour_utc", "ticker"], kind="stable").reset_index(drop=True)
 
 
@@ -168,7 +173,8 @@ def run(db_path=DEFAULT_DB, figures=True):
     db = connect(db_path)
     try:
         cols = sorted({"ticker", "big_group", "hour_utc", "majority_final_status", "random_direction",
-                       *[c for g in GROUPS.values() for c in g if c != "majority_final_status_num"], *HORIZONS})
+                       *[c for g in GROUPS.values() for c in g if c not in ("majority_final_status_num", "log_trading_volume")],
+                       "volume", *HORIZONS})
         meta = dict(run_id=new_run_id(), analysis="logistic", created_at=results_store.now(),
                     config_hash=results_store.config_hash(dict(n_splits=N_SPLITS, gap=GAP_HOURS, min_rows=MIN_ROWS,
                                                                groups=GROUPS)))
