@@ -93,9 +93,9 @@ def reason(r):
     l1 = "L1 บีบเป็น 0 (ซ้ำซ้อนกับตัวแปรความรู้สึกอื่น)" if not r.l1_selected else "L1 เก็บไว้"
     gain = "เติมเข้าแบบจำลองราคาล้วนแล้ว Area Under the ROC Curve (AUC) เพิ่ม %+.4f (ช่วงเชื่อมั่น 95%%: %+.4f ถึง %+.4f)" % (r.add_one_delta, r.add_one_low, r.add_one_high)
     if r.add_one_low > 0:
-        return "ช่วยจริง (เก็บไว้)", gain + " · " + l1
+        return "ช่วยจริง (เก็บไว้)", gain + "; " + l1
     why = "เติมเข้าแบบจำลองราคาล้วนแล้ว Area Under the ROC Curve (AUC) ไม่เพิ่มอย่างมีนัยสำคัญ (%+.4f ช่วงเชื่อมั่น 95%%: %+.4f ถึง %+.4f คร่อม 0)" % (r.add_one_delta, r.add_one_low, r.add_one_high)
-    return "ไม่ช่วย (ตัดออก)", why + " · " + l1
+    return "ไม่ช่วย (ตัดออก)", why + "; " + l1
 
 
 def variable_chart(feats, row):
@@ -149,8 +149,8 @@ def variable_table(feats):
 overview()
 common.block("การตัดตัวแปร",
              "จากตัวแปรทั้งหมด 19 ตัว (Reddit 16 ตัว + ราคา 3 ตัว) ใช้ดูว่าตัวใดเก็บไว้ ตัวใดตัดออก และเพราะอะไร ของ panel Global (ความรู้สึกรวมของทั้งตลาด) ที่ Current Return คำนวณสดตามตัวกรองด้านซ้าย",
-             how="แบ่งเวลาเป็น ชุดฝึก → ชุด validation → ชุดทดสอบ: ตัวแปรถูกเลือกด้วย validation (ส่วนท้ายของชุดฝึก) ไม่ใช้ชุดทดสอบ · เริ่มจากแบบจำลองราคาล้วน (3 ตัว) แล้วเติมตัวแปร Reddit ทีละตัว ตัวที่ทำให้ Area Under the ROC Curve (AUC) บน validation เพิ่มอย่างมีนัยสำคัญ (ช่วงเชื่อมั่น 95% ไม่คร่อม 0) เก็บไว้ ตัวที่ไม่เพิ่มตัดออก · "
-                 "แล้วใช้ชุดทดสอบประเมินแบบจำลองสุดท้ายครั้งเดียว (ตารางก่อนตัด / หลังตัด) · L1 คือวิธีที่บีบตัวแปรซ้ำซ้อนให้เป็น 0")
+             how="แบ่งเวลาเป็น ชุดฝึก → ชุด validation → ชุดทดสอบ, ตัวแปรถูกเลือกด้วย validation (ส่วนท้ายของชุดฝึก) ไม่ใช้ชุดทดสอบ, เริ่มจากแบบจำลองราคาล้วน (3 ตัว) แล้วเติมตัวแปร Reddit ทีละตัว ตัวที่ทำให้ Area Under the ROC Curve (AUC) บน validation เพิ่มอย่างมีนัยสำคัญ (ช่วงเชื่อมั่น 95% ไม่คร่อม 0) เก็บไว้ ตัวที่ไม่เพิ่มตัดออก, "
+                 "แล้วใช้ชุดทดสอบประเมินแบบจำลองสุดท้ายครั้งเดียว (ตารางก่อนตัด / หลังตัด), L1 คือวิธีที่บีบตัวแปรซ้ำซ้อนให้เป็น 0")
 family = "global"
 row, feats = common.logistic_test_live(family, "all", tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_th, s_th, tuple(content_types), 0,
                                         "log_return", BOOT)

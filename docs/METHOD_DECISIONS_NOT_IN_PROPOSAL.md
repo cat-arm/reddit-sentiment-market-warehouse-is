@@ -625,6 +625,9 @@
 - **ที่ไม่เปลี่ยน:** AUC ของแต่ละ panel (ผลวิเคราะห์ที่ 1) ยังฝึกด้วยชุดฝึก 75% ทดสอบด้วยชุดทดสอบ 25% ท้ายเดิม สไลด์ 26, 27 ใช้ต่อได้
 - **ผลกระทบ:** validation เล็กกว่าชุดทดสอบ ช่วงเชื่อมั่นของ add-one / drop-one กว้างขึ้น ชุดตัวแปรที่ "ช่วยจริง" จึงอาจต่างจากเดิม (เดิมเลือกบนชุดทดสอบ: 5 ตัว) รายงานตามที่วัดได้ ไม่ปรับให้ตรงกับผลเดิม
 - **กระทบโค้ด:** `analysis/logistic_eval.py` (`validation_split`, `analysis_features` ทำบน validation, `kept_variables`, `cut_on_test`, ไฟล์ใหม่ `logistic_cut_test.csv`, ส่วน 5 ของรายงาน), `dashboard/common.py` (`logistic_test_live` ใช้ `cut_on_test`), หน้า 9 (กราฟใช้ AUC ราคาล้วนบน validation, ข้อความอธิบาย), `tests/test_logistic_eval.py` (+2 เทสต์), รายงาน `logistic_evaluation.md` / `logistic_features.csv` สร้างใหม่; **สไลด์ 27, 28 และคู่มือ `defence_study_guide_th.md` ต้องแก้ตามผลใหม่**
+- **ผลรายงานเต็ม (วัดจริง, `--boot 300`, 2026-11-17):** panel Global ที่ Current Return เก็บไว้ 8 จาก 19 ตัว (Reddit 5: sentiment_mean, pos_ratio, neg_ratio, majority_final_status_num, sentiment_momentum_1h + ราคา 3) AUC บนชุดทดสอบก่อนตัด 0.520 หลังตัด 0.518 ส่วนต่าง −0.002 (ช่วง −0.008 ถึง +0.005 คร่อม 0) ทุก horizon ส่วนต่างคร่อม 0; ตัวแปรราคา 3 ตัวคงไว้เสมอเพราะเป็นเส้นฐานที่ตัว Reddit ต้องชนะ (add-one วัดเฉพาะ Reddit 16 ตัว)
+- **หน้า Logistic เอาตัวเลือก Ticker ออก (ผู้ใช้สั่ง 2026-11-17 "เอาอันนี้ออก"):** ส่วน "การตัดตัวแปร" คำนวณสดเฉพาะ panel Global (ความรู้สึกรวมของทั้งตลาด); ผลของ panel Ticker ยังอยู่ในแผนที่สี AUC ภาพรวมและรายงาน; เลิกใช้คีย์ `lg_family`; ข้อความในหน้าเลิกใช้จุดกลางคั่น (·) เปลี่ยนเป็น "; " (ผู้ใช้ไม่ชอบ)
+- **กระทบโค้ด (เพิ่ม):** `dashboard/pages/9_Logistic_Regression.py` (`family = "global"`)
 
 ## 2026-11-16 ตัวกรองปริมาณ Reddit เปลี่ยนจาก "จำนวนข้อความ" เป็น Reddit Volume Z-score (ผู้ใช้สั่ง "เปลี่ยน filter จาก reddit volume เป็น z-score ทั้งหมดเลย")
 
