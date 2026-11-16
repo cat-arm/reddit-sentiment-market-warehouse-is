@@ -7,6 +7,9 @@ scikit-learn==1.9.1
 matplotlib==3.11.2
 seaborn==0.13.2
 
+# Cross-check of the ADF / KPSS written in scripts/spearman_assumptions_check.py (the script and its tests run without it: only the check and one test need it)
+statsmodels==0.15.0
+
 # Reads the approved proposal PDF (scripts/check_proposal_coverage.py)
 pypdf>=5
 
