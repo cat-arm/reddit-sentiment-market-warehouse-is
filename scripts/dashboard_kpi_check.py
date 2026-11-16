@@ -62,12 +62,19 @@ def run(db_path):
         c.check("1 Reddit Volume", "%s: รวมต่อชุมชน = รวมทั้งหมด" % wname, int(by_src.texts.sum()), int(tot.texts.sum()))
         # --- page 2: ticker mentions ---
         rank = data.mention_ranking(db_path, start, end)
+        unique_rank = data.mention_texts_ranking(db_path, start, end)
         for tk in TICKERS:
             row = rank[rank.ticker == tk].iloc[0]
             ment = c.q("SELECT COALESCE(SUM(m.mention_count), 0) FROM ticker_mentions m JOIN filtered_text p ON p.src_rowid = m.src_rowid "
                        "WHERE m.ticker = ? AND p.created_utc >= ? AND p.created_utc < ?", (tk, start, end + 3600))[0][0]
             c.check("2 Ticker Mentions", "%s %s: Ticker_mention_count" % (wname, tk), int(row.mentions), ment)
             c.check("2 Ticker Mentions", "%s %s: Ticker Mention Rate (%%)" % (wname, tk), row.mention_rate_pct, 100.0 * ment / n_raw)
+            # the count the page 1 (Reddit Volume and Ticker Mentions) shows since 2026-11-15: ONE per text and ticker (a text that names a ticker 3 times counts once)
+            uniq = c.q("SELECT COUNT(*) FROM ticker_mentions m JOIN filtered_text p ON p.src_rowid = m.src_rowid "
+                       "WHERE m.ticker = ? AND p.created_utc >= ? AND p.created_utc < ?", (tk, start, end + 3600))[0][0]
+            urow = unique_rank[unique_rank.ticker == tk].iloc[0]
+            c.check("1 Reddit Volume and Ticker Mentions", "%s %s: Ticker Mention Count (ข้อความที่พูดถึง นับ 1 ต่อหุ้น)" % (wname, tk), int(urow.mentions), uniq)
+            c.check("1 Reddit Volume and Ticker Mentions", "%s %s: Ticker Mention Rate (%%)" % (wname, tk), urow.mention_rate_pct, 100.0 * uniq / n_raw)
     # --- per ticker pages ---
     for wname, (start, end) in windows.items():
         for tk in TICKERS:

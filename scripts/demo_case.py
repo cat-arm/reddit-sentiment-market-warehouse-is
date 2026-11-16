@@ -95,12 +95,12 @@ def collect(db):
 
     out["p1"], _ = run_page("1_Reddit_Volume.py", WEEK, HOURLY)
     out["p1_full"], _ = run_page("1_Reddit_Volume.py", FULL, DAILY)
-    out["p2"], tables = run_page("2_Ticker_Mentions.py", WEEK, HOURLY)
+    out["p2"], tables = run_page("1_Reddit_Volume.py", WEEK, HOURLY)       # page 2 was merged into page 1 on 2026-11-15
     rank = data.mention_ranking(db, lo, hi).reset_index(drop=True)
     out["p2_top"] = [{"ticker": r.ticker, "mentions": int(r.mentions), "texts_about": int(r.texts_about), "rate_pct": round(float(r.mention_rate_pct), 3)}
                      for r in rank.head(6).itertuples()]
     out["p3"], _ = run_page("3_Price_and_Return.py", WEEK, HOURLY, ONE)
-    out["p3b_price_reddit"], _ = run_page("4_Price_and_Reddit.py", WEEK, HOURLY, ONE)          # extension: Price and Return with the Reddit volume
+    out["p3b_price_reddit"], _ = run_page("3_Price_and_Return.py", WEEK, HOURLY, ONE)          # Price and Reddit was merged into page 3 on 2026-11-15
     out["p4"], _ = run_page("5_Market_and_Sentiment.py", WEEK, HOURLY, ONE)
     ts = epoch(dt.date(2025, 4, 9)) + 17 * 3600                            # the busiest hour of the whole data set
     names = tuple(dict.fromkeys(data.sources(db).subreddit))

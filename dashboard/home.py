@@ -1,9 +1,9 @@
 """Home page of the dashboard (the first tab of dashboard/app.py, which holds the navigation).  Start with:   streamlit run dashboard/app.py
 
 Seven content pages live in dashboard/pages/ (the tabs at the top list them):
-  1 Reddit Volume          proposal 7.1-1   all posts + comments per hour and its Z-score (source + multi-ticker filters)
-  2 Ticker Mentions        proposal 7.1-2   how often each asset is mentioned, mention rate (source + multi-ticker filters)
-  3 Price and Return       proposal 7.2-1   close, volume, future returns, volatility
+  1 Reddit Volume and Ticker Mentions   proposal 7.1   all posts + comments per hour and its Z-score (never depends on the asset filter), then how often
+                           the ticked assets are mentioned, mention rate (source + multi-ticker filters)
+  3 Price and Return       proposal 7.2-1   close, volume, RSI, ATR next to the Reddit volume (Price and Reddit was merged into it 2026-11-15), future returns, volatility
   4 Market and Sentiment   proposal 7.5-1   price next to Reddit sentiment, ratios, majority status
   5 Statistical Analysis   proposal 7.5-2   p-values, win rate (live); Logistic Regression is page 9 (trained live, EXTENSION placement)
   7 Hot Events             EXTENSION        detected signal list (proposal 7.6): thresholds from the sidebar, returns after each signal (not a trading signal)
@@ -21,7 +21,7 @@ import streamlit as st  # noqa: E402
 from dashboard import common  # noqa: E402
 from dashboard.common import q
 
-common.setup("Reddit Sentiment × Securities Price", "🏠")
+common.setup("ความรู้สึกบน Reddit เทียบกับราคาหลักทรัพย์ (Reddit Sentiment × Securities Price)", "🏠")
 _, start, end, groups = common.sidebar()
 
 info = q("data_range")
@@ -33,14 +33,19 @@ price_hours = int(by_group.price_hours.sum()) if not by_group.empty else 0
 talked = int(by_group.talked_hours.sum()) if not by_group.empty else 0
 common.kpi_cards([
     ("ข้อความที่วิเคราะห์ความรู้สึกแล้ว", "{:,}".format(int(texts)),
-     "ข้อความทั้งหมดของ 6 ชุมชนในช่วงเวลาที่เลือก (ไม่แยกตามกลุ่มสินทรัพย์ เนื่องจากข้อความหนึ่งมิได้เป็นของสินทรัพย์กลุ่มใดกลุ่มหนึ่ง)"),
-    ("สินทรัพย์ที่เลือก", str(int(by_group.tickers.sum()) if not by_group.empty else 0), None),
+     common.explain("จำนวนโพสต์และความคิดเห็นของ 6 ชุมชนที่ผ่านการคัดกรองและวัดความรู้สึกแล้ว ในช่วงเวลาที่เลือก",
+                    "นับทุกข้อความในช่วงเวลาที่เลือก ไม่แยกตามกลุ่มสินทรัพย์ เพราะข้อความหนึ่งไม่ได้เป็นของสินทรัพย์กลุ่มใดกลุ่มหนึ่ง")),
+    ("สินทรัพย์ที่เลือก", str(int(by_group.tickers.sum()) if not by_group.empty else 0),
+     common.explain("จำนวนสินทรัพย์ในกลุ่มที่ติ๊กไว้ที่แถบด้านซ้าย", "นับสินทรัพย์ของกลุ่มที่เลือก จากทั้งหมด 34 ตัว")),
     ("จำนวนชั่วโมงที่มีราคา (รวมทุกสินทรัพย์)", "{:,}".format(price_hours),
-     "นับชั่วโมงที่มีราคาของแต่ละสินทรัพย์แล้วบวกกัน ไม่นับช่วงที่ตลาดปิด"),
+     common.explain("จำนวนชั่วโมงที่มีการซื้อขายจริง (มีราคา) รวมทุกสินทรัพย์ที่เลือก",
+                    "นับชั่วโมงที่มีราคาของแต่ละสินทรัพย์ แล้วบวกกัน ไม่นับช่วงตลาดปิด เช่น หุ้นช่วงกลางคืนและวันเสาร์อาทิตย์")),
     ("ชั่วโมงที่มีการกล่าวถึงสินทรัพย์", "{:,}".format(talked),
-     "นับจากชั่วโมงที่มีราคา โดยชั่วโมงนั้นต้องมีโพสต์หรือความคิดเห็นอย่างน้อย 1 ข้อความที่กล่าวถึงสินทรัพย์ตัวนั้น"
-     + (" (%.0f%% ของชั่วโมงที่มีราคา)" % (100.0 * talked / price_hours) if price_hours else ""))])
-st.subheader("ภาพรวมตามตัวกรอง")
+     common.explain("จำนวนชั่วโมงที่มีคนพูดถึงสินทรัพย์ใน Reddit",
+                    "นับเฉพาะชั่วโมงที่มีราคา และมีข้อความอย่างน้อย 1 ข้อความพูดถึงสินทรัพย์ตัวนั้น"
+                    + (" (คิดเป็น %.0f%% ของชั่วโมงที่มีราคา)" % (100.0 * talked / price_hours) if price_hours else "")))])
+common.block("ภาพรวมตามตัวกรอง", "ใช้ตรวจสอบจำนวนสินทรัพย์ ชั่วโมงที่มีราคา และชั่วโมงที่มีการกล่าวถึง แยกตามกลุ่มสินทรัพย์",
+             how="ชั่วโมงที่มีราคา = ชั่วโมงที่มีการซื้อขายจริง · ชั่วโมงที่มีคนพูดถึง = ชั่วโมงที่มีราคาและมีข้อความอย่างน้อย 1 ข้อความพูดถึงสินทรัพย์นั้น")
 st.caption("ช่วงเวลา %s ถึง %s (UTC)  \nกลุ่มสินทรัพย์ %s" % (day(start), day(end), ", ".join(common.group_name(g) for g in groups)))
 if not by_group.empty:
     table = by_group.assign(กลุ่ม=by_group.big_group.map(common.group_name))
@@ -56,19 +61,15 @@ st.markdown("""
 
 **ภาพรวมของแต่ละแดชบอร์ด**
 
-**Reddit Volume** ปริมาณโพสต์และความคิดเห็นรายชั่วโมงในชุมชน Reddit ทั้ง 6 แห่ง พร้อม Reddit Volume Z-score ซึ่งบอกว่าปริมาณในชั่วโมงนั้นผิดปกติเมื่อเทียบกับ 24 ชั่วโมงก่อนหน้าเพียงใด
+**Reddit Volume and Ticker Mentions** ปริมาณข้อความรายชั่วโมงในชุมชน Reddit ทั้ง 6 แห่ง พร้อม Reddit Volume Z-score ซึ่งบอกว่าปริมาณในชั่วโมงนั้นผิดปกติเมื่อเทียบกับ 24 ชั่วโมงก่อนหน้าเพียงใด และความถี่ที่แต่ละสินทรัพย์ถูกกล่าวถึง (Ticker Mention Count) พร้อมสัดส่วนต่อปริมาณข้อความทั้งหมด (Ticker Mention Rate)
 
-**Ticker Mentions** ความถี่ที่แต่ละสินทรัพย์ถูกกล่าวถึง (Ticker Mention Count) และสัดส่วนของการกล่าวถึงต่อปริมาณข้อความทั้งหมด (Ticker Mention Rate)
-
-**Price and Return** ราคาปิด ปริมาณซื้อขาย ผลตอบแทนของชั่วโมงเดียวกัน (Current Return) ผลตอบแทนล่วงหน้า 1, 2, 3, 6 และ 12 ชั่วโมง และตัวชี้วัดความผันผวน (RSI, ATR)
-
-**Price and Reddit** ราคา ปริมาณซื้อขาย และตัวชี้วัดความผันผวน เทียบกับปริมาณ Reddit บนแกนเวลาเดียวกัน
+**Price and Return** ราคาปิด ปริมาณซื้อขาย และตัวชี้วัดความผันผวน (RSI, ATR) เทียบกับปริมาณ Reddit บนแกนเวลาเดียวกัน พร้อมผลตอบแทนของชั่วโมงเดียวกัน (Current Return) และผลตอบแทนล่วงหน้า 1, 2, 3, 6 และ 12 ชั่วโมง
 
 **Market and Sentiment** ค่าความรู้สึกเฉลี่ยรายชั่วโมง สัดส่วนความรู้สึกเชิงบวก เชิงลบ และเป็นกลาง และประเภทความรู้สึกส่วนใหญ่ เทียบกับราคา
 
 **Statistical Analysis** ความสัมพันธ์ระหว่างความรู้สึกกับผลตอบแทน (Win Rate, Spearman และ Pearson) คำนวณตามตัวกรองที่เลือก และเปรียบเทียบกลุ่มข้อมูลตามตารางที่ 12 ของข้อเสนอโครงการได้
 
-**Logistic Regression** แบบจำลองที่ทำนายทิศทางผลตอบแทนจากตัวแปรความรู้สึก แสดง AUC และสัมประสิทธิ์ของตัวแปร
+**Logistic Regression** แบบจำลองที่ทำนายทิศทางผลตอบแทนจากตัวแปรความรู้สึก แบ่งเป็น 2 ส่วนแยกกัน คือ (1) แต่ละ panel ดีกว่าเดาสุ่มหรือไม่ ดูจาก AUC บนชุดทดสอบ และ (2) ตัวแปรใดช่วยเพิ่มการทำนาย (L1, เติมทีละตัว, ตัดทีละตัว)
 
 **Hot Events** รายการชั่วโมงที่ผิดปกติ จัดระดับ low / medium / high ด้วยคะแนนจาก KPI ที่ผู้ใช้กำหนดเกณฑ์ได้ พร้อมสถิติย้อนหลังของสินทรัพย์ ใช้ข้อมูลทั้งหมดโดยไม่มีตัวกรองด้านซ้าย
 """)

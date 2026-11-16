@@ -249,6 +249,22 @@ class StatTableTests(unittest.TestCase):
         noise = data.stat_table(self.samples(slope=0.0, seed=3)).set_index("target")
         self.assertGreater(noise.loc["1h", "spearman_p"], 0.01)
 
+    def test_the_circular_shift_p_value_is_there_and_keeps_the_order_of_the_hours(self):
+        """spearman_p_shift (the p the dashboard shows) is in (0, 1], is small for a real relation and not for noise, and its BH p-value is never below it."""
+        samples = self.samples(slope=1.0)
+        samples["hour_utc"] = np.arange(len(samples)) * 6 * 3600                               # 6 hours apart: 50 distinct UTC days (the interval needs at least 10)
+        real = data.stat_table(samples).set_index("target")
+        self.assertLess(real.loc["1h", "spearman_p_shift"], 0.01)
+        self.assertTrue(((real.spearman_p_shift > 0) & (real.spearman_p_shift <= 1)).all())
+        self.assertTrue((real.spearman_bh_shift >= real.spearman_p_shift - 1e-12).all())
+        shuffled = samples.sample(frac=1.0, random_state=1)                                    # rows in any order: the function puts them in time order itself
+        again = data.stat_table(shuffled).set_index("target")
+        self.assertAlmostEqual(again.loc["1h", "spearman_p_shift"], real.loc["1h", "spearman_p_shift"], places=12)
+        self.assertTrue((real.spearman_ci_low < real.spearman_rho).all() and (real.spearman_ci_high > real.spearman_rho).all())     # the 95% interval around rho
+        self.assertGreater(real.loc["1h", "spearman_ci_low"], 0.0)                                                                # a real relation: the interval does not reach 0
+        noise = samples.assign(**{col: np.random.default_rng(9).normal(size=len(samples)) for col in data.STAT_COLUMN.values()})
+        self.assertGreater(data.stat_table(noise).set_index("target").loc["1h", "spearman_p_shift"], 0.01)
+
     def test_one_row_per_ticker_and_target_and_a_win_rate_also_for_the_current_return(self):
         out = data.stat_table(pd.concat([self.samples(), self.samples(seed=1).assign(ticker="BBB")]))
         self.assertEqual(len(out), 2 * len(data.STAT_TARGETS))

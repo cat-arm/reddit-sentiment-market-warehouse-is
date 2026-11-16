@@ -18,6 +18,7 @@ holds on all of them):
 import datetime as dt
 import os
 import sys
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,10 +38,10 @@ DISCLAIMER = ("ข้อมูลย้อนหลังจาก Academic Torr
 GROUP_LABELS = {"stock_etf": "หุ้น/ETF", "futures": "ฟิวเจอร์ส", "crypto": "คริปโต"}
 GROUP_COLORS = {"stock_etf": "#1f77b4", "futures": "#ff7f0e", "crypto": "#2ca02c"}   # blue, orange, green
 GROUP_DOTS = {"stock_etf": "🔵", "futures": "🟠", "crypto": "🟢"}   # same colours inside the sidebar list
-TYPE_KEYS = ["f_type_Post", "f_type_Comment"]
+TYPE_KEYS = []                                                  # the content type (Post / Comment) is no longer a filter (user, 2026-11-15): every page counts both
 STATUSES = ("positive", "negative", "neutral")                  # DimMajoritySentiment
 MAJORITY_KEYS = ["f_maj_" + s for s in STATUSES]
-OVERVIEW_KEYS = ["d_z", "d_v", "d_s", "d_ss", "d_mode"]          # Market and Sentiment: thresholds FILTER the whole page (0 = no filter); d_z is no longer on a slider (kept at 0)
+OVERVIEW_KEYS = ["d_z", "d_s", "d_ss", "d_mode"]                # Market and Sentiment: thresholds FILTER the whole page (0 = no filter); d_z = Reddit Volume Z-score (user, 2026-11-16: the count threshold d_v is gone)
 SENTIMENT_MODES = ("absolute", "normal")                         # the Sentiment Threshold: |score| >= x (as before) or the signed score (score >= x for x > 0, <= x for x < 0)
 MODE_LABELS = {"absolute": "absolute (|ความรู้สึก|)", "normal": "ค่าปกติ (มีบวก/ลบ)"}
 SENTIMENT_MODELS = ("VADER+FinBERT", "VADER", "FinBERT")         # DimSentimentSource.ModelUsed; the first is the proposal's
@@ -51,11 +52,11 @@ TIME_KEYS = ["f_range", "f_gran"]                              # DimTime: the da
 CHART_HEIGHT = 280
 C_PRICE = "#1f77b4"            # close price, Current Return          (blue)
 C_VOLUME = "#2ca02c"           # market trading volume                (green)
-C_REDDIT = "#ff7f0e"           # Reddit volume, comments, mentions    (orange)
+C_REDDIT = "#d62728"           # Reddit volume and its Z-score: one colour (red, user request 2026-11-15; the Z-score of the volume is the same measure family)
 C_REDDIT_LIGHT = "#ffbb78"     # posts (a small share of the Reddit texts)
-C_Z = "#d62728"                # Reddit Volume Z-score                (red: unusual)
+C_Z = C_REDDIT                  # Reddit Volume Z-score                (the same red as the volume)
 C_SENT = "#8e44ad"             # Sentiment Score                      (dark purple: far from the blue of the price and the orange of the Reddit volume)
-C_RATE = "#17becf"             # Ticker Mention Rate                  (teal)
+C_RATE = "#17becf"             # Ticker mentions: count and rate      (teal, against the orange of the Reddit volume it is drawn next to)
 C_RSI = "#34495e"              # RSI                                  (dark slate)
 C_ATR = "#8c564b"              # ATR                                  (brown)
 C_NATR = "#e377c2"             # Normalized ATR                       (pink)
@@ -147,6 +148,42 @@ def hourly_base(family, cut, tickers, start, end, communities, model, content_ty
     return data.logistic_features(data.sentiment_frame(sent, start, end, market=market))
 
 
+@st.cache_data(show_spinner=False, max_entries=6)
+def logistic_frame(family, variant, scope, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, v_th=0):
+    """The rows of one panel of table 12 that pass the filters of the sidebar, with every variable of the Logistic Regression and every return (the very frame of
+    `analysis.logistic`, sorted by hour).  `scope` = 'ALL' (every chosen asset) or an asset class.  Empty DataFrame when no row passes."""
+    from analysis import logistic as L
+    from etl.reddit_hourly_community import variant_of
+    prices = q("price_series_for", tickers, start, end)
+    returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in data.HORIZONS]]]
+    market_cols = prices[["ticker", "hour_utc", "volume", "normalized_atr", "volume_zscore_24"]].rename(columns={"volume_zscore_24": "market_volume_zscore_24"})
+    cut = variant_of(s_th)
+    fam = "global" if variant == "baseline" else family
+    base = hourly_base(fam, cut, tickers, start, end, communities, model, content_types)
+    extra = ("abs_mean", "pos_ratio", "neg_ratio", "voter_agreement", *["sentiment_lag_%dh" % k for k in (1, 2, 3, 6, 12)])
+    samples = data.panel_samples(base, None, returns, family, variant, statuses, z_th, 0.0, v_min=v_th, extra=extra)
+    if samples.empty:
+        return pd.DataFrame()
+    universe = q("tickers")
+    samples["big_group"] = samples.ticker.map(dict(zip(universe.ticker, universe.big_group)))
+    z_col = "own_zscore" if family == "Ticker" else "zscore"                                   # the volume of the asset itself, or of the whole market
+    frame = samples.rename(columns={"majority": "majority_final_status", "abs_mean": "sentiment_abs_mean", "voter_agreement": "voter_agreement_ratio"})
+    frame["reddit_volume_zscore_24"] = samples[z_col]
+    frame["sentiment_momentum_1h"] = samples["momentum"]
+    # the variables added 2026-11-15 (the same as `etl.merge_panel`): Reddit Volume = the texts of the series (all the texts of the market for Global, the texts that
+    # mention the asset for Ticker), Mention Rate = the texts that mention the asset / all the texts of the hour x 100, and the price side of the same hour
+    mentions = hourly_base("Ticker", "all", tickers, start, end, communities, model, content_types)[["series", "hour_utc", "texts"]].rename(columns={"series": "ticker", "texts": "mentions"})
+    frame = frame.merge(mentions, on=["ticker", "hour_utc"], how="left").merge(market_cols, on=["ticker", "hour_utc"], how="left")
+    frame["reddit_total_volume"] = frame["market_volume"]                                     # all the texts of the hour, in Global and in Ticker alike
+    frame["reddit_mention_count"] = frame["mentions"].fillna(0)
+    frame["reddit_mention_rate"] = 100.0 * frame["reddit_mention_count"] / frame["reddit_total_volume"].where(frame["reddit_total_volume"] > 0)
+    if variant == "baseline":
+        frame["random_direction"] = samples["sentiment_mean"]                                     # panel_samples put the random +1 / -1 there
+    if scope != "ALL":
+        frame = frame[frame.big_group == scope]
+    return L.prepare(frame)
+
+
 @st.cache_data(show_spinner="กำลังฝึกโมเดล Logistic Regression ...", max_entries=60)
 def logistic_live(family, variant, scope, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, v_th=0):
     """The Logistic Regression of one panel of table 12, trained live on the ticker-hours that pass the filters of the sidebar (the very model of
@@ -154,30 +191,12 @@ def logistic_live(family, variant, scope, tickers, start, end, communities, mode
     or an asset class.  The panels 'strong' / 'quality' / 'spike' / 'baseline' ignore the two thresholds (the caller passes 0).
     -> DataFrame(panel, level, big_group, horizon, metric, value, n, status) like `data.logistic_results`."""
     from analysis import logistic as L
-    from etl.reddit_hourly_community import variant_of
-    prices = q("price_series_for", tickers, start, end)
-    returns = prices[["ticker", "hour_utc", "log_return", *["future_return_" + h for h in data.HORIZONS]]]
-    cut = variant_of(s_th)
-    fam = "global" if variant == "baseline" else family
-    base = hourly_base(fam, cut, tickers, start, end, communities, model, content_types)
-    extra = ("abs_mean", "pos_ratio", "neg_ratio", "voter_agreement", *["sentiment_lag_%dh" % k for k in (1, 2, 3, 6, 12)])
-    samples = data.panel_samples(base, None, returns, family, variant, statuses, z_th, 0.0, v_min=v_th, extra=extra)
     columns = ["panel", "level", "big_group", "horizon", "metric", "value", "n", "status"]
-    if samples.empty:
+    part = logistic_frame(family, variant, scope, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, v_th)
+    if part.empty:
         return pd.DataFrame(columns=columns)
-    universe = q("tickers")
-    samples["big_group"] = samples.ticker.map(dict(zip(universe.ticker, universe.big_group)))
-    z_col = "own_zscore" if family == "Ticker" else "zscore"                                   # the volume of the asset itself, or of the whole market
-    frame = samples.rename(columns={"majority": "majority_final_status", "abs_mean": "sentiment_abs_mean", "voter_agreement": "voter_agreement_ratio"})
-    frame["reddit_volume_zscore_24"] = samples[z_col]
-    frame["sentiment_momentum_1h"] = samples["momentum"]
-    if variant == "baseline":
-        frame["random_direction"] = samples["sentiment_mean"]                                     # panel_samples put the random +1 / -1 there
-    if scope != "ALL":
-        frame = frame[frame.big_group == scope]
     name = data.panel_name(variant, family)
     gmap = L.feature_groups(name)
-    part = L.prepare(frame)
     rows = []
     for target, horizon in L.HORIZONS.items():
         metrics, status, n = L.fit_one(part, target, gmap)
@@ -186,6 +205,44 @@ def logistic_live(family, variant, scope, tickers, start, end, communities, mode
             continue
         rows += [(name, "all" if scope == "ALL" else "big_group", scope, horizon, metric, value, n, status) for metric, value in metrics.items()]
     return pd.DataFrame(rows, columns=columns)
+
+
+_EVAL_LOCK = threading.Lock()                                                                # `analysis.logistic_eval` keeps its train/test split in a module variable
+
+
+@st.cache_data(show_spinner="กำลังฝึกและทดสอบโมเดล Logistic Regression ...", max_entries=12)
+def logistic_test_live(family, variant, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, v_th, target, boot=100):
+    """EXTENSION: the evaluation of `analysis.logistic_eval` for ONE panel and ONE horizon on the rows that pass the filters of the sidebar: train 75% / test 25% of the hours
+    with a gap of 12 hours, L1 / L2 and C chosen inside the train part only, AUC on the test set with a day-block bootstrap interval (`boot` rounds), and the table of the
+    variables (L1 selection, drop-one, add-one).  -> (dict of the panel row, DataFrame of the variables; empty for the Baseline or when there is not enough data)."""
+    from analysis import logistic_eval as E
+    part = logistic_frame(family, variant, "ALL", tickers, start, end, communities, model, statuses, z_th, s_th, content_types, v_th)
+    column = {label: col for col, label in E.HORIZONS.items()}[target]                       # `target` is the label of the horizon ('log_return', '1h' ...), the column differs
+    horizon = target
+    name = data.panel_name(variant, family)
+    if part.empty:
+        return {"panel": name, "horizon": horizon, "status": "no_data", "n_rows": 0}, pd.DataFrame()
+    with _EVAL_LOCK:
+        row, context = E.analysis_panel(part, name, horizon, column, boot)
+        features = E.analysis_features(context, {"panel": name, "horizon": horizon}, boot) if context is not None and variant != "baseline" else []
+        kept = [r["name"] for r in features if r["kind"] == "variable" and (r["side"] == "price" or r["add_one_low"] > 0)]
+        if context is not None and kept:                                                    # the model with only the variables kept in the table (price base + the Reddit variables that help)
+            reduced = E.evaluate_set(context["hours"], context["x"], context["y"], context["columns"], kept, boot)
+            if reduced is not None:
+                row["reduced"] = {**E.test_metrics(context["y"][context["test"]], reduced["p"]), "n_vars": len(kept)}
+    return row, pd.DataFrame(features)
+
+
+@st.cache_data(show_spinner="กำลังคำนวณความสัมพันธ์ระหว่างความรู้สึกกับผลตอบแทน ...", max_entries=20)
+def relation_check(rel):
+    """(EXTENSION) for Market and Sentiment: `rel` = DataFrame(hour_utc, sentiment_mean, momentum, log_return), one row per hour (the Sentiment Score of the hours that pass every
+    filter and the mean Current Return of the ticked assets).  -> dict(decile = `rank_tests.decile_table` of the level, level = Spearman of the level, change = Spearman of the
+    CHANGE of the sentiment from the previous hour); each Spearman is (rho, low, high, p_shift, n).  Cached: the same filters are never computed twice."""
+    from analysis import rank_tests as rt
+    changes = rel.dropna(subset=["momentum"])
+    return {"decile": rt.decile_table(rel.sentiment_mean, rel.log_return, rel.hour_utc, boot=300),
+            "level": rt.spearman_with_ci(rel.sentiment_mean, rel.log_return, rel.hour_utc, boot=300),
+            "change": rt.spearman_with_ci(changes.momentum, changes.log_return, changes.hour_utc, boot=300)}
 
 
 def keep_filters():
@@ -214,9 +271,14 @@ def sticky_bar(key):
 
 
 def setup(title, icon="📊"):
-    """Page config + title + the shared disclaimer; call first on every page."""
+    """Page config + title; call first on every page.  The shared disclaimer is not here: `footer` puts it at the bottom of every page (dashboard/app.py)."""
     st.set_page_config(page_title=title, page_icon=icon, layout="wide")
     st.title(title)
+
+
+def footer():
+    """The shared disclaimer in small letters at the foot of the page (user, 2026-11-15: it moved from under the title to the bottom)."""
+    st.divider()
     st.caption(DISCLAIMER)
 
 
@@ -265,8 +327,7 @@ def selected_sources():
     src = q("sources")
     all_communities = list(dict.fromkeys(src.subreddit))
     communities = [c for c in all_communities if st.session_state.get(_community_key(c), True)]
-    types = [kind for kind in ("Post", "Comment") if st.session_state.get("f_type_" + kind, True)]
-    keep = src[src.subreddit.isin(communities) & src.content_type.isin(types)]
+    keep = src[src.subreddit.isin(communities)]
     return tuple(int(i) for i in keep.source_id)
 
 
@@ -303,8 +364,8 @@ def sentiment_source_keys():
 
 
 def selected_content_types():
-    """Content types kept by the DimSource filter of the pages with a sentiment source ('Post', 'Comment'); nothing ticked = nothing."""
-    return tuple(kind for kind in ("Post", "Comment") if st.session_state.get("f_type_" + kind, True))
+    """Content types the pages count: always both ('Post', 'Comment'), the filter was removed (user, 2026-11-15)."""
+    return ("Post", "Comment")
 
 
 def selected_model():
@@ -338,9 +399,6 @@ def _sentiment_source_filter():
     st.sidebar.caption("แพลตฟอร์ม Reddit › ชุมชน")
     for community in dict.fromkeys(q("sources").subreddit):
         st.sidebar.checkbox(community, key=_sentiment_key(community))
-    st.sidebar.caption("ประเภทเนื้อหา (DimSource)")
-    st.sidebar.checkbox("โพสต์ (Post)", key="f_type_Post")
-    st.sidebar.checkbox("ความคิดเห็น (Comment)", key="f_type_Comment")
     st.sidebar.caption("แบบจำลองที่ใช้")
     st.sidebar.radio("แบบจำลองที่ใช้", SENTIMENT_MODELS, key="f_ss_model", label_visibility="collapsed")
 
@@ -361,16 +419,15 @@ def _detection_filter(kind, sentiment=False, locked=False):
     state = st.session_state
     st.sidebar.markdown("**เกณฑ์การตรวจจับสัญญาณ (DimDetectionConfig)**")
     if kind == "overview":                                  # filters the hours of the page; 0 = off, so by default nothing is removed
-        state.setdefault("d_z", 0.0)                         # no slider any more (2026-11-13): the volume is judged by its count, see d_v
-        state.setdefault("d_v", 0)
+        state.setdefault("d_z", 0.0)
         state.setdefault("d_s", 0.0)
         state.setdefault("d_ss", 0.0)
         state.setdefault("d_mode", "absolute")
-        st.sidebar.caption("Reddit Volume Threshold (ชั่วโมงที่มีข้อความทั้งตลาดอย่างน้อยกี่ข้อความ ค่า 0 คือไม่กรอง)")
+        st.sidebar.caption("Reddit Volume Z-score Threshold")
         if locked:
             st.sidebar.warning("ปิดใช้งานชั่วคราว: panel ที่เลือกใช้เกณฑ์ตายตัวของตาราง 12 (เลือก panel ทุกข้อความเพื่อปรับเกณฑ์)")
-        st.sidebar.slider("Reddit Volume Threshold", 0, 6000, step=100, key="d_v", label_visibility="collapsed", disabled=locked)
-        st.sidebar.caption("Sentiment Threshold (ทิ้งข้อความที่ไม่ผ่านเกณฑ์ก่อนเฉลี่ยเป็นรายชั่วโมง ค่า 0 คือไม่กรอง)")
+        st.sidebar.slider("Reddit Volume Z-score Threshold", 0.0, 5.0, step=0.1, key="d_z", label_visibility="collapsed", disabled=locked)
+        st.sidebar.caption("Sentiment Threshold")
         st.sidebar.radio("โหมด Sentiment Threshold", SENTIMENT_MODES, format_func=MODE_LABELS.get, horizontal=True, key="d_mode", label_visibility="collapsed", disabled=locked)
         if state["d_mode"] == "absolute":
             st.sidebar.slider("Sentiment Threshold (absolute)", 0.0, 0.95, step=0.05, key="d_s", label_visibility="collapsed", disabled=locked)
@@ -383,7 +440,7 @@ def _detection_filter(kind, sentiment=False, locked=False):
 
 
 def _source_filter():
-    """The DimSource part of the sidebar: platform (fixed: Reddit) > communities > content type, every box ticked."""
+    """The DimSource part of the sidebar: platform (fixed: Reddit) > communities, every box ticked."""
     src = q("sources")
     st.sidebar.markdown("**แหล่งข้อมูล (DimSource)**")
     for key in source_keys():
@@ -391,9 +448,6 @@ def _source_filter():
     st.sidebar.caption("แพลตฟอร์ม Reddit › ชุมชน")
     for community in dict.fromkeys(src.subreddit):
         st.sidebar.checkbox(community, key=_community_key(community))
-    st.sidebar.caption("ประเภทเนื้อหา")
-    st.sidebar.checkbox("โพสต์ (Post)", key="f_type_Post")
-    st.sidebar.checkbox("ความคิดเห็น (Comment)", key="f_type_Comment")
 
 
 def _time_filter(info):
@@ -555,6 +609,23 @@ def instrument_of(ticker):
     """Sub-type of a stock_etf asset (a key of INSTRUMENT_LABELS, from configs/tickers.yaml; EXTENSION), None for crypto and futures."""
     from etl.common import load_yaml
     return load_yaml("tickers.yaml")["tickers"].get(ticker, {}).get("instrument")
+
+
+def block(title, purpose, level=3, how=None):
+    """The title of a chart or a table and one short line saying what it is used for (every chart and table of the dashboards has both); `how` = a second line
+    saying how the number is worked out."""
+    st.markdown("#" * level + " " + title)
+    st.caption(purpose + ("  \n**วิธีคิด:** " + how if how else ""))
+
+
+Z_SCORE_HOW = ("(ค่าของชั่วโมงนั้น − ค่าเฉลี่ยของ 24 ชั่วโมงก่อนหน้า) ÷ ความแกว่งปกติ (SD) ของ 24 ชั่วโมงก่อนหน้า "
+               "ไม่รวมชั่วโมงปัจจุบัน 0 = ปกติ, เกิน 1.5 = สูงผิดปกติ (spike)")
+
+
+def explain(what, how, note=None):
+    """The help of a KPI card in plain words, always the same shape: line 1 = what it is, line 2 = how it is worked out, an optional line 3 = a note."""
+    text = "**คืออะไร:** %s  \n**คำนวณยังไง:** %s" % (what, how)
+    return text + ("  \n**หมายเหตุ:** %s" % note.strip().removeprefix("หมายเหตุ:").strip() if note else "")
 
 
 def kpi_cards(items):
@@ -756,11 +827,11 @@ def multi_series_chart(df, x, y, series, title, height=CHART_HEIGHT, bar=False, 
     return chart.properties(height=CHART_HEIGHT)
 
 
-COLOR_NAMES = {C_PRICE: "น้ำเงิน", C_VOLUME: "เขียว", C_REDDIT: "ส้ม", C_Z: "แดง", C_SENT: "ม่วง", C_RATE: "เขียวอมฟ้า", C_RSI: "เทาเข้ม", C_ATR: "น้ำตาล", C_NATR: "ชมพู"}
+COLOR_NAMES = {C_PRICE: "น้ำเงิน", C_VOLUME: "เขียว", C_REDDIT: "แดง", C_SENT: "ม่วง", C_RATE: "เขียวอมฟ้า", C_RSI: "เทาเข้ม", C_ATR: "น้ำตาล", C_NATR: "ชมพู"}
 
 
 def dual_axis(df, x, left, right, left_title, right_title, height=CHART_HEIGHT, left_color=C_PRICE, right_color=C_SENT,
-              left_fmt=",.4g", right_fmt="+.3f", show_left=True, show_right=True):
+              left_fmt=",.4g", right_fmt="+.3f", show_left=True, show_right=True, left_zero=False, right_zero=False):
     """Two lines with independent y axes (e.g. close price vs sentiment_mean); each axis is coloured like its line.
     `show_left` / `show_right` = False hides that line (and its axis).  Pointing at any point of a line shows that period with
     the values of the lines that are visible.  (Two bar series on one chart are unreadable, so there is no bar mode.)"""
@@ -770,9 +841,9 @@ def dual_axis(df, x, left, right, left_title, right_title, height=CHART_HEIGHT, 
     sides = [s for s, on in (((left, left_title, left_color, left_fmt), show_left), ((right, right_title, right_color, right_fmt), show_right)) if on]
     tip = [alt.Tooltip(x + ":T", title=PERIOD_LABEL[how], format=DATE_TIP[how])] + [
         alt.Tooltip(col + ":Q", title=title, format=fmt) for col, title, _, fmt in sides]
-    scale = alt.Scale(zero=False)
     layers = []
     for col, title, color, _ in sides:
+        scale = alt.Scale(zero=left_zero if col == left else right_zero)               # a line that is a size (never negative) can start at 0
         axis = alt.Axis(title=title, titleColor=color, labelColor=color, minExtent=55)
         layers.append(alt.Chart(df).mark_line(color=color, opacity=0.85).encode(x=enc_x, y=alt.Y(col + ":Q", axis=axis, scale=scale)))
         # an invisible, larger circle on every point carries the tooltip: point at any spot of a line and its values appear
@@ -792,6 +863,41 @@ def dual_chart(df, x, left, right, left_title, right_title, key, left_name, righ
         return
     show(dual_axis(df, x, left, right, left_title, right_title, left_color=left_color, right_color=right_color,
                    show_left=show_left, show_right=show_right, **kwargs))
+
+
+def overlay_chart(df, x, left, left_title, left_color, rights, key, left_name, left_fmt=",.4g", left_zero=False):
+    """One measure on the left axis (price, trading volume, RSI, ...) against one or more counts that SHARE the right axis (the message volume and the mentions of the
+    assets), with one tick box per line drawn above the chart: untick a line to hide it.  `rights` = [(column, name, colour, format), ...].
+    The left line has its own axis; the right lines share one (they are given the same domain: the layers are independent, so a shared scale cannot be asked for)."""
+    how = granularity()
+    ticks = {"tickCount": TICK_STEP[how]} if how in TICK_STEP else {}
+    enc_x = alt.X(x + ":T", title=None, axis=alt.Axis(format=DATE_FORMAT[how], labelOverlap=True, **ticks))
+    boxes = st.columns([1] * (1 + len(rights)) + [1])
+    show_left = boxes[0].checkbox("%s (%s)" % (left_name, COLOR_NAMES.get(left_color, "")), value=True, key="ol_" + key)
+    visible = [r for i, r in enumerate(rights) if boxes[i + 1].checkbox("%s (%s)" % (r[1], COLOR_NAMES.get(r[2], "")), value=True, key="or_%s_%s" % (key, r[0]))]
+    if not show_left and not visible:
+        st.info("เลือกแสดงอย่างน้อย 1 เส้น")
+        return
+    tip = [alt.Tooltip(x + ":T", title=PERIOD_LABEL[how], format=DATE_TIP[how])]
+    if show_left:
+        tip.append(alt.Tooltip(left + ":Q", title=left_title, format=left_fmt))
+    tip += [alt.Tooltip(col + ":Q", title=name, format=fmt) for col, name, _, fmt in visible]
+    layers = []
+    if show_left:
+        axis = alt.Axis(title=left_title, titleColor=left_color, labelColor=left_color, minExtent=55)
+        scale = alt.Scale(zero=left_zero)
+        layers.append(alt.Chart(df).mark_line(color=left_color, opacity=0.85).encode(x=enc_x, y=alt.Y(left + ":Q", axis=axis, scale=scale)))
+        layers.append(alt.Chart(df).mark_circle(color=left_color, size=150, opacity=0).encode(x=enc_x, y=alt.Y(left + ":Q", axis=None, scale=scale), tooltip=tip))
+    if visible:
+        title = visible[0][1] if len(visible) == 1 else "จำนวนข้อความ"
+        color = visible[0][2] if len(visible) == 1 else "#555555"
+        axis = alt.Axis(title=title, titleColor=color, labelColor=color, minExtent=55, orient="right")
+        top = max(float(pd.to_numeric(df[col], errors="coerce").max() or 0) for col, *_ in visible)
+        scale = alt.Scale(domain=[0, top * 1.05 if top > 0 else 1], nice=True)         # the same domain for every right line = one shared axis
+        for i, (col, name, colour, _) in enumerate(visible):
+            layers.append(alt.Chart(df).mark_line(color=colour, opacity=0.85).encode(x=enc_x, y=alt.Y(col + ":Q", axis=axis if i == 0 else None, scale=scale)))
+            layers.append(alt.Chart(df).mark_circle(color=colour, size=150, opacity=0).encode(x=enc_x, y=alt.Y(col + ":Q", axis=None, scale=scale), tooltip=tip))
+    show(alt.layer(*layers).resolve_scale(y="independent").properties(height=CHART_HEIGHT))
 
 
 def table(df, **kwargs):

@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from analysis import rank_tests
 from etl.common import NEUTRAL_BAND
 from etl.reddit_features import MIN_PRIOR, STD_FLOOR, WINDOW, volume_features
 
@@ -235,6 +236,57 @@ def ticker_texts_series(db_path, tickers, start, end, source_ids=None):
         WHERE model = 'VADER+FinBERT' AND variant = 'all' AND hour_utc BETWEEN ? AND ? AND (%s)%s
         GROUP BY hour_utc ORDER BY hour_utc""" % (pairs, tf), (start, end, *args, *symbols))
     return to_time(df)
+
+
+def _community_pairs(db_path, source_ids):
+    """The (subreddit, content_type) pairs of the chosen sources as an SQL clause + arguments for `reddit_hourly_community`; None = no source chosen."""
+    src = sources(db_path)
+    if source_ids is not None:
+        src = src[src.source_id.isin([int(i) for i in source_ids])]
+    if src.empty:
+        return None
+    return " OR ".join(["(subreddit = ? AND content_type = ?)"] * len(src)), [v for row in src.itertuples() for v in (row.subreddit, row.content_type)]
+
+
+def mention_texts_ranking(db_path, start, end, source_ids=None):
+    """Most discussed tickers by the number of TEXTS that mention them (EXTENSION, user decision 2026-11-15: a text counts ONCE for a ticker however many times
+    it names it, a text that names two tickers counts for both): `mentions` (this count), `peak_hour_texts` (the busiest hour), and the Ticker Mention Rate (%) =
+    mentions / Reddit_volume (ALL texts of the same sources) x 100.  It follows the chosen sources.  Source: reddit_hourly_community (one row per ticker,
+    hour, community and type; its total equals the pairs text x ticker of `ticker_mentions`).  -> DataFrame(ticker, big_group, mentions, peak_hour_texts,
+    total_volume, mention_rate_pct), most mentioned first."""
+    cols = ["ticker", "big_group", "mentions", "peak_hour_texts", "total_volume", "mention_rate_pct"]
+    pairs = _community_pairs(db_path, source_ids)
+    if pairs is None:
+        return pd.DataFrame(columns=cols)
+    clause, args = pairs
+    out = _read(db_path, """
+        SELECT h.ticker, k.AssetClass AS big_group, SUM(h.texts) AS mentions, MAX(h.hourly) AS peak_hour_texts
+        FROM (SELECT ticker, hour_utc, SUM(texts) AS texts, SUM(texts) AS hourly FROM reddit_hourly_community
+              WHERE model = 'VADER+FinBERT' AND variant = 'all' AND hour_utc BETWEEN ? AND ? AND (%s)
+              GROUP BY ticker, hour_utc) h
+        JOIN DimTicker k ON k.TickerSymbol = h.ticker
+        GROUP BY h.ticker ORDER BY mentions DESC""" % clause, (start, end, *args))
+    flt_v, extra_v = _src_filter(source_ids, "v.SourceID")
+    total = _read(db_path, """
+        SELECT SUM(v.texts) AS n FROM reddit_volume_hourly v JOIN DimTime t USING (TimeID)
+        WHERE CAST(strftime('%s', t.ts_utc) AS INTEGER) BETWEEN ? AND ?""" + flt_v, (start, end, *extra_v)).iloc[0].n
+    out["total_volume"] = total
+    out["mention_rate_pct"] = 100.0 * out["mentions"] / total if total else float("nan")
+    return out[cols].reset_index(drop=True)
+
+
+def mention_texts_by_source(db_path, tickers, start, end, source_ids=None):
+    """Texts that mention the chosen ticker(s) per community and content type (the counting of `mention_texts_ranking`).
+    -> DataFrame(subreddit, content_type, mentions)."""
+    pairs = _community_pairs(db_path, source_ids)
+    if pairs is None or not len(tickers):
+        return pd.DataFrame(columns=["subreddit", "content_type", "mentions"])
+    clause, args = pairs
+    tf, symbols = _only(tickers, "ticker")
+    return _read(db_path, """
+        SELECT subreddit, content_type, SUM(texts) AS mentions FROM reddit_hourly_community
+        WHERE model = 'VADER+FinBERT' AND variant = 'all' AND hour_utc BETWEEN ? AND ? AND (%s)%s
+        GROUP BY subreddit, content_type""" % (clause, tf), (start, end, *args, *symbols))
 
 
 def ticker_volume_series(db_path, tickers, start, end, source_ids=None):
@@ -735,7 +787,7 @@ STORED_PANELS = {"panel_global": "Global", "panel_global_strong": "Global strong
 
 # the variables of the Logistic Regression (proposal table 13 and 7.4: six variable groups): Thai name and group
 VARIABLE_GROUPS = {"Level": "Level (ระดับความรู้สึก)", "Direction": "Direction (ทิศทาง บวก/ลบ)", "Vote": "Vote (โหวตส่วนใหญ่)",
-                   "Volume": "Volume (ปริมาณโพสต์)", "Lag": "Lag (ความรู้สึกย้อนหลัง)", "Momentum": "Momentum (การเปลี่ยนแปลง)",
+                   "Volume": "Volume (ปริมาณโพสต์)", "Market": "Market (ราคาและปริมาณซื้อขาย)", "Lag": "Lag (ความรู้สึกย้อนหลัง)", "Momentum": "Momentum (การเปลี่ยนแปลง)",
                    "Random": "Random (ทิศทางสุ่ม)"}
 VARIABLES = {"sentiment_mean": ("ความรู้สึกเฉลี่ยของชั่วโมงปัจจุบัน = lag 0", "Level"),
              "sentiment_abs_mean": ("ความแรงของความรู้สึก (ค่าสัมบูรณ์)", "Level"),
@@ -744,6 +796,12 @@ VARIABLES = {"sentiment_mean": ("ความรู้สึกเฉลี่�
              "majority_final_status_num": ("ประเภทความรู้สึกส่วนใหญ่ บวก +1 กลาง 0 ลบ −1", "Vote"),
              "voter_agreement_ratio": ("สัดส่วนข้อความที่ตรงกับประเภทส่วนใหญ่", "Vote"),
              "reddit_volume_zscore_24": ("Reddit Volume Z-score", "Volume"),
+             "reddit_total_volume": ("Reddit Volume (ข้อความทั้งหมดในชั่วโมงนั้น)", "Volume"),
+             "reddit_mention_count": ("Mention Count (จำนวนข้อความที่พูดถึงสินทรัพย์นี้)", "Volume"),
+             "reddit_mention_rate": ("Mention Rate (% ของข้อความทั้งหมดที่พูดถึงสินทรัพย์นี้)", "Volume"),
+             "log_trading_volume": ("Volume ซื้อขาย (ln)", "Market"),
+             "market_volume_zscore_24": ("Z-score Volume ซื้อขาย", "Market"),
+             "normalized_atr": ("Normalized ATR", "Market"),
              "sentiment_lag_1h": ("ความรู้สึก 1 ชั่วโมงก่อนหน้า", "Lag"), "sentiment_lag_2h": ("ความรู้สึก 2 ชั่วโมงก่อนหน้า", "Lag"),
              "sentiment_lag_3h": ("ความรู้สึก 3 ชั่วโมงก่อนหน้า", "Lag"), "sentiment_lag_6h": ("ความรู้สึก 6 ชั่วโมงก่อนหน้า", "Lag"),
              "sentiment_lag_12h": ("ความรู้สึก 12 ชั่วโมงก่อนหน้า", "Lag"),
@@ -877,7 +935,7 @@ def logistic_features(frame):
 
 STAT_TARGETS = ("log_return", "1h", "2h", "3h", "6h", "12h")      # Current Return, then the future returns of the proposal
 STAT_COLUMN = {"log_return": "log_return", **{h: "future_return_" + h for h in HORIZONS}}
-STAT_COLUMNS = ["ticker", "target", "n", "spearman_rho", "spearman_p", "spearman_bh", "pearson_rho", "pearson_p", "pearson_bh",
+STAT_COLUMNS = ["ticker", "target", "n", "spearman_rho", "spearman_p", "spearman_bh", "spearman_p_shift", "spearman_bh_shift", "spearman_ci_low", "spearman_ci_high", "pearson_rho", "pearson_p", "pearson_bh",
                 "win_n", "win_hits", "winrate", "win_p", "win_bh", "mean_return"]
 
 
@@ -887,19 +945,27 @@ def stat_table(samples, min_n=3, sentiment="sentiment_mean", directional=True):
     which the sign of the predictor equals the direction of the return; for the Current Return that is the same-hour co-movement), each with its p-value (Binomial against 50% for the win
     rate) and the Benjamini-Hochberg p-value over the tickers.  Pairs with a NULL are dropped (never 0); a return of exactly 0 or a
     predictor of exactly 0 is not a direction; fewer than `min_n` pairs -> NaN.
-    `samples` has `ticker`, the predictor column and `log_return`, `future_return_1h` .. `future_return_12h`.
+    `samples` has `ticker`, the predictor column and `log_return`, `future_return_1h` .. `future_return_12h` (and `hour_utc`: the rows are put in time order).
+    `spearman_p` is the p-value of the formula (it takes every hour as independent); `spearman_p_shift` is the circular-shift p-value (`analysis.rank_tests`: the
+    series is shifted against the returns, which keeps the autocorrelation of both) and `spearman_bh_shift` its Benjamini-Hochberg p-value; `spearman_ci_low` / `_high` = the 95%
+    interval of rho from a block bootstrap over the UTC days (`rank_tests.spearman_ci_fast`): the dashboard shows these three.
     -> DataFrame(STAT_COLUMNS), one row per ticker and target (target = a key of STAT_TARGETS)."""
     rows = []
     for ticker, part in samples.groupby("ticker"):
+        if "hour_utc" in part:
+            part = part.sort_values("hour_utc")                    # time order: the circular shift needs it
         for target in STAT_TARGETS:
-            pair = part[[sentiment, STAT_COLUMN[target]]].dropna()
-            pair.columns = ["s", "r"]
+            columns = [sentiment, STAT_COLUMN[target]] + (["hour_utc"] if "hour_utc" in part else [])
+            pair = part[columns].dropna()
+            pair.columns = ["s", "r"] + (["hour"] if "hour_utc" in part else [])
             row = dict.fromkeys(STAT_COLUMNS[3:], np.nan)
             row.update(ticker=ticker, target=target, n=len(pair), mean_return=float(pair.r.mean()) if len(pair) else np.nan)
             if len(pair) >= min_n and pair.s.nunique() > 1 and pair.r.nunique() > 1:
                 sp = stats.spearmanr(pair.s, pair.r)
                 pe = stats.pearsonr(pair.s, pair.r)
-                row.update(spearman_rho=float(sp.statistic), spearman_p=float(sp.pvalue),
+                row.update(spearman_rho=float(sp.statistic), spearman_p=float(sp.pvalue), spearman_p_shift=rank_tests.circular_shift_p(pair.s, pair.r),
+                           **dict(zip(("spearman_ci_low", "spearman_ci_high"),
+                                      rank_tests.spearman_ci_fast(pair.s, pair.r, (pair.hour // 86400) if "hour" in pair else (np.arange(len(pair)) // 24)))),
                            pearson_rho=float(pe.statistic), pearson_p=float(pe.pvalue))
             moved = pair[(pair.s != 0) & (pair.r != 0)]            # for the Current Return it is the same-hour co-movement, not a prediction
             if directional and len(moved) >= 1:                # a variable without a + / - meaning (the Z-score) has no win rate
@@ -910,7 +976,7 @@ def stat_table(samples, min_n=3, sentiment="sentiment_mean", directional=True):
     out = pd.DataFrame(rows, columns=STAT_COLUMNS)
     if out.empty:
         return out
-    for p_col, bh_col in (("spearman_p", "spearman_bh"), ("pearson_p", "pearson_bh"), ("win_p", "win_bh")):
+    for p_col, bh_col in (("spearman_p", "spearman_bh"), ("spearman_p_shift", "spearman_bh_shift"), ("pearson_p", "pearson_bh"), ("win_p", "win_bh")):
         out[bh_col] = out.groupby("target")[p_col].transform(lambda s: pd.Series(bh_adjust(s.to_numpy()), index=s.index))
     return out
 
@@ -994,14 +1060,15 @@ def market_signals(db_path, start, end, tickers, statuses, z_min, s_min, communi
     from etl.reddit_hourly_community import variant_of
     sent = global_hourly(db_path, start, end, communities, model, variant_of(s_min), tuple(content_types))      # the texts that pass the Sentiment Threshold
     hours = sentiment_frame(sent, start, end, market=market_zscore(db_path, start, end, ids))
-    if v_min > 0:                                                                                            # the Reddit Volume Threshold (EXTENSION): ALL the texts of the hour, at least v_min
+    if v_min > 0:                                                                                           # the Reddit Volume Threshold (EXTENSION): ALL the texts of the hour, at least v_min
         hours = hours[hours.market_volume >= v_min]
     hours = hours.rename(columns={"texts": "reddit_volume", "zscore": "reddit_volume_zscore_24", "majority": "majority_final_status"})
     hours = signals.detect(hours, z_min if spike_z is None else spike_z, 1e-9, {**signals.RULES, "min_texts_for_sentiment": 1})          # the Sentiment Threshold already acted on the texts: any direction counts
     if z_min > 0:                                                                                            # a Z-score threshold keeps only the hours above it (as the statistics of 7.4 do)
         hours = hours[hours.reddit_volume_zscore_24 > z_min]
     hours = hours[hours.majority_final_status.isin(tuple(statuses))]
-    hours = hours[["hour_utc", "signal_type", "signal_level", "sentiment_mean", "abs_mean", "reddit_volume_zscore_24", "majority_final_status", "momentum"]]
+    hours = hours[["hour_utc", "signal_type", "signal_level", "sentiment_mean", "abs_mean", "reddit_volume_zscore_24", "majority_final_status", "momentum",
+                   "pos_ratio", "neg_ratio"]]
     bars = price_series_for(db_path, tuple(tickers), start, end)[["ticker", "hour_utc", "log_return", "volume_zscore_24", *["future_return_" + h for h in HORIZONS]]]
     about = mention_series_by_ticker(db_path, tuple(tickers), start, end, ids)[["ticker", "hour_utc", "mentions"]]
     total = total_volume_series(db_path, start, end, ids)[["hour_utc", "texts"]].rename(columns={"texts": "market_volume"})
@@ -1066,3 +1133,12 @@ def hot_events(db_path, start, end, z_min, s_min, min_texts=1):
         WHERE scope = 'ticker' AND variant = 'all' AND has_reddit_data = 1 AND reddit_volume >= ?
           AND reddit_volume_zscore_24 > ? AND ABS(sentiment_mean) >= ? AND hour_utc BETWEEN ? AND ?
         ORDER BY hour_utc DESC""", (min_texts, z_min, s_min, start, end))
+
+
+def stored_logistic_panels():
+    """EXTENSION: the precomputed test-set evaluation of the nine panels (`output/reports/logistic_panels.csv`, written by `analysis/logistic_eval.py`; VADER+FinBERT,
+    no filter).  Empty DataFrame when the file does not exist."""
+    path = ROOT / "output" / "reports" / "logistic_panels.csv"
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_csv(path, comment="#")

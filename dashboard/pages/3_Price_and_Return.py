@@ -1,12 +1,11 @@
-"""Dashboard 7.2-1  Price and Return  (proposal 7.2: close, volume, future_return 1/2/3/6/12h, RSI, ATR).
+"""Dashboard 7.2  Price and Return  (proposal 7.2: close, volume, future_return 1/2/3/6/12h, RSI, ATR) with the Reddit volume drawn next to it.
 
-Questions answered: how did price and volume move, how do future returns differ between asset classes, and which
-asset class is the most volatile (Normalized ATR, KPI 3 of table 8).
-The sidebar has the two dimensions of 7.2 (time, asset): ticking an asset class ticks all its tickers, tickers can be
-ticked one by one, and everything on the page follows the ticked tickers.  One ticker: its own series.  Up to
-MAX_LINES tickers: one line each (price and volume as an index, because the prices have very different sizes).  More:
-the average of the ticked tickers.
-Data: market_hourly_features (valid price bars only; closed-market placeholder rows are excluded upstream).
+One page since 2026-11-15 (it was two: Price and Return, page 3, and Price and Reddit, page 4, an extension).  The price of the chosen assets (one asset: its
+close; several: an index accumulated from their mean Current Return), the trading volume, the RSI and the Normalized ATR are each drawn against a Reddit
+measure of the reader's choice (the message volume or the mentions of the ticked assets) on the same time axis, one tick box per line; then the measures
+of every ticked asset, the future returns and the volatility by asset class.  Every chart and table has a title and one line saying what it is used for.
+The sidebar has the dimensions of 7.2 (time, asset) and the Reddit sources.  A look at two series that move together, never a cause.
+Data: market_hourly_features (valid price bars only), reddit_volume_hourly (message volume), reddit_hourly_community (mentions).
 """
 
 import sys
@@ -14,167 +13,121 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-import altair as alt  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from dashboard import common  # noqa: E402
 from dashboard.common import GROUP_LABELS, q  # noqa: E402
 
-MAX_LINES = 8                       # up to this many tickers: one line per ticker, otherwise their average
+block = common.block
+CARDS = ["ปริมาณข้อความรวม", "Reddit Volume Z-score สูงสุด", "Current Return รวมทั้งช่วง (%)", "Volume Z-score สูงสุด (ปริมาณซื้อขาย)", "Normalized Average True Range (%)"]
 
-common.setup("Price and Return (ราคาและผลตอบแทนรายชั่วโมง)", "📈")
-_, start, end, _ = common.sidebar(multi=True)
+common.setup("ราคาและผลตอบแทน (Price and Return)", "📈")
+_, start, end, _ = common.sidebar(sources=True, multi=True)
 how = common.granularity(start, end, "g_price")
 tickers = common.selected_tickers()
+src_ids = common.selected_sources()
 universe = q("tickers")
 names = dict(zip(universe.ticker, universe.name))
-if not tickers:
-    common.nothing_selected(["Current Return รวมทั้งช่วง (%)", "Volume Z-score สูงสุด", "Normalized Average True Range (%)"],
-                            "ยังไม่ได้เลือกหลักทรัพย์ จึงไม่มีข้อมูลแสดง")
+if not tickers or not src_ids:
+    common.nothing_selected(CARDS, "ยังไม่ได้เลือกหลักทรัพย์หรือแหล่งข้อมูล จึงไม่มีข้อมูลแสดง")
 one = len(tickers) == 1
-per_ticker = 1 < len(tickers) <= MAX_LINES
 
 hourly = q("price_series_for", tickers, start, end)
+reddit = q("total_volume_series", start, end, src_ids)
+mentions = q("ticker_texts_series", tickers, start, end, src_ids).rename(columns={"texts": "mentions"})       # texts that mention the chosen assets (once per asset)
 if hourly.empty:
     st.info("ไม่มีข้อมูลราคาของหลักทรัพย์ที่เลือกในช่วงนี้ (ตลาดอาจปิด)")
     st.stop()
 
-# ---- KPI cards first: the three KPIs of table 8 (close, volume, RSI and ATR are measures, shown below)
-# log_return (DB column) = Current Return (proposal name) - same formula.  Several tickers: the average over them.
-by = hourly.groupby("ticker")
-returns = by.log_return.sum()
-natr = by.normalized_atr.mean()
-vz = by.volume_zscore_24.max()                                             # the highest of the range, like the Z-score cards of the other pages
-suffix = "" if one else " (เฉลี่ยของ %d ตัว)" % len(by)
+# ---- cards: the Reddit volume of the market, the Current Return, the trading volume and the volatility of the assets
+returns = hourly.groupby("ticker").log_return.sum()
+trading_z = hourly.groupby("ticker").volume_zscore_24.max()
+natr = hourly.groupby("ticker").normalized_atr.mean()
+suffix = "" if one else " (เฉลี่ยของ %d ตัว)" % hourly.ticker.nunique()
 common.kpi_cards([
-    ("Current Return รวมทั้งช่วง (%)", common.money(returns.mean()),
-     "ผลตอบแทนช่วงเวลาปัจจุบัน = ln(close_t / close_t−1) × 100 รวมทุกชั่วโมงในช่วงที่เลือก" + suffix),
-    ("Volume Z-score สูงสุด", common.money(vz.max()),
-     "ค่าสูงสุดในช่วงที่เลือก (ปริมาณซื้อขายของราคา ไม่ใช่ปริมาณ Reddit) = (volume_t − μ24h) ÷ σ24h เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน" + ("" if one else " (สูงสุดของทุกตัวที่เลือก)") + common.TRADING_Z_NOTE),
-    ("Normalized Average True Range (%)", common.money(natr.mean()),
-     "อัตราความผันผวนสัมพัทธ์ = (ATR 24 ชั่วโมง ÷ close) × 100 เฉลี่ยในช่วงที่เลือก" + suffix)])
+    (CARDS[0], "{:,}".format(int(reddit.texts.sum())) if not reddit.empty else "0",
+     common.explain("จำนวนข้อความ Reddit ทั้งตลาดในช่วงเวลาที่เลือก", "นับทุกข้อความของชุมชนที่เลือก ไม่แยกตามสินทรัพย์")),
+    (CARDS[1], common.money(reddit.zscore.max()) if not reddit.empty else "n/a",
+     common.explain("ชั่วโมงที่ปริมาณข้อความทั้งตลาดผิดปกติที่สุดในช่วงนี้ ผิดปกติแค่ไหน", common.Z_SCORE_HOW + " แล้วเลือกค่าสูงสุดของช่วง", common.REDDIT_Z_NOTE)),
+    (CARDS[2], common.money(returns.mean()),
+     common.explain("ราคาขึ้นหรือลงรวมทั้งช่วงเวลากี่ % (+ = ขึ้น, − = ลง)",
+                    "บวกผลตอบแทนรายชั่วโมง ln(ราคาปิดชั่วโมงนี้ ÷ ราคาปิดชั่วโมงก่อน) × 100 ทุกชั่วโมงในช่วงที่เลือก "
+                    "นับเฉพาะชั่วโมงที่มีราคาชั่วโมงก่อนหน้าต่อเนื่อง การเปลี่ยนข้ามช่วงตลาดปิด (เช่น ข้ามคืนของหุ้น) ไม่นับ" + ("" if one else " เลือกหลายตัวคือค่าเฉลี่ยของแต่ละตัว"))),
+    (CARDS[3], common.money(trading_z.max()),
+     common.explain("ชั่วโมงที่ปริมาณซื้อขายพุ่งผิดปกติที่สุด พุ่งแค่ไหน (เป็นปริมาณซื้อขายของราคา ไม่ใช่ปริมาณ Reddit)",
+                    "ปริมาณซื้อขายชั่วโมงนั้น เทียบ 24 ชั่วโมงก่อนหน้า ไม่รวมชั่วโมงปัจจุบัน (สูตรเดียวกับ Z-score ของ Reddit) แล้วเลือกค่าสูงสุดของช่วง"
+                    + ("" if one else " เลือกหลายตัวคือค่าสูงสุดของทุกตัว"), common.TRADING_Z_NOTE)),
+    (CARDS[4], common.money(natr.mean()),
+     common.explain("ราคาแกว่งแรงแค่ไหนต่อชั่วโมง คิดเป็น % ของราคา (ใช้เทียบข้ามสินทรัพย์ได้)",
+                    "ATR (ระยะที่ราคาแกว่งเฉลี่ยใน 24 ชั่วโมงล่าสุด) ÷ ราคาปิด × 100 แล้วเฉลี่ยทั้งช่วงที่เลือก" + ("" if one else " เลือกหลายตัวคือค่าเฉลี่ยของแต่ละตัว")))])
 
-# ---- one table per level of detail: every chart is built from the same long frame (ticker, time, measures)
-pieces = []
-for symbol, part in hourly.groupby("ticker"):
-    part = part.copy()
-    first = part.close.dropna().iloc[0] if part.close.notna().any() else float("nan")
-    part["price_index"] = 100.0 * part.close / first                          # price rebased: the first close = 100
-    mean_volume = part.volume.mean()
-    part["volume_index"] = 100.0 * part.volume / mean_volume if mean_volume else float("nan")   # volume: the mean = 100
-    shown_part = common.resample(part, {"close": "last", "volume": "sum", "rsi": "last", "atr": "last", "normalized_atr": "mean",
-                                        "log_return": "sum", "volume_zscore_24": "max", "price_index": "last",
-                                        "volume_index": "mean"}, how)
-    shown_part["ticker"] = symbol
-    pieces.append(shown_part)
-long = pd.concat(pieces, ignore_index=True)
-if len(tickers) > MAX_LINES:                                                  # the average of the ticked tickers
-    mean_frame = long.groupby("time", as_index=False).mean(numeric_only=True)
-    shown = mean_frame
+# ---- the price and the trading volume at the chosen level of time.  One asset: its close and its volume.  Several: the assets are not all traded in the same
+# hours (stocks sleep at night and on weekends), so an average of their LEVELS would jump whenever the set of traded assets changes; instead the mean Current
+# Return of the assets traded in the hour is drawn (the Current Return chart: a % needs no index, since 2026-11-15) and the trading volume, the RSI and the Normalized ATR are the mean of the assets traded in the hour, as on Price and Return.
+hourly = hourly.assign(hour_utc=hourly.hour_utc.astype(int), abs_return=hourly.log_return.abs())      # the size of the move of each asset in the hour, before any average
+if one:
+    market = common.resample(hourly.copy(), {"close": "last", "volume": "sum", "abs_return": "mean", "rsi": "last", "atr": "last", "normalized_atr": "mean"}, how)
+    price_col, price_title = "close", "ราคาปิด (USD)"
+    volume_raw_title, rsi_title, natr_title = "ปริมาณซื้อขาย (หน่วย)", "RSI", "Normalized ATR (%)"
+    volume_raw_col = "volume"
 else:
-    shown = long
+    mean_volume = hourly.groupby("ticker").volume.transform("mean")
+    hourly = hourly.assign(volume_index=100.0 * hourly.volume / mean_volume.where(mean_volume > 0))                  # the volume of each asset against its own mean (= 100)
+    by_hour = hourly.groupby("hour_utc").agg(volume_index=("volume_index", "mean"), abs_return=("abs_return", "mean"), rsi=("rsi", "mean"), natr=("normalized_atr", "mean"), time=("time", "first")).sort_index()
+    market = common.resample(by_hour.reset_index(), {"abs_return": "mean", "volume_index": "mean", "rsi": "last", "natr": "mean"}, how).rename(columns={"natr": "normalized_atr"})
+    price_col, price_title = None, None                                                              # several assets: no price level (see the Current Return chart)
+    volume_raw_title, rsi_title, natr_title = "ปริมาณซื้อขาย (เฉลี่ยของที่เลือก)", "RSI (เฉลี่ยของที่เลือก)", "Normalized ATR (เฉลี่ยของที่เลือก)"      # the same names as on Price and Return
+    volume_raw_col = "volume_index"
+reddit_shown = common.resample(reddit.drop(columns=["hour_utc"], errors="ignore"), {"texts": "sum", "zscore": "max"}, how) if not reddit.empty else pd.DataFrame(columns=["time", "texts", "zscore"])
+mention_shown = common.resample(mentions[["time", "mentions"]], {"mentions": "sum"}, how) if not mentions.empty else pd.DataFrame(columns=["time", "mentions"])
+merged = market.merge(reddit_shown[["time", "texts", "zscore"]], on="time", how="left").merge(mention_shown, on="time", how="left")
+merged["texts"] = merged.texts.fillna(0)
+merged["mentions"] = merged.mentions.fillna(0)                                   # nobody mentioned the assets = a real 0
 
+# ---- every chart: one price measure against the message volume (red) and the mentions of the ticked assets (teal); a tick box per line hides it
+REDDIT_LINES = [("texts", "ปริมาณข้อความ", common.C_REDDIT, ",.0f"), ("mentions", "ปริมาณการกล่าวถึงสินทรัพย์", common.C_RATE, ",.0f")]
 
-def trend(col, title, color, key, height=common.CHART_HEIGHT, log=False, **kw):
-    """One trend chart: the single series, one line per ticker, or the average of many."""
-    if one or len(tickers) > MAX_LINES:
-        label = title + ("" if one else " (เฉลี่ยของที่เลือก)")
-        return common.line(shown, "time", col, label, color, height, bar=common.kind(st, key), **kw)
-    return common.multi_series_chart(long, "time", col, "ticker", title, height, log=log, y_domain=kw.get("y_domain"))
+block("|Current Return| (%) เทียบกับปริมาณ Reddit", "ใช้ตรวจสอบว่าราคาขยับแรงแค่ไหน (ไม่สนว่าขึ้นหรือลง) แล้วตรงกับช่วงที่ Reddit Volume ขึ้นหรือลงหรือเปล่า",
+      how="ขนาดของ ln(ราคาปิดชั่วโมงนี้ ÷ ราคาปิดชั่วโมงก่อน) × 100")
+common.overlay_chart(merged, "time", "abs_return", "|Current Return| (%)", common.C_PRICE, REDDIT_LINES, "pr_return", "|Current Return|", left_fmt=".3f", left_zero=True)
 
+if one:
+    block("ราคาปิด เทียบกับปริมาณ Reddit", "ใช้ตรวจสอบว่าราคาเคลื่อนไหวไปพร้อมกับช่วงที่ Reddit Volume ขึ้นหรือลงหรือเปล่า (แสดงเมื่อเลือกสินทรัพย์ตัวเดียว)",
+          how="ราคาปิดของสินทรัพย์ที่เลือก")
+    common.overlay_chart(merged, "time", price_col, price_title, common.C_PRICE, REDDIT_LINES, "pr_price", "ราคาปิด")
 
-price_title = "ราคาปิด (USD)" if one else ("ราคาปิด (ค่าแรก = 100)" if per_ticker else "ราคาปิด")      # several lines: each rebased; the average: "(เฉลี่ยของที่เลือก)" is added by `trend`
-common.show(trend("close" if one else "price_index", price_title, common.C_PRICE, "p_close"), width="stretch")
-if not one:
-    pass
-common.show(trend("volume" if one else "volume_index", "ปริมาณซื้อขาย (หน่วย)" if one else ("ปริมาณซื้อขาย (ค่าเฉลี่ย = 100)" if per_ticker else "ปริมาณซื้อขาย"),
-                      common.C_VOLUME, "p_volume"), width="stretch")
-common.show(trend("rsi", "RSI", common.C_RSI, "p_rsi", y_domain=[0, 100])
-                + alt.Chart(alt.Data(values=[{"y": 30}, {"y": 70}])).mark_rule(strokeDash=[4, 4], color="gray")
-                .encode(y="y:Q"), width="stretch")
-if len(tickers) <= MAX_LINES:
-    common.show(trend("atr", "ATR (USD)" if one else "ATR (USD) แกนลอการิทึม", common.C_ATR, "p_atr", log=True, y_zero=one)
-                    if not one else common.line(shown, "time", "atr", "ATR (USD)", common.C_ATR, 220, y_zero=True,
-                                                bar=common.kind(st, "p_atr")), width="stretch")
-common.show(trend("normalized_atr", "Normalized ATR (%)" if one else "Normalized ATR", common.C_NATR, "p_natr", y_zero=True), width="stretch")
-if not one:
-    pass
+block("ปริมาณซื้อขาย เทียบกับปริมาณ Reddit", "ใช้ตรวจสอบว่าช่วงที่ซื้อขายคึกคัก ตรงกับช่วงที่ Reddit Volume ขึ้นหรือลงหรือเปล่า",
+      how=("จำนวนหุ้นหรือเหรียญที่ซื้อขายกันในชั่วโมงนั้น"))
+common.overlay_chart(merged, "time", volume_raw_col, volume_raw_title, common.C_VOLUME, REDDIT_LINES, "pr_volume", "ปริมาณซื้อขาย")
+
+block("RSI เทียบกับปริมาณ Reddit", "ใช้ตรวจสอบว่าราคาขึ้นหรือลงต่อเนื่องแค่ไหน ตรงกับช่วงที่ Reddit Volume ขึ้นหรือลงหรือเปล่า (0–100: เกิน 70 = ขึ้นต่อเนื่องมาก เรียกว่า ซื้อมากเกินไป, ต่ำกว่า 30 = ลงต่อเนื่องมาก เรียกว่า ขายมากเกินไป)",
+      how="ดูราคาปิด 14 ชั่วโมงล่าสุด แยกชั่วโมงที่ขึ้นกับชั่วโมงที่ลง หาค่าเฉลี่ยของการขึ้นและการลง แล้ว RSI = 100 − 100 ÷ (1 + เฉลี่ยขึ้น ÷ เฉลี่ยลง)")
+common.overlay_chart(merged, "time", "rsi", rsi_title, common.C_RSI, REDDIT_LINES, "pr_rsi", "RSI", left_fmt=".1f")
+
+block("Normalized ATR เทียบกับปริมาณ Reddit", "ใช้ตรวจสอบว่าช่วงที่ราคาแกว่งแรง (เป็น % ของราคา) ตรงกับช่วงที่ Reddit Volume ขึ้นหรือลงหรือเปล่า",
+      how="ATR (ระยะที่ราคาแกว่งเฉลี่ยต่อชั่วโมงใน 24 ชั่วโมงล่าสุด) ÷ ราคาปิด × 100 ใช้เทียบข้ามสินทรัพย์ได้")
+common.overlay_chart(merged, "time", "normalized_atr", natr_title, common.C_NATR, REDDIT_LINES, "pr_natr", "Normalized ATR", left_fmt=".3f")
+
+if one:
+    block("ATR (USD)", "ใช้ตรวจสอบระยะที่ราคาแกว่งเฉลี่ยเป็นดอลลาร์ต่อชั่วโมง (แสดงเมื่อเลือกสินทรัพย์ตัวเดียว เนื่องจากหน่วยเป็นดอลลาร์ จึงเฉลี่ยข้ามสินทรัพย์ไม่ได้)",
+          how="แต่ละชั่วโมงดูระยะแกว่ง = ราคาสูงสุด − ราคาต่ำสุด (รวมช่องว่างจากราคาปิดชั่วโมงก่อนถ้าห่างกว่า) แล้วเฉลี่ย 24 ชั่วโมงล่าสุด")
+    common.show(common.line(market, "time", "atr", "ATR (USD)", common.C_ATR, y_zero=True), width="stretch")
 
 # ---- the measures of every ticked ticker
-st.subheader("รายละเอียดค่าวัดของหลักทรัพย์ที่เลือก")
+block("รายละเอียดข้อมูล รายสินทรัพย์", "ใช้ตรวจสอบข้อมูลของแต่ละสินทรัพย์ที่เลือก (คลิกหัวคอลัมน์เพื่อเรียงลำดับ)")
 snap = q("ticker_snapshot", start, end, tickers)
 snap["สินทรัพย์"] = snap.ticker.map(lambda s: "%s (%s)" % (s, names.get(s, "")))
 snap["กลุ่ม"] = snap.big_group.map(GROUP_LABELS)
+snap["rows"] = snap.ticker.map(hourly.groupby("ticker").size())                      # the hourly price rows of the asset in the range (the rows its numbers are made of)
 rsi_zones = hourly.dropna(subset=["rsi"]).groupby("ticker").rsi.agg(over70=lambda s: (s > 70).mean(), under30=lambda s: (s < 30).mean())
 snap = snap.merge(rsi_zones, left_on="ticker", right_index=True, how="left")
-measures = snap[["สินทรัพย์", "กลุ่ม", "last_close", "last_rsi", "over70", "under30", "mean_normalized_atr_pct",
+measures = snap[["สินทรัพย์", "กลุ่ม", "rows", "last_close", "last_rsi", "over70", "under30", "mean_normalized_atr_pct",
                  "fr_now", "fr_1h", "fr_2h", "fr_3h", "fr_6h", "fr_12h"]].rename(columns={
-    "last_close": "ราคาปิดล่าสุด (USD)", "last_rsi": "RSI ล่าสุด", "over70": "สัดส่วน RSI > 70", "under30": "สัดส่วน RSI < 30",
+    "rows": "จำนวนแถวข้อมูล (ชั่วโมง)", "last_close": "ราคาปิดล่าสุด (USD)", "last_rsi": "RSI ล่าสุด", "over70": "สัดส่วน RSI > 70", "under30": "สัดส่วน RSI < 30",
     "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)",
     "fr_now": "ผลตอบแทน Current (%)", "fr_1h": "1h (%)", "fr_2h": "2h (%)", "fr_3h": "3h (%)", "fr_6h": "6h (%)", "fr_12h": "12h (%)"})
 formats = {c: "{:.4f}" for c in measures.columns if c not in ("สินทรัพย์", "กลุ่ม")}
 formats["ราคาปิดล่าสุด (USD)"] = "{:,.2f}"
+formats["จำนวนแถวข้อมูล (ชั่วโมง)"] = "{:,.0f}"
 st.dataframe(measures.style.format(formats, na_rep="-"), hide_index=True, width="stretch", height=min(420, 60 + 36 * len(snap)))      # a missing value shows "-", never None
-
-# ---- below, as before: asset classes (computed over the ticked tickers)
-st.subheader("ผลตอบแทนล่วงหน้าแยกตามกลุ่มสินทรัพย์")
-fr = q("future_return_by_group", start, end, tickers)
-if fr.empty or fr.n.sum() == 0:
-    st.info("ไม่มีข้อมูลผลตอบแทนล่วงหน้าในช่วงนี้")
-else:
-    fr["กลุ่ม"] = fr.big_group.map(GROUP_LABELS)
-    fr["กรอบเวลา"] = fr.horizon
-    fr["ราคาขึ้นกี่ % ของแท่ง"] = (100.0 * fr.share_up).round(1)
-    chart = (alt.Chart(fr).mark_bar().encode(
-        x=alt.X("กรอบเวลา:N", sort=["Current Return", "1h", "2h", "3h", "6h", "12h"], title="กรอบเวลา"),
-        y=alt.Y("mean_return_pct:Q", title="ผลตอบแทนเฉลี่ย (%)"), xOffset="กลุ่ม:N",
-        color=alt.Color("กลุ่ม:N", scale=common.group_scale()),
-        tooltip=["กลุ่ม", "กรอบเวลา", alt.Tooltip("mean_return_pct:Q", format=".4f"),
-                 alt.Tooltip("ราคาขึ้นกี่ % ของแท่ง:Q", format=".1f"), alt.Tooltip("n:Q", format=",")]).properties(height=common.CHART_HEIGHT))
-    common.show(chart, width="stretch")
-    common.table(fr[["กลุ่ม", "กรอบเวลา", "n", "mean_return_pct", "ราคาขึ้นกี่ % ของแท่ง"]].rename(columns={
-        "n": "จำนวนตัวอย่าง", "mean_return_pct": "ผลตอบแทนเฉลี่ย (%)"}),
-        hide_index=True, width="stretch")
-
-st.subheader("กลุ่มสินทรัพย์ใดผันผวนสูงที่สุด")
-tr = q("ticker_risk", start, end, tickers)
-tr["สินทรัพย์"] = tr.ticker.map(lambda t: "%s (%s)" % (t, names.get(t, "")))
-# the stock_etf group is shown split into stocks and ETFs (EXTENSION: their volatility differs a lot; the ETF drawer tells index ETFs from bitcoin ETFs); the other groups as they are
-tr["ชนิดย่อย"] = [common.INSTRUMENT_LABELS.get(common.instrument_of(t), "") for t in tr.ticker]                       # the sub-type of the stock_etf assets
-tr["ชนิด"] = [("ETF" if common.instrument_of(t) in common.ETF_KINDS else "หุ้น") if g == "stock_etf" else GROUP_LABELS.get(g, g) for t, g in zip(tr.ticker, tr.big_group)]
-tr["atr_x_bars"] = tr.mean_normalized_atr_pct * tr.bars
-tr["abs_x_bars"] = tr.mean_abs_log_return_pct * tr.bars
-
-def summary(frame, by):
-    """Per value of column `by`: the number of assets, bars and the mean over all the bars of the Normalized ATR and the |Current Return|."""
-    out = frame.groupby(by).agg(ตัว=("ticker", "nunique"), แท่ง=("bars", "sum"), atr=("atr_x_bars", "sum"), absr=("abs_x_bars", "sum")).reset_index()
-    out["atr"], out["absr"] = out.atr / out.แท่ง, out.absr / out.แท่ง
-    return out
-
-
-def numbers(row):
-    return "%d ตัว · แท่งราคา %s · Normalized ATR %.4f%% · |Current Return| %.4f%%" % (row.ตัว, "{:,}".format(int(row.แท่ง)), row.atr, row.absr)
-
-
-def asset_table(part):
-    common.table(part[["สินทรัพย์", "bars", "mean_normalized_atr_pct", "mean_abs_log_return_pct"]].rename(columns={
-        "bars": "จำนวนแท่งราคา", "mean_normalized_atr_pct": "Normalized ATR เฉลี่ย (%)", "mean_abs_log_return_pct": "|Current Return| เฉลี่ย (%)"}).round(4),
-        hide_index=True, width="stretch")
-
-
-# Outside: the three Big_Groups of the proposal, each with the numbers of the whole group.  Inside the stock_etf group: stocks and ETFs (a line each), and under
-# each a drawer per sub-type (its row is the header, the assets are inside).  Crypto and futures: one drawer with their assets.  Every row is read against its own group.
-for big in summary(tr, "big_group").sort_values("atr", ascending=False).itertuples():
-    part = tr[tr.big_group == big.big_group]
-    st.markdown("### %s · %s" % (GROUP_LABELS.get(big.big_group, big.big_group), numbers(big)))
-    if big.big_group == "stock_etf":
-        for main in summary(part, "ชนิด").sort_values("atr", ascending=False).itertuples():          # หุ้น / ETF
-            st.markdown("**%s** · %s" % (main.ชนิด, numbers(main)))
-            kind = part[part.ชนิด == main.ชนิด]
-            for sub in summary(kind, "ชนิดย่อย").sort_values("atr", ascending=False).itertuples():
-                with st.expander("↳ **%s** · %s" % (sub.ชนิดย่อย, numbers(sub))):
-                    asset_table(kind[kind.ชนิดย่อย == sub.ชนิดย่อย])
-    else:
-        with st.expander("↳ ดูรายตัวของ%s" % GROUP_LABELS.get(big.big_group, big.big_group)):
-            asset_table(part)

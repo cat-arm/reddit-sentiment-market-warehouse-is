@@ -1,10 +1,10 @@
-"""Dashboard extension 9  Logistic Regression  (proposal 7.4: AUC-ROC and the coefficients of the variables, "to help the interpretation").
+"""Dashboard extension 9  Logistic Regression  (proposal 7.4, extended 2026-11-16 after the advisor's remark: train, predict on a test set, L1 / L2 to select the variables).
 
-The model of system 7.4 (`analysis.logistic`: a model per panel of table 12 and per horizon, TimeSeriesSplit with 5 folds and a gap of 12 hours, scaler
-fitted on the training part only) TRAINED LIVE on the ticker-hours that pass the filters of the sidebar (time, assets, communities, model, types of text,
-majority status; the Reddit Volume and Sentiment Thresholds act on the panels "all" only, the fixed panels strong / quality / spike / baseline ignore
-them, like on Statistical Analysis).  With no filter it gives the stored result of `analysis_results` (checked by a test).
-Moved out of Statistical Analysis on 2026-11-13.  Descriptive only: no investment advice.
+Two separate analyses of `analysis.logistic_eval` (nothing is written to the database), computed LIVE for the panel and the horizon picked on the page, on the rows that pass
+the filters of the sidebar (time, assets, communities, model, types of text, majority status; the Reddit Volume Z-score and Sentiment Thresholds act on the panels "all" only):
+  1  Is the model of the panel better or worse than a random guess?  AUC on the test set (the last 25% of the hours) with a 95% interval.
+  2  How much does each variable add?  L1 selection, add-one and drop-one on the same split.
+Above them an overview of the nine panels, precomputed (`output/reports/logistic_panels.csv`, no filter).  Descriptive only: no investment advice.
 """
 
 import sys
@@ -13,18 +13,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import altair as alt  # noqa: E402
-import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from dashboard import common, data  # noqa: E402
-from dashboard.common import GROUP_LABELS, q  # noqa: E402
+from dashboard.common import q  # noqa: E402
 
-common.setup("Logistic Regression (โมเดลทายทิศทางราคาจากความรู้สึก)", "📈")
+common.setup("การถดถอยโลจิสติก (Logistic Regression)", "📈")
 state = st.session_state
-if state.get("l9_family") in ("Ticker", "compare") and state.get("l9_kind") == "baseline":        # the random baseline belongs to Global only
-    state["l9_kind"] = "all"
-# the two thresholds always work here: the AUC grid shows the panels "all" (Global, Ticker) at every moment, whatever panel the picker below chose
 _, start, end, _ = common.sidebar(multi=True, sentiment=True, detection="overview", majority=True)
 tickers = common.selected_tickers()
 communities = common.selected_communities()
@@ -34,33 +30,10 @@ if not tickers or not communities or not statuses or not content_types:
     st.info("ยังไม่ได้เลือกหลักทรัพย์ ชุมชน ประเภทเนื้อหา หรือประเภทความรู้สึกส่วนใหญ่ จึงไม่มีข้อมูลแสดง")
     st.stop()
 z_th = state.get("d_z", 0.0)
-v_th = int(state.get("d_v", 0))
 s_th = common.sentiment_cut()
 model = common.selected_model()
 TARGET_LABEL = {"log_return": "Current Return", "1h": "1h", "2h": "2h", "3h": "3h", "6h": "6h", "12h": "12h"}
-FAMILIES = {"global": "Global (ความรู้สึกรวมของทั้งตลาด)", "Ticker": "Ticker (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น)", "compare": "เปรียบเทียบ 2 panel"}
-PANEL_CHOICES = {"%s:%s" % (f, k): "%s · %s" % ("Global" if f == "global" else "Ticker", v) for f in ("global", "Ticker") for k, v in data.PANEL_VARIANTS.items()
-                 if not (f == "Ticker" and k == "baseline")}
-universe = q("tickers")
-group_of = dict(zip(universe.ticker, universe.big_group))
-
-
-def live_rows(scope):
-    """The Logistic Regression of the nine panels on the assets chosen in the sidebar (scope 'ALL' of `common.logistic_live`), trained live (cached per set of filters)."""
-    parts = []
-    for choice in PANEL_CHOICES:
-        fam, kd = choice.split(":")
-        fixed = kd != "all"                                                                 # the fixed panels of table 12 ignore the two thresholds
-        parts.append(common.logistic_live(fam, kd, scope, tuple(tickers), start, end, tuple(communities), model, tuple(statuses),
-                                          0.0 if fixed else z_th, 0.0 if fixed else s_th, tuple(content_types), 0 if fixed else v_th))
-    return pd.concat(parts, ignore_index=True)
-
-
-def dark_cell(values, domain):
-    """True where the colour of a cell is dark (the two ends of the red-yellow-green scale): the text on it must be white to be read."""
-    lo, hi = domain
-    t = ((pd.to_numeric(values, errors="coerce") - lo) / (hi - lo)).clip(0, 1)
-    return ((t < 0.22) | (t > 0.78)).fillna(False)
+BOOT = 100                                                                                  # bootstrap rounds of the live interval (the stored report uses 300)
 
 
 def ink(light_cell_color):
@@ -68,157 +41,122 @@ def ink(light_cell_color):
     return alt.condition(alt.datum.dark, alt.value("#ffffff"), alt.value(light_cell_color))
 
 
-METHOD_NOTE = """
-**เป้าหมายที่ให้โมเดลทาย**  
-ผลตอบแทนที่ Horizon นั้นเป็นบวก (ขึ้น = 1) หรือเป็นลบ (ลง = 0) ผลตอบแทนที่เท่ากับ 0 พอดีไม่นับ  Current Return คือ ทิศทางของชั่วโมงเดียวกัน (เกิดพร้อมกัน ไม่ใช่การทำนาย)
-
-**ตัวแปรที่ป้อนให้โมเดล (6 กลุ่มตามที่ proposal กำหนด)**  
-Level (ค่าความรู้สึกเฉลี่ย, ความแรง), Direction (สัดส่วนบวก/ลบ), Vote (ประเภทความรู้สึกส่วนใหญ่, สัดส่วนที่เห็นตรงกัน), Volume (Reddit Volume Z-score), Lag (ความรู้สึก 1, 2, 3, 6, 12 ชั่วโมงก่อนหน้า), Momentum (การเปลี่ยนแปลงจากชั่วโมงก่อน)  ไม่ใช้ score, upvote_ratio, num_comments และไม่ใช้ผลตอบแทนอนาคตเป็นตัวแปรป้อนเข้า
-
-**วิธีทดสอบ (เฉลี่ยจาก 5 รอบ)**  
-เรียงข้อมูลตามเวลา แล้วแบ่งแบบ TimeSeriesSplit เป็น 5 รอบ แต่ละรอบให้โมเดลเรียนจากข้อมูล**ช่วงก่อนหน้า**แล้วทดสอบกับข้อมูล**ช่วงถัดมา** (ไม่สลับช่วงเวลา) และเว้นห่าง 12 ชั่วโมงระหว่างชุดเรียนกับชุดทดสอบ เพื่อไม่ให้ผลตอบแทนล่วงหน้า 12 ชั่วโมงของชุดเรียนซ้อนกับชุดทดสอบ  ทุกรอบปรับสเกลตัวแปร (StandardScaler) ด้วยข้อมูลชุดเรียนเท่านั้น  **AUC และสัมประสิทธิ์ในหน้านี้คือค่าเฉลี่ยของ 5 รอบ**
-
-**แถวข้อมูล**  
-ใช้เฉพาะแถวที่ตัวแปรครบทุกตัว (ไม่เติม 0 แทนค่าที่ขาด เนื่องจาก 0 หมายถึงเป็นกลาง) ต้องมีอย่างน้อย 500 แถวและทุกรอบต้องมีทั้งขึ้นและลง ไม่งั้นไม่แสดงผล  ตัวเลขนับรวมทุกสินทรัพย์ในกลุ่มที่เลือก (ทุกชั่วโมงของทุกสินทรัพย์ในที่เดียว)
-
-**วิธีอ่านผล**  
-AUC เท่ากับ 0.5 คือการสุ่ม และ 1.0 คือทายถูกทั้งหมด  
-สัมประสิทธิ์มาตรฐานคือการเปลี่ยนแปลงของโอกาสที่ราคาขึ้น (ในสเกลของโมเดล) เมื่อตัวแปรนั้นเพิ่ม 1 ส่วนเบี่ยงเบนมาตรฐาน ค่าบวกดันให้ขึ้น ค่าลบดันให้ลง  ผลทั้งหมดเป็นการบรรยายข้อมูลย้อนหลัง ไม่ใช่คำแนะนำการลงทุน
-"""
+def verdict(low, high):
+    """'ดีกว่าเดาสุ่ม' / 'แย่กว่าเดาสุ่ม' / 'แยกไม่ออกจากเดาสุ่ม' from the 95% interval of the AUC."""
+    if pd.isna(low) or pd.isna(high):
+        return "ไม่มีข้อมูล"
+    return "ดีกว่าเดาสุ่ม" if low > 0.5 else "แย่กว่าเดาสุ่ม" if high < 0.5 else "แยกไม่ออกจากเดาสุ่ม"
 
 
-def logistic_pickers():
-    """The two selectboxes of the comparison (drawn in the sticky bar): A = the base, B = compared with A."""
-    choices = {k: v for k, v in PANEL_CHOICES.items() if not k.endswith(":baseline")}          # the random baseline has no variable in common with the others
-    st.session_state.setdefault("l9_cmp_a", "global:all")
-    st.session_state.setdefault("l9_cmp_b", "global:strong")
-    left, right = st.columns(2)
-    a_key = left.selectbox("A (ฝั่งซ้าย ฐานเปรียบเทียบ)", list(choices), format_func=choices.get, key="l9_cmp_a")
-    b_key = right.selectbox("B (ฝั่งขวา เทียบกับ A)", list(choices), format_func=choices.get, key="l9_cmp_b")
-    return a_key, b_key
-
-
-def logistic_compare(lg, a_key, b_key):
-    """Two Logistic panels as one heat map of the difference B - A of the effect of every variable at every horizon (percentage points)."""
-    if a_key == b_key:
-        st.info("เลือก panel สองอันที่ต่างกัน")
-        return
-
-    def effects(choice):
-        fam, kd = choice.split(":")
-        part = lg[lg.panel == data.panel_name(kd, fam)]
-        c = part[part.metric.str.startswith("coef:")].assign(column=lambda d: d.metric.str[5:])
-        return c.assign(effect=data.effect_points(c.value))[["column", "horizon", "effect"]]
-
-    ea, eb = effects(a_key), effects(b_key)
-    d = ea.merge(eb, on=["column", "horizon"], suffixes=("_a", "_b"))
+def overview():
+    """The AUC on the test set of the nine panels at every horizon, from the precomputed file (default settings, no filter)."""
+    d = data.stored_logistic_panels()
     if d.empty:
-        st.info("ไม่มีตัวแปรและ Horizon ที่ทั้งสอง panel มีผลพร้อมกัน (panel ที่ข้อมูลน้อยไม่มีผลโมเดล)")
         return
-    d["diff"] = d.effect_b - d.effect_a
-    d["ตัวแปร"] = d.column.map(data.variable_label)
-    d["ช่วง"] = d.horizon.map(TARGET_LABEL)
-    d["label"] = d["diff"].map("{:+.1f}".format)
-    d["dark"] = dark_cell(d["diff"], (-2.5, 2.5))
-    row_order = [data.variable_label(c) for c in data.VARIABLES if c in set(d.column)]
-    chart = alt.Chart(d).encode(
-        x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-        y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
-    rect = chart.mark_rect().encode(
-        color=alt.Color("diff:Q", title="B − A (จุด%)", scale=alt.Scale(domain=[-2.5, 2.5], scheme="redyellowgreen", clamp=True)),
-        tooltip=["ตัวแปร", "ช่วง", alt.Tooltip("effect_a:Q", title="A (จุด%)", format="+.2f"), alt.Tooltip("effect_b:Q", title="B (จุด%)", format="+.2f"),
-                 alt.Tooltip("diff:Q", title="B − A", format="+.2f")])
-    text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
-    st.write("ผลต่างของผลแต่ละตัวแปร B − A (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น)")
-    common.show((rect + text).properties(height=30 * len(row_order) + 40))
-
-
-def auc_rows(lg_all):
-    """The AUC of the nine panels at every horizon, the random Baseline among them as the yardstick (proposal 7.4: AUC against the Random Baseline AUC).
-    The nine rows do not depend on the picker below: it picks the panel of the variable charts only."""
-    names = [p for p in data.STORED_PANELS if p in set(lg_all.panel)]
-    d = lg_all[(lg_all.metric == "auc") & lg_all.panel.isin(names)].copy()
+    d = d[d.status == "ok"].copy()
     labels = {p: "%s (%s)" % (p.replace("panel_", ""), data.STORED_PANELS[p]) for p in data.STORED_PANELS}
     d["panel_label"] = d.panel.map(labels)
     d["ช่วง"] = d.horizon.map(TARGET_LABEL)
-    d["label"] = ["ข้อมูลไม่พอ" if pd.isna(v) else "{:.3f}".format(v) for v in d.value]
-    d["n_label"] = [("⚠ " if n < 30 else "") + "n=" + "{:,}".format(int(n)) for n in d.n]
-    d["dark"] = dark_cell(d.value, (0.47, 0.53))
+    d["verdict"] = [verdict(lo, hi) for lo, hi in zip(d.auc_low, d.auc_high)]
+    d["label"] = ["{:.3f}".format(v) + (" ✔" if w == "ดีกว่าเดาสุ่ม" else " ✘" if w == "แย่กว่าเดาสุ่ม" else "") for v, w in zip(d.auc, d.verdict)]
+    lo, hi = 0.50, 0.53
+    d["dark"] = ((d.auc - lo) / (hi - lo) > 0.6).fillna(False)
+    names = [p for p in data.STORED_PANELS if p in set(d.panel)]
     chart = alt.Chart(d).encode(
         x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
         y=alt.Y("panel_label:N", sort=[labels[p] for p in names], title=None, axis=alt.Axis(labelLimit=260)))
     rect = chart.mark_rect().encode(
-        color=alt.Color("value:Q", title="AUC", scale=alt.Scale(domain=[0.47, 0.53], scheme="redyellowgreen", clamp=True)),
-        tooltip=["panel_label", "ช่วง", alt.Tooltip("value:Q", title="AUC", format=".4f"), alt.Tooltip("n:Q", title="จำนวนตัวอย่าง", format=",")])
-    text = chart.mark_text(fontSize=12, dy=-7).encode(text="label:N", color=ink("#222222"))
-    count = chart.mark_text(fontSize=9, dy=10).encode(text="n_label:N", color=ink("#555555"))
-    st.write("AUC ของทุก panel เทียบกับ Baseline สุ่ม (แต่ละ Horizon) ปุ่มเลือก panel ด้านล่างใช้กับกราฟตัวแปรเท่านั้น")
-    common.show((rect + text + count).properties(height=50 * len(names) + 130))
+        color=alt.Color("auc:Q", title="Area Under the ROC Curve (AUC) บนชุดทดสอบ", scale=alt.Scale(domain=[lo, hi], range=["#f1faec", "#0b4d1f"], clamp=True)),
+        tooltip=["panel_label", "ช่วง", alt.Tooltip("auc:Q", title="Area Under the ROC Curve (AUC)", format=".4f"), alt.Tooltip("auc_low:Q", title="ช่วงเชื่อมั่น 95% ต่ำ", format=".4f"),
+                 alt.Tooltip("auc_high:Q", title="ช่วงเชื่อมั่น 95% สูง", format=".4f"), "verdict", alt.Tooltip("n_test:Q", title="จำนวนแถวชุดทดสอบ", format=",")])
+    text = chart.mark_text(fontSize=12).encode(text="label:N", color=ink("#222222"))
+    common.block("Area Under the ROC Curve (AUC) ของแต่ละ panel",
+                 "panel คือชุดข้อมูลรายชั่วโมงที่ใช้ฝึกและทดสอบแบบจำลอง โดยที่ Global ใช้ความรู้สึกรวมของทั้งตลาด, Ticker ใช้เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น, "
+                 "strong / quality / spike คือเฉพาะชั่วโมงที่ความรู้สึกชัดเจน (|s| ≥ 0.05) ความรู้สึกคุณภาพ (|s| ≥ 0.30) หรือปริมาณพุ่ง (Z-score > 1.5), Baseline ใช้ทิศทางสุ่มเป็นตัวเทียบ ",
+                 how="แบ่งเวลาเป็นชุดฝึก 75% และชุดทดสอบ 25% เว้น 12 ชั่วโมง เลือก L1 หรือ L2 และค่า C ด้วย TimeSeriesSplit 3 รอบในชุดฝึกเท่านั้น แล้วทายชุดทดสอบครั้งเดียว "
+                     "Area Under the ROC Curve (AUC) = ความน่าจะเป็นที่แบบจำลองให้คะแนนชั่วโมงที่ราคาขึ้นสูงกว่าชั่วโมงที่ราคาลง (0.5 = เดาสุ่ม) ✔ = ช่วงเชื่อมั่น 95% สูงกว่า 0.5 ✘ = ต่ำกว่า 0.5")
+    common.show((rect + text).properties(height=50 * len(names) + 100))
+    rank_p = {labels[p]: i for i, p in enumerate(names)}                                                 # the order of the heat map: the panels top to bottom, the horizons left to right
+    rank_h = {TARGET_LABEL[t]: i for i, t in enumerate(data.STAT_TARGETS)}
+    d = d.assign(_p=d.panel_label.map(rank_p), _h=d["ช่วง"].map(rank_h)).sort_values(["_p", "_h"])
+    pick = st.radio("ช่วงเวลา", list(rank_h), horizontal=True, key="lg_metric_h")                       # the table shows the nine panels at ONE horizon
+    metrics = d[d["ช่วง"] == pick][["panel_label", "auc", "accuracy", "balanced_accuracy", "precision", "recall", "f1"]].rename(columns={
+        "panel_label": "panel", "auc": "Area Under the ROC Curve (AUC)", "accuracy": "Accuracy", "balanced_accuracy": "Balanced Accuracy", "precision": "Precision", "recall": "Recall", "f1": "F1"})
+    st.dataframe(metrics.style.format({c: "{:.3f}" for c in metrics.columns[1:]}), hide_index=True, width="stretch", height=38 * (len(metrics) + 1) + 3)
 
 
-def logistic_view():
-    """The stored Logistic Regression: AUC of every panel and horizon, then the coefficients and the importance of the variable groups."""
-    with st.expander("รายละเอียดวิธีทำ (Logistic Regression)"):
-        st.markdown(METHOD_NOTE)
-    lg_all = live_rows("ALL")                                                              # the assets are chosen in the sidebar (class and ticker boxes)
-    lg = lg_all[lg_all.status == "ok"]
-    if lg_all[lg_all.metric == "auc"].empty:
-        st.info("ไม่มีผล Logistic ของขอบเขตนี้")
+def reason(r):
+    """(result, reason) of one variable: the price variables are the base; a Reddit variable stays when adding it to the price-only model raises the AUC (the 95% interval
+    does not contain 0), otherwise it is cut; L1 is said when it zeroed the variable."""
+    if r.side == "price":
+        return "ฐานราคา (คงไว้)", "ตัวแปรราคาของชั่วโมงเดียวกัน ใช้เป็นฐานเปรียบเทียบ ไม่ถูกตัด"
+    l1 = "L1 บีบเป็น 0 (ซ้ำซ้อนกับตัวแปรความรู้สึกอื่น)" if not r.l1_selected else "L1 เก็บไว้"
+    gain = "เติมเข้าแบบจำลองราคาล้วนแล้ว Area Under the ROC Curve (AUC) เพิ่ม %+.4f (ช่วงเชื่อมั่น 95%%: %+.4f ถึง %+.4f)" % (r.add_one_delta, r.add_one_low, r.add_one_high)
+    if r.add_one_low > 0:
+        return "ช่วยจริง (เก็บไว้)", gain + " · " + l1
+    why = "เติมเข้าแบบจำลองราคาล้วนแล้ว Area Under the ROC Curve (AUC) ไม่เพิ่มอย่างมีนัยสำคัญ (%+.4f ช่วงเชื่อมั่น 95%%: %+.4f ถึง %+.4f คร่อม 0)" % (r.add_one_delta, r.add_one_low, r.add_one_high)
+    return "ไม่ช่วย (ตัดออก)", why + " · " + l1
+
+
+def variable_chart(feats, row):
+    """The AUC of the price-only model plus ONE Reddit variable, one dot per variable: the dashed line is the price-only AUC (the base), the dotted grey line 0.5 (a random guess),
+    the black line the 95% interval of the gain put on the base.  Green dot = the interval is above the base (kept), grey = it is not (taken out)."""
+    base_auc = row.get("price_only_auc")
+    var = feats[(feats.kind == "variable") & (feats.side == "reddit")].copy()
+    if var.empty or base_auc is None or pd.isna(base_auc):
         return
-    auc_rows(lg_all)
-    st.write("สัมประสิทธิ์และความสำคัญของตัวแปร เลือก panel ได้ (ปุ่มด้านล่างติดอยู่ตอนเลื่อน)")
-    with common.sticky_bar("l9_bar"):                                                     # the picker stays at the top while the long heat maps below scroll
-        log_family = st.radio("ข้อความที่ใช้ (panel ตามตาราง 12)", list(FAMILIES), format_func=FAMILIES.get, horizontal=True, key="l9_family",
-                              )                                  # the same layers as the heat map of Statistical Analysis
-        if log_family == "compare":
-            a_key, b_key = logistic_pickers()
-        else:
-            log_kinds = data.PANEL_VARIANTS if log_family == "global" else {k: v for k, v in data.PANEL_VARIANTS.items() if k != "baseline"}
-            if st.session_state.get("l9_kind") not in log_kinds:
-                st.session_state["l9_kind"] = "all"
-            log_kind = st.radio("ชนิดข้อความ", list(log_kinds), format_func=log_kinds.get, horizontal=True, key="l9_kind")
-    if log_family == "compare":
-        logistic_compare(lg, a_key, b_key)
+    var["ตัวแปร"] = ["%s (%s)" % (c, data.VARIABLES.get(c, ("", ""))[0]) for c in var.name]
+    var["AUC"] = base_auc + var.add_one_delta
+    var["ต่ำ"] = base_auc + var.add_one_low
+    var["สูง"] = base_auc + var.add_one_high
+    var["ผล"] = ["ช่วยจริง" if low > 0 else "ไม่ช่วย" for low in var.add_one_low]
+    var = var.sort_values("AUC", ascending=False)
+    base = alt.Chart(var).encode(y=alt.Y("ตัวแปร:N", sort=list(var["ตัวแปร"]), title=None, axis=alt.Axis(labelLimit=420, labelOverlap=False)))
+    whisker = base.mark_rule(color="#333333").encode(x=alt.X("ต่ำ:Q", scale=alt.Scale(zero=False), title="Area Under the ROC Curve (AUC) ของแบบจำลองราคาล้วน + ตัวแปรนี้"), x2="สูง:Q")
+    dots = base.mark_circle(size=110, opacity=1).encode(
+        x="AUC:Q", color=alt.Color("ผล:N", title=None, scale=alt.Scale(domain=["ช่วยจริง", "ไม่ช่วย"], range=["#1a9850", "#9e9e9e"])),
+        tooltip=["ตัวแปร", alt.Tooltip("AUC:Q", title="Area Under the ROC Curve (AUC)", format=".4f"), alt.Tooltip("ต่ำ:Q", title="ช่วงเชื่อมั่น 95% ต่ำ", format=".4f"), alt.Tooltip("สูง:Q", title="ช่วงเชื่อมั่น 95% สูง", format=".4f"), "ผล"])
+    lines = alt.Chart(pd.DataFrame({"x": [base_auc, 0.5], "เส้น": ["ราคาล้วน", "เดาสุ่ม (0.5)"]}))
+    ref = lines.mark_rule(strokeDash=[6, 4], size=2).encode(x="x:Q", color=alt.Color("เส้น:N", title=None, scale=alt.Scale(domain=["ราคาล้วน", "เดาสุ่ม (0.5)"], range=["#1f77b4", "#888888"])))
+    common.show(alt.layer(ref, whisker, dots).resolve_scale(color="independent").properties(height=30 * len(var) + 50))        # two colour scales: the dots and the lines
+
+
+def reduced_metrics(row):
+    """The metrics on the test set of the model with every variable and of the model with only the variables kept in the table."""
+    full, red = row, row.get("reduced")
+    if not red:
         return
-    panel_pick = data.panel_name(log_kind, log_family)
-    one = lg[lg.panel == panel_pick]
-    coefs = one[one.metric.str.startswith("coef:")].assign(column=lambda d: d.metric.str[5:])
-    if coefs.empty:
-        st.info("ไม่มีสัมประสิทธิ์ของ panel นี้ในขอบเขตที่เลือก")
+    names = {"auc": "Area Under the ROC Curve (AUC)", "accuracy": "Accuracy", "balanced_accuracy": "Balanced Accuracy", "precision": "Precision", "recall": "Recall", "f1": "F1"}
+    out = pd.DataFrame([{"แบบจำลอง": "ก่อนตัด (ทุกตัวแปร 19 ตัว)", **{v: full[k] for k, v in names.items()}},
+                        {"แบบจำลอง": "หลังตัด (%d ตัวแปรที่เก็บไว้)" % red["n_vars"], **{v: red[k] for k, v in names.items()}}])
+    st.dataframe(out.style.format({v: "{:.3f}" for v in names.values()}), hide_index=True, width="stretch")
+    st.caption("ตัวแปรที่เก็บไว้เลือกจากชุดทดสอบเอง ค่าหลังตัดจึงอาจสูงเกินจริงเล็กน้อย")
+
+
+def variable_table(feats):
+    """One row per variable: kept or cut, and why."""
+    var = feats[feats.kind == "variable"].copy()
+    if var.empty:
         return
-    coefs = coefs.assign(ตัวแปร=coefs.column.map(data.variable_label), ช่วง=coefs.horizon.map(TARGET_LABEL),
-                         กลุ่ม=coefs.column.map(lambda c: data.VARIABLE_GROUPS.get(data.VARIABLES.get(c, ("", ""))[1], "")),
-                         effect=data.effect_points(coefs.value))
-    coefs["dark"] = dark_cell(coefs.effect, (-2.5, 2.5))
-    coefs["label"] = coefs.effect.map("{:+.1f}".format)
-    row_order = [data.variable_label(c) for c in data.VARIABLES if c in set(coefs.column)]         # grouped: Level, Direction, Vote, Volume, Lag, Momentum
-
-    imp = one[one.metric.str.startswith("group_importance:")].assign(
-        กลุ่มตัวแปร=lambda d: d.metric.str[17:].map(lambda g: data.VARIABLE_GROUPS.get(g, g)), ช่วง=lambda d: d.horizon.map(TARGET_LABEL),
-        label=lambda d: d.value.map("{:.3f}".format))
-    imp["dark"] = (imp.value / imp.value.max()) > 0.7 if len(imp) else False
-    if not imp.empty:
-        st.write("ความสำคัญของกลุ่มตัวแปร (ผลรวมขนาดสัมประสิทธิ์ของกลุ่ม ยิ่งสูงยิ่งมีอิทธิพลต่อโมเดลมาก) ดูกลุ่มก่อน แล้วเจาะรายตัวแปรด้านล่าง")
-        chart = alt.Chart(imp).encode(
-            x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-            y=alt.Y("กลุ่มตัวแปร:N", sort=[g for g in data.VARIABLE_GROUPS.values() if g in set(imp.กลุ่มตัวแปร)], title=None,
-                    axis=alt.Axis(labelLimit=300, labelOverlap=False)))
-        rect = chart.mark_rect().encode(color=alt.Color("value:Q", title="ความสำคัญ", scale=alt.Scale(scheme="greens")),
-                                        tooltip=["กลุ่มตัวแปร", "ช่วง", alt.Tooltip("value:Q", title="ความสำคัญ", format=".4f")])
-        text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
-        common.show((rect + text).properties(height=34 * imp.กลุ่มตัวแปร.nunique() + 40))
-
-    # the effect of every variable at every horizon, one heat map (the same layout as the heat maps above: no horizon to pick)
-    st.write("เจาะรายตัวแปร: ผลของแต่ละตัวแปรในแต่ละ Horizon (จุดเปอร์เซ็นต์ของโอกาสที่ราคาขึ้น มีทิศทางบวก/ลบ)")
-    chart = alt.Chart(coefs).encode(
-        x=alt.X("ช่วง:O", sort=[TARGET_LABEL[t] for t in data.STAT_TARGETS], title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-        y=alt.Y("ตัวแปร:N", sort=row_order, title=None, axis=alt.Axis(labelLimit=520, labelOverlap=False)))
-    rect = chart.mark_rect().encode(
-        color=alt.Color("effect:Q", title="จุด% ของโอกาสขึ้น", scale=alt.Scale(domain=[-2.5, 2.5], scheme="redyellowgreen", clamp=True)),
-        tooltip=["ตัวแปร", "กลุ่ม", "ช่วง", alt.Tooltip("effect:Q", title="จุดเปอร์เซ็นต์", format="+.2f"),
-                 alt.Tooltip("value:Q", title="สัมประสิทธิ์มาตรฐาน (ค่าดิบของโมเดล)", format="+.4f")])
-    text = chart.mark_text(fontSize=11).encode(text="label:N", color=ink("#222222"))
-    common.show((rect + text).properties(height=30 * len(row_order) + 40))
+    out = pd.DataFrame({"ตัวแปร": ["%s (%s)" % (c, data.VARIABLES.get(c, ("", ""))[0]) for c in var.name]})
+    verdicts = [reason(r) for r in var.itertuples()]
+    out["ผล"] = [v[0] for v in verdicts]
+    out["เหตุผล"] = [v[1] for v in verdicts]
+    green = lambda v: "color: #1a7a3a; font-weight: 600" if "เก็บไว้" in v or "คงไว้" in v else ""                  # the variables that stay
+    st.dataframe(out.style.map(green, subset=["ผล"]), hide_index=True, width="stretch", height=38 * len(out) + 40)
 
 
-logistic_view()
+overview()
+common.block("การตัดตัวแปร",
+             "จากตัวแปรทั้งหมด 19 ตัว (Reddit 16 ตัว + ราคา 3 ตัว) ใช้ดูว่าตัวใดเก็บไว้ ตัวใดตัดออก และเพราะอะไร ของ panel ที่เลือก (Global หรือ Ticker ทุกข้อความ) ที่ Current Return คำนวณสดตามตัวกรองด้านซ้าย",
+             how="เริ่มจากแบบจำลองราคาล้วน (3 ตัว) แล้วเติมตัวแปร Reddit ทีละตัว ตัวที่ทำให้ Area Under the ROC Curve (AUC) เพิ่มอย่างมีนัยสำคัญ (ช่วงเชื่อมั่น 95% ไม่คร่อม 0) เก็บไว้ ตัวที่ไม่เพิ่มตัดออก · "
+                 "ทุกครั้งใช้ชุดฝึกและชุดทดสอบเดียวกับด้านบน, L1 คือวิธีที่บีบตัวแปรซ้ำซ้อนให้เป็น 0")
+family = st.radio("panel", ["global", "Ticker"], format_func=lambda f: "Global (ความรู้สึกรวมของทั้งตลาด)" if f == "global" else "Ticker (เฉพาะข้อความที่พูดถึงสินทรัพย์นั้น)", horizontal=True, key="lg_family")
+row, feats = common.logistic_test_live(family, "all", tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_th, s_th, tuple(content_types), 0,
+                                        "log_return", BOOT)
+if row.get("status") != "ok":
+    st.info("ข้อมูลไม่พอ (ต้องมีแถวครบทุกตัวแปรและแบ่งเป็นชุดฝึกและชุดทดสอบได้) โปรดขยายช่วงเวลาหรือเพิ่มหลักทรัพย์")
+elif not feats.empty:
+    variable_chart(feats, row)
+    reduced_metrics(row)
+    variable_table(feats)
