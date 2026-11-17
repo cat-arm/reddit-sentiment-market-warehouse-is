@@ -15,8 +15,7 @@ ANALYSIS 1  Is the model of a panel better or worse than a random guess?  (per p
 ANALYSIS 2  How much does each variable add?  (panel Global `panel_global`, level `all`, every horizon; the Current Return is the horizon 'log_return')
   validation train -> VALIDATION -> test (advisor, 2026-11-17): the last third (in time, gap 12 h) of the train part is the VALIDATION set; the variables are chosen on it, with models fitted
              on the sub-train part; the test set is NOT used to choose anything.
-  L1 / L2    L1 (lasso) at its best C: the variables whose coefficient is not zero are "selected"; stability = in how many of the 5 time folds of the sub-train part
-             they are selected; the standardised L2 coefficient is kept next to it.
+  L2 coef    the standardised L2 coefficient of every variable is kept next to the drop-one / add-one numbers (the penalty is a setting of the model, NOT a way to choose variables).
   drop-one   refit without the variable (or the group): the AUC of the full model minus the AUC without it, on the VALIDATION set, with a paired bootstrap interval.
   add-one    the price-only model plus ONE Reddit variable (or group): the gain in VALIDATION AUC over the price-only model, with a paired bootstrap interval; the Reddit variables
              whose interval is above 0 are KEPT (with the price base).
@@ -209,6 +208,24 @@ def analysis_panel(part, panel, horizon_label, target, boot):
     return row, context
 
 
+def vif_values(x):
+    """Variance Inflation Factor of every column of `x` (rows = hours): 1 / (1 - R^2) of the column regressed on all the others (least squares).
+    1 = not redundant, above 5 = redundant, above 10 = very redundant, inf = an exact linear combination of the others (e.g. sentiment_momentum_1h = sentiment_mean -
+    sentiment_lag_1h).  A constant column gives NaN.  Independent of the target: only the variables are looked at."""
+    x = np.asarray(x, float)
+    keep = np.where(x.std(axis=0) > 0)[0]
+    out = np.full(x.shape[1], np.nan)
+    if len(keep) < 2:
+        return out
+    z = (x[:, keep] - x[:, keep].mean(axis=0)) / x[:, keep].std(axis=0)
+    for k, col in enumerate(keep):
+        others = np.delete(z, k, axis=1)
+        resid = z[:, k] - others @ np.linalg.lstsq(others, z[:, k], rcond=None)[0]
+        r2 = 1.0 - float(resid @ resid) / float(z[:, k] @ z[:, k])
+        out[col] = np.inf if r2 > 1.0 - 1e-9 else 1.0 / (1.0 - r2)
+    return out
+
+
 VALIDATION_FRACTION = 1.0 / 3.0                    # of the TRAIN part, the last third in time is the validation set that chooses the variables
 
 
@@ -219,7 +236,7 @@ def validation_split(hours, train):
 
 
 def analysis_features(context, features_row, boot):
-    """The per-variable analysis of one horizon of panel_global: L1 selection, drop-one, add-one, alone (group level too).
+    """The per-variable analysis of one horizon of panel_global: drop-one, add-one, alone (group level too).
     EVERY number here is computed on the VALIDATION set (the last third of the train part), with models fitted on the sub-train part, so the choice of the variables never
     looks at the test set (advisor's remark 2026-11-17: train -> validation -> test, the test set only scores the final model: see `cut_on_test`)."""
     hours, x, y, columns = context["hours"], context["x"], context["y"], context["columns"]
@@ -229,19 +246,12 @@ def analysis_features(context, features_row, boot):
     tuned = tune(x[sub], y[sub], hours[sub])                                          # the penalty and C are chosen on the sub-train part only
     if tuned is None:
         return []
-    best, best_l1, table = tuned
+    best, _, table = tuned
     c_l2 = max((k for k in table if k[0] == "l2"), key=table.get)[1]                  # the best L2 strength: every ablation uses the same one, so only the variables differ
     boots, y_val = Bootstrap(hours[val], boot), y[val]
     rows = []
-    # L1 selection and its stability over the 5 time folds of the sub-train part
     scaler = StandardScaler().fit(x[sub])
-    l1_model = make_model("l1", best_l1[1]).fit(scaler.transform(x[sub]), y[sub])
     l2_model = make_model("l2", c_l2).fit(scaler.transform(x[sub]), y[sub])
-    stability = np.zeros(len(columns))
-    folds = [(tr, te) for tr, te in inner_folds(hours[sub], n_splits=5) if len(np.unique(y[sub][tr])) == 2]
-    for tr, _ in folds:
-        s = StandardScaler().fit(x[sub][tr])
-        stability += (make_model("l1", best_l1[1]).fit(s.transform(x[sub][tr]), y[sub][tr]).coef_[0] != 0)
     base_p, _, _ = fit_predict("l2", c_l2, x[sub], y[sub], x[val])
     auc_base_boot = boots.auc(y_val, base_p)
     auc_full = fast_auc(y_val, base_p)
@@ -249,6 +259,7 @@ def analysis_features(context, features_row, boot):
     price_p, _, _ = fit_predict("l2", c_l2, x[sub][:, price_idx], y[sub], x[val][:, price_idx])
     auc_price_boot, auc_price = boots.auc(y_val, price_p), fast_auc(y_val, price_p)
     group_of = {c: g for g, cols in GROUPS.items() for c in cols}
+    vifs = vif_values(x[context["train"]])                                            # redundancy between the variables, on the whole train part (no target, no test rows)
 
     def drop(names):
         keep = [i for i, c in enumerate(columns) if c not in names]
@@ -267,9 +278,8 @@ def analysis_features(context, features_row, boot):
 
     for i, name in enumerate(columns):
         auc_drop, boot_drop = drop([name])
-        row = {"kind": "variable", "name": name, "group": group_of[name], "side": "price" if name in PRICE_FEATURES else "reddit", "l1_selected": bool(l1_model.coef_[0][i] != 0),
-               "l1_stability_of_5": int(stability[i]), "l1_coef": float(l1_model.coef_[0][i]), "l2_coef": float(l2_model.coef_[0][i]), "alone_auc": alone([name]),
-               "drop_one_delta": auc_full - auc_drop}
+        row = {"kind": "variable", "name": name, "group": group_of[name], "side": "price" if name in PRICE_FEATURES else "reddit",
+               "l2_coef": float(l2_model.coef_[0][i]), "vif": float(vifs[i]), "alone_auc": alone([name]), "drop_one_delta": auc_full - auc_drop}
         row["drop_one_low"], row["drop_one_high"] = boots.interval(auc_base_boot - boot_drop)
         if name not in PRICE_FEATURES:
             auc_add, boot_add = add([name])
@@ -278,15 +288,14 @@ def analysis_features(context, features_row, boot):
         rows.append(row)
     for g, cols in GROUPS.items():
         auc_drop, boot_drop = drop(cols)
-        row = {"kind": "group", "name": g, "group": g, "side": "price" if g == "Market" else "reddit", "l1_selected": any(r["l1_selected"] for r in rows if r["kind"] == "variable" and r["group"] == g),
-               "l1_stability_of_5": max(r["l1_stability_of_5"] for r in rows if r["kind"] == "variable" and r["group"] == g), "alone_auc": alone(cols), "drop_one_delta": auc_full - auc_drop}
+        row = {"kind": "group", "name": g, "group": g, "side": "price" if g == "Market" else "reddit", "alone_auc": alone(cols), "drop_one_delta": auc_full - auc_drop}
         row["drop_one_low"], row["drop_one_high"] = boots.interval(auc_base_boot - boot_drop)
         if g != "Market":
             auc_add, boot_add = add(cols)
             row["add_one_delta"] = auc_add - auc_price
             row["add_one_low"], row["add_one_high"] = boots.interval(boot_add - auc_price_boot)
         rows.append(row)
-    return [dict(features_row, c_l2=c_l2, c_l1=best_l1[1], auc_full=auc_full, auc_price_val=auc_price, n_sub=len(sub), n_val=len(val), **r) for r in rows]
+    return [dict(features_row, c_l2=c_l2, auc_full=auc_full, auc_price_val=auc_price, n_sub=len(sub), n_val=len(val), **r) for r in rows]
 
 
 def kept_variables(rows):
@@ -346,10 +355,10 @@ def report(panels, features, boot, cuts=None):
     ok = panels[panels.status == "ok"]
     lines = ["# Logistic Regression: ประเมินผลบนชุดทดสอบ, L1 / L2 และการวัดความช่วยเหลือของแต่ละตัวแปร (ส่วนขยายของ A3)", "",
              *file_header("ผลประเมินโมเดล Logistic บนชุดทดสอบสุดท้าย (ท้ายสุดของเวลา 25%) แยกจากชุดฝึกที่ใช้ปรับ L1/L2, AUC พร้อมช่วงเชื่อมั่น, metrics อื่น, เทียบโมเดลฐาน (สุ่ม, ราคาล้วน, Reddit ล้วน) "
-                          "และการวัดว่าตัวแปรแต่ละตัวช่วยเพิ่มเท่าไร (L1 คัดตัวแปร, drop-one, add-one บนชุด validation) แล้วเทียบก่อน/หลังตัดบนชุดทดสอบครั้งเดียว ตามข้อสังเกตของอาจารย์",
+                          "และการวัดว่าตัวแปรแต่ละตัวช่วยเพิ่มเท่าไร (drop-one, add-one บนชุด validation) แล้วเทียบก่อน/หลังตัดบนชุดทดสอบครั้งเดียว ตามข้อสังเกตของอาจารย์",
                           "analysis/logistic_eval.py", "python -m analysis.logistic_eval --boot %d" % boot, "ตาราง panels ใน output/reddit.sqlite3 อ่านอย่างเดียว"), "",
              "วิธี: แบ่งหน่วยเวลา (ชั่วโมงที่ไม่ซ้ำ) 75%% แรก = ชุดฝึก, 25%% ท้าย = **ชุดทดสอบสุดท้าย** เว้น 12 ชั่วโมง · ปรับ penalty (L2 / L1) และ C (1e-4 ถึง 10) ด้วย TimeSeriesSplit 3 รอบ **ในชุดฝึกเท่านั้น** (AUC เฉลี่ยสูงสุด) · "
-             "**เลือกตัวแปรด้วย validation:** ส่วนท้าย 1 ใน 3 ของชุดฝึก (เว้น 12 ชั่วโมง) เป็นชุด validation โมเดลฝึกบนชุดฝึกย่อย ส่วน add-one / drop-one / L1 วัดบน validation ชุดทดสอบไม่ถูกใช้เลือกอะไรเลย · "
+             "**เลือกตัวแปรด้วย validation:** ส่วนท้าย 1 ใน 3 ของชุดฝึก (เว้น 12 ชั่วโมง) เป็นชุด validation โมเดลฝึกบนชุดฝึกย่อย ส่วน add-one / drop-one วัดบน validation ชุดทดสอบไม่ถูกใช้เลือกอะไรเลย · "
              "StandardScaler ฟิตเฉพาะแถวฝึก · ทุกโมเดลใช้แถวครบถ้วนชุดเดียวกัน (แถวที่ตัวแปรใดว่างถูกตัด ไม่เติม 0) · ช่วงเชื่อมั่น 95%% = block bootstrap รายวัน UTC ของชุดทดสอบ (%d รอบ) แบบจับคู่ระหว่างโมเดล" % boot, "",
              "## 1) โมเดลของแต่ละ panel ดีกว่าหรือแย่กว่าสุ่ม (ระดับ `all` รวมทุกสินทรัพย์, AUC บนชุดทดสอบ)", "",
              "AUC 0.5 = เดาสุ่ม · ✔ = ช่วงเชื่อมั่นทั้งช่วงสูงกว่า 0.5 (ดีกว่าสุ่ม) · ✘ = ต่ำกว่า 0.5 ทั้งช่วง (แย่กว่าสุ่ม) · ไม่มีเครื่องหมาย = แยกไม่ออกจากสุ่ม · "
@@ -396,15 +405,15 @@ def report(panels, features, boot, cuts=None):
             if f.empty:
                 continue
             lines += ["", "## 4.%s) แต่ละตัวแปรช่วยเพิ่ม AUC เท่าไร บนชุด validation: %s (panel Global)" % (HORIZON_LABELS.index(h) + 1, "Current Return (ชั่วโมงเดียวกัน)" if h == "log_return" else "ทำนายล่วงหน้า " + h), "",
-                      "L2 C = %g, L1 C = %g, AUC โมเดลเต็มบน validation = %s (แถว validation %s) · drop-one = AUC เต็ม − AUC เมื่อตัดตัวแปรออก · add-one = AUC (ราคาล้วน + ตัวแปรนี้) − AUC ราคาล้วน · ✔ = ช่วงเชื่อมั่นไม่คร่อม 0" % (
-                          f.iloc[0].c_l2, f.iloc[0].c_l1, fmt(f.iloc[0].auc_full), "{:,}".format(int(f.iloc[0].n_val))), "",
-                      "| ตัวแปร | กลุ่ม | ฝั่ง | L1 เลือก (รอดกี่รอบจาก 5) | L2 coef | AUC ตัวเดียว | drop-one | ช่วงเชื่อมั่น | add-one | ช่วงเชื่อมั่น |", "|---|---|---|---|---|---|---|---|---|---|"]
+                      "L2 C = %g, AUC โมเดลเต็มบน validation = %s (แถว validation %s) · drop-one = AUC เต็ม − AUC เมื่อตัดตัวแปรออก · add-one = AUC (ราคาล้วน + ตัวแปรนี้) − AUC ราคาล้วน · ✔ = ช่วงเชื่อมั่นไม่คร่อม 0" % (
+                          f.iloc[0].c_l2, fmt(f.iloc[0].auc_full), "{:,}".format(int(f.iloc[0].n_val))), "",
+                      "| ตัวแปร | กลุ่ม | ฝั่ง | L2 coef | AUC ตัวเดียว | drop-one | ช่วงเชื่อมั่น | add-one | ช่วงเชื่อมั่น |", "|---|---|---|---|---|---|---|---|---|"]
             for r in f[f.kind == "variable"].sort_values("drop_one_delta", ascending=False).itertuples():
                 sig_drop = "✔" if (r.drop_one_low > 0 or r.drop_one_high < 0) else ""
                 add = "-" if pd.isna(getattr(r, "add_one_delta", np.nan)) else "%+.4f" % r.add_one_delta
                 add_ci = "-" if pd.isna(getattr(r, "add_one_low", np.nan)) else "%+.4f ถึง %+.4f%s" % (r.add_one_low, r.add_one_high, " ✔" if (r.add_one_low > 0 or r.add_one_high < 0) else "")
-                lines.append("| %s | %s | %s | %s (%d/5) | %+.3f | %s | %+.4f | %+.4f ถึง %+.4f %s | %s | %s |" % (
-                    r.name, r.group, "ราคา" if r.side == "price" else "Reddit", "เลือก" if r.l1_selected else "ถูกบีบเป็น 0", r.l1_stability_of_5, r.l2_coef, fmt(r.alone_auc), r.drop_one_delta,
+                lines.append("| %s | %s | %s | %+.3f | %s | %+.4f | %+.4f ถึง %+.4f %s | %s | %s |" % (
+                    r.name, r.group, "ราคา" if r.side == "price" else "Reddit", r.l2_coef, fmt(r.alone_auc), r.drop_one_delta,
                     r.drop_one_low, r.drop_one_high, sig_drop, add, add_ci))
             lines += ["", "รายกลุ่ม:", "", "| กลุ่ม | ฝั่ง | AUC กลุ่มเดียว | drop-one | ช่วงเชื่อมั่น | add-one | ช่วงเชื่อมั่น |", "|---|---|---|---|---|---|---|"]
             for r in f[f.kind == "group"].itertuples():

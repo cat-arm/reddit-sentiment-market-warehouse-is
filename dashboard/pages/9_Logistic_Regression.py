@@ -3,7 +3,7 @@
 Two separate analyses of `analysis.logistic_eval` (nothing is written to the database), computed LIVE for the panel and the horizon picked on the page, on the rows that pass
 the filters of the sidebar (time, assets, communities, model, types of text, majority status; the Reddit Volume Z-score and Sentiment Thresholds act on the panels "all" only):
   1  Is the model of the panel better or worse than a random guess?  AUC on the test set (the last 25% of the hours) with a 95% interval.
-  2  How much does each variable add?  L1 selection, add-one and drop-one on the same split.
+  2  How much does each variable add?  add-one and drop-one on the validation set; the test set scores the cut model once.
 Above them an overview of the nine panels, precomputed (`output/reports/logistic_panels.csv`, no filter).  Descriptive only: no investment advice.
 """
 
@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import altair as alt  # noqa: E402
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
@@ -87,15 +88,14 @@ def overview():
 
 def reason(r):
     """(result, reason) of one variable: the price variables are the base; a Reddit variable stays when adding it to the price-only model raises the AUC (the 95% interval
-    does not contain 0), otherwise it is cut; L1 is said when it zeroed the variable."""
+    does not contain 0), otherwise it is cut."""
     if r.side == "price":
         return "ฐานราคา (คงไว้)", "ตัวแปรราคาของชั่วโมงเดียวกัน ใช้เป็นฐานเปรียบเทียบ ไม่ถูกตัด"
-    l1 = "L1 บีบเป็น 0 (ซ้ำซ้อนกับตัวแปรความรู้สึกอื่น)" if not r.l1_selected else "L1 เก็บไว้"
-    gain = "เติมเข้าแบบจำลองราคาล้วนแล้ว Area Under the ROC Curve (AUC) เพิ่ม %+.4f (ช่วงเชื่อมั่น 95%%: %+.4f ถึง %+.4f)" % (r.add_one_delta, r.add_one_low, r.add_one_high)
+    gain = "AUC เพิ่ม %+.4f (ช่วงเชื่อมั่น 95%%: %+.4f ถึง %+.4f)" % (r.add_one_delta, r.add_one_low, r.add_one_high)
     if r.add_one_low > 0:
-        return "ช่วยจริง (เก็บไว้)", gain + "; " + l1
-    why = "เติมเข้าแบบจำลองราคาล้วนแล้ว Area Under the ROC Curve (AUC) ไม่เพิ่มอย่างมีนัยสำคัญ (%+.4f ช่วงเชื่อมั่น 95%%: %+.4f ถึง %+.4f คร่อม 0)" % (r.add_one_delta, r.add_one_low, r.add_one_high)
-    return "ไม่ช่วย (ตัดออก)", why + "; " + l1
+        return "ช่วยจริง (เก็บไว้)", gain
+    why = "AUC ไม่เพิ่มอย่างมีนัยสำคัญ (%+.4f ช่วงเชื่อมั่น 95%%: %+.4f ถึง %+.4f คร่อม 0)" % (r.add_one_delta, r.add_one_low, r.add_one_high)
+    return "ไม่ช่วย (ตัดออก)", why
 
 
 def variable_chart(feats, row):
@@ -142,15 +142,17 @@ def variable_table(feats):
     verdicts = [reason(r) for r in var.itertuples()]
     out["ผล"] = [v[0] for v in verdicts]
     out["เหตุผล"] = [v[1] for v in verdicts]
+    out["VIF"] = var["vif"].to_numpy() if "vif" in var else None
     green = lambda v: "color: #1a7a3a; font-weight: 600" if "เก็บไว้" in v or "คงไว้" in v else ""                  # the variables that stay
-    st.dataframe(out.style.map(green, subset=["ผล"]), hide_index=True, width="stretch", height=38 * len(out) + 40)
+    st.dataframe(out.style.map(green, subset=["ผล"]).format({"VIF": lambda v: "เป็นผลรวมของตัวอื่น" if np.isinf(v) else "%.1f" % v}, na_rep="-"), hide_index=True, width="stretch", height=38 * len(out) + 40)
+    st.caption("VIF (Variance Inflation Factor) บอกว่าตัวแปรซ้ำซ้อนกับตัวแปรอื่นในโมเดลแค่ไหน: 1 = ไม่ซ้ำ, เกิน 5 = ซ้ำ, เกิน 10 = ซ้ำมาก (ตีความน้ำหนักรายตัวไม่ได้), เป็นผลรวมของตัวอื่น = คำนวณได้จากตัวแปรอื่นตรง ๆ (momentum = ความรู้สึกชั่วโมงนี้ − ชั่วโมงก่อน) คำนวณบนชุดฝึก ไม่เกี่ยวกับตัวทาย")
 
 
 overview()
 common.block("การตัดตัวแปร",
              "จากตัวแปรทั้งหมด 19 ตัว (Reddit 16 ตัว + ราคา 3 ตัว) ใช้ดูว่าตัวใดเก็บไว้ ตัวใดตัดออก และเพราะอะไร ของ panel Global (ความรู้สึกรวมของทั้งตลาด) ที่ Current Return คำนวณสดตามตัวกรองด้านซ้าย",
              how="แบ่งเวลาเป็น ชุดฝึก → ชุด validation → ชุดทดสอบ, ตัวแปรถูกเลือกด้วย validation (ส่วนท้ายของชุดฝึก) ไม่ใช้ชุดทดสอบ, เริ่มจากแบบจำลองราคาล้วน (3 ตัว) แล้วเติมตัวแปร Reddit ทีละตัว ตัวที่ทำให้ Area Under the ROC Curve (AUC) บน validation เพิ่มอย่างมีนัยสำคัญ (ช่วงเชื่อมั่น 95% ไม่คร่อม 0) เก็บไว้ ตัวที่ไม่เพิ่มตัดออก, "
-                 "แล้วใช้ชุดทดสอบประเมินแบบจำลองสุดท้ายครั้งเดียว (ตารางก่อนตัด / หลังตัด), L1 คือวิธีที่บีบตัวแปรซ้ำซ้อนให้เป็น 0")
+                 "แล้วใช้ชุดทดสอบประเมินแบบจำลองสุดท้ายครั้งเดียว (ตารางก่อนตัด / หลังตัด)")
 family = "global"
 row, feats = common.logistic_test_live(family, "all", tuple(tickers), start, end, tuple(communities), model, tuple(statuses), z_th, s_th, tuple(content_types), 0,
                                         "log_return", BOOT)

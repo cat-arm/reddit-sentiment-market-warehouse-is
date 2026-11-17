@@ -214,7 +214,7 @@ _EVAL_LOCK = threading.Lock()                                                   
 def logistic_test_live(family, variant, tickers, start, end, communities, model, statuses, z_th, s_th, content_types, v_th, target, boot=100):
     """EXTENSION: the evaluation of `analysis.logistic_eval` for ONE panel and ONE horizon on the rows that pass the filters of the sidebar: train 75% / test 25% of the hours
     with a gap of 12 hours, L1 / L2 and C chosen inside the train part only, AUC on the test set with a day-block bootstrap interval (`boot` rounds), and the table of the
-    variables (L1 selection, drop-one, add-one on the VALIDATION set, the last third of the train part: the test set never chooses a variable).  -> (dict of the panel row, DataFrame of the variables; empty for the Baseline or when there is not enough data)."""
+    variables (drop-one, add-one on the VALIDATION set, the last third of the train part: the test set never chooses a variable).  -> (dict of the panel row, DataFrame of the variables; empty for the Baseline or when there is not enough data)."""
     from analysis import logistic_eval as E
     part = logistic_frame(family, variant, "ALL", tickers, start, end, communities, model, statuses, z_th, s_th, content_types, v_th)
     column = {label: col for col, label in E.HORIZONS.items()}[target]                       # `target` is the label of the horizon ('log_return', '1h' ...), the column differs

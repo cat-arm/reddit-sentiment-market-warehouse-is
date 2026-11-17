@@ -58,6 +58,16 @@ class ModelTests(unittest.TestCase):
         self.assertAlmostEqual(m["accuracy"], 6 / 8)
         self.assertAlmostEqual(m["majority_accuracy"], 0.5)
 
+    def test_vif_is_one_for_independent_columns_and_infinite_for_an_exact_combination(self):
+        rng = np.random.default_rng(5)
+        a, b = rng.normal(size=(2, 3000))
+        x = np.column_stack([a, b, rng.normal(size=3000)])
+        self.assertTrue(np.all(le.vif_values(x) < 1.1))
+        redundant = np.column_stack([a, b, a - b])                                        # like sentiment_momentum_1h = sentiment_mean - sentiment_lag_1h
+        self.assertTrue(np.all(np.isinf(le.vif_values(redundant))))
+        near = np.column_stack([a, a + 0.3 * b, rng.normal(size=3000)])                   # a strongly correlated pair
+        self.assertGreater(le.vif_values(near)[0], 5)
+
     def test_l1_zeroes_noise_and_keeps_the_signal(self):
         rng = np.random.default_rng(2)
         x = rng.normal(size=(4000, 6))
@@ -100,7 +110,6 @@ class PanelAnalysisTests(unittest.TestCase):
     def test_variable_analysis_finds_the_signal_and_not_the_noise(self):
         rows = pd.DataFrame(le.analysis_features(self.context, {"panel": "panel_global", "horizon": "log_return"}, boot=60))
         variables = rows[rows.kind == "variable"].set_index("name")
-        self.assertTrue(variables.loc["normalized_atr", "l1_selected"])
         self.assertGreater(variables.loc["normalized_atr", "drop_one_delta"], 0.05)
         self.assertGreater(variables.loc["normalized_atr", "drop_one_low"], 0.0)          # the interval of the real signal excludes 0
         noise = variables.loc["reddit_mention_rate"]
